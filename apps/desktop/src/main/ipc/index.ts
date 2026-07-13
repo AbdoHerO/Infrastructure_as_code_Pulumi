@@ -6,6 +6,7 @@ import { registerProviderHandlers } from './handlers/providers.handlers.js';
 import { registerInfraHandlers } from './handlers/infra.handlers.js';
 import { registerDeployHandlers } from './handlers/deploy.handlers.js';
 import { registerActivityHandlers } from './handlers/activity.handlers.js';
+import { registerPluginHandlers } from './handlers/plugins.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -20,4 +21,5 @@ export function registerIpcHandlers(): void {
   registerInfraHandlers();
   registerDeployHandlers();
   registerActivityHandlers();
+  registerPluginHandlers();
 }

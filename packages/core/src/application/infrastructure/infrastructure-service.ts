@@ -15,6 +15,12 @@ import type {
 } from '../ports/infrastructure-engine.js';
 import type { PlanStore } from '../ports/plan-store.js';
 import { type InfrastructurePlan, type PlanIssue, validatePlan } from './infrastructure-plan.js';
+import {
+  findInfrastructureTemplate,
+  type InfraTemplateContext,
+  type InfrastructureTemplateSummary,
+  listInfrastructureTemplateSummaries,
+} from './infrastructure-template.js';
 
 /**
  * Application service coordinating a project's infrastructure: it persists the
@@ -43,6 +49,27 @@ export class InfrastructureService {
   /** Validate a plan's internal consistency (pure). */
   validate(plan: InfrastructurePlan): PlanIssue[] {
     return validatePlan(plan);
+  }
+
+  /** The built-in infrastructure templates. */
+  listTemplates(): InfrastructureTemplateSummary[] {
+    return listInfrastructureTemplateSummaries();
+  }
+
+  /** Generate a plan from a template and persist it for a project. */
+  async applyTemplate(
+    projectId: string,
+    templateId: string,
+    context: InfraTemplateContext,
+  ): Promise<Result<InfrastructurePlan, PersistenceError | NotFoundError>> {
+    const template = findInfrastructureTemplate(templateId);
+    if (!template) {
+      return err(new NotFoundError(`Unknown infrastructure template: ${templateId}`));
+    }
+    const plan = template.build(context);
+    const saved = await this.plans.save(projectId, plan);
+    if (!saved.ok) return saved;
+    return ok(plan);
   }
 
   async preview(

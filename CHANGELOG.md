@@ -3,6 +3,27 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 10] — Templates, Plugins & Updates
+
+### Added
+
+- **Infrastructure templates** (core): a registry of predefined plans (Web
+  Server, AI Server, Database Host, Kubernetes Node) that generate a full
+  `InfrastructurePlan`; `InfrastructureService.applyTemplate` persists one to a
+  project. **Templates** module lists both infrastructure and deployment
+  templates and applies infra templates to a selected project.
+- **Plugin system**: plugin manifest + kinds (provider/template/widget/theme/
+  ansible-role), a marketplace `PLUGIN_CATALOG`, `PluginRepository` port +
+  `PrismaPluginRepository`, and `PluginService` (merge catalog with local
+  install/enable state). **Plugin Marketplace** module with install + enable
+  toggles.
+- **Updates** module: `updates:check` IPC and a version/status page (electron-
+  updater wiring lands at packaging time).
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (43) and `pnpm build` all green.
+
 ## [Phase 9] — Logs, Activity & Charts
 
 ### Added

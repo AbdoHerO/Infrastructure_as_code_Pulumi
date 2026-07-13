@@ -72,4 +72,15 @@ export function registerInfraHandlers(): void {
     const ref = await stackRef(projectId);
     return orThrow(await getContainer().infrastructureService.outputs(ref));
   });
+
+  registerHandler('infra:templates', () => getContainer().infrastructureService.listTemplates());
+
+  registerHandler('infra:applyTemplate', async ({ projectId, templateId, sshPublicKey, region }) =>
+    orThrow(
+      await getContainer().infrastructureService.applyTemplate(projectId, templateId, {
+        ...(sshPublicKey ? { sshPublicKey } : {}),
+        ...(region ? { region } : {}),
+      }),
+    ),
+  );
 }

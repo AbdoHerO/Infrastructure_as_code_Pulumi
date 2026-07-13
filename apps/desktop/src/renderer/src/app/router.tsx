@@ -1,5 +1,5 @@
 import { createHashRouter } from 'react-router-dom';
-import { Blocks, Container, FileCode2, KeyRound, RefreshCw } from 'lucide-react';
+import { Container, KeyRound } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
@@ -8,6 +8,9 @@ import { InfrastructurePage } from '../features/infrastructure/InfrastructurePag
 import { DeploymentsPage } from '../features/deployments/DeploymentsPage.js';
 import { LogsPage } from '../features/logs/LogsPage.js';
 import { ProvidersPage } from '../features/providers/ProvidersPage.js';
+import { TemplatesPage } from '../features/templates/TemplatesPage.js';
+import { MarketplacePage } from '../features/marketplace/MarketplacePage.js';
+import { UpdatesPage } from '../features/updates/UpdatesPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
@@ -38,17 +41,7 @@ export const router = createHashRouter([
         ),
       },
       { path: 'providers', element: <ProvidersPage /> },
-      {
-        path: 'templates',
-        element: (
-          <PlaceholderPage
-            title="Templates"
-            description="Reusable infrastructure and deployment templates."
-            icon={FileCode2}
-            phase="Phase 10"
-          />
-        ),
-      },
+      { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },
       {
         path: 'ssh-keys',
@@ -62,28 +55,8 @@ export const router = createHashRouter([
         ),
       },
       { path: 'logs', element: <LogsPage /> },
-      {
-        path: 'plugins',
-        element: (
-          <PlaceholderPage
-            title="Plugin Marketplace"
-            description="Discover and install providers, templates and widgets."
-            icon={Blocks}
-            phase="Phase 10"
-          />
-        ),
-      },
-      {
-        path: 'updates',
-        element: (
-          <PlaceholderPage
-            title="Updates"
-            description="Application updates and release channels."
-            icon={RefreshCw}
-            phase="Phase 10"
-          />
-        ),
-      },
+      { path: 'plugins', element: <MarketplacePage /> },
+      { path: 'updates', element: <UpdatesPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'about', element: <AboutPage /> },
     ],

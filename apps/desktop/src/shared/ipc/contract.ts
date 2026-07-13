@@ -13,7 +13,9 @@ import type {
   DeploymentTemplateSummary,
   EngineEvent,
   InfrastructurePlan,
+  InfrastructureTemplateSummary,
   PlanIssue,
+  PluginListItem,
   PreviewResult,
   ProjectDto,
   Region,
@@ -93,6 +95,22 @@ export interface IpcContract {
   };
 
   'activity:list': { request: { limit?: number }; response: ActivityDto[] };
+
+  'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
+  'infra:applyTemplate': {
+    request: { projectId: string; templateId: string; sshPublicKey?: string; region?: string };
+    response: InfrastructurePlan;
+  };
+
+  'plugins:list': { request: void; response: PluginListItem[] };
+  'plugins:install': { request: { id: string }; response: void };
+  'plugins:setEnabled': { request: { id: string; enabled: boolean }; response: void };
+  'plugins:uninstall': { request: { id: string }; response: void };
+
+  'updates:check': {
+    request: void;
+    response: { current: string; latest: string; upToDate: boolean };
+  };
 }
 
 /**
@@ -178,4 +196,11 @@ export const IPC_CHANNELS = [
   'deploy:count',
   'deploy:run',
   'activity:list',
+  'infra:templates',
+  'infra:applyTemplate',
+  'plugins:list',
+  'plugins:install',
+  'plugins:setEnabled',
+  'plugins:uninstall',
+  'updates:check',
 ] as const satisfies readonly IpcChannel[];

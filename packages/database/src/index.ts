@@ -13,4 +13,5 @@ export { PrismaSettingsRepository } from './repositories/prisma-settings-reposit
 export { PrismaPlanStore } from './repositories/prisma-plan-store.js';
 export { PrismaDeploymentRepository } from './repositories/prisma-deployment-repository.js';
 export { PrismaActivityRepository } from './repositories/prisma-activity-repository.js';
+export { PrismaPluginRepository } from './repositories/prisma-plugin-repository.js';
 export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

@@ -6,6 +6,7 @@ import {
   CredentialService,
   DeploymentService,
   InfrastructureService,
+  PluginService,
   ProjectService,
   ProviderConnectionService,
   SettingsService,
@@ -20,6 +21,7 @@ import {
   PrismaCredentialRepository,
   PrismaDeploymentRepository,
   PrismaPlanStore,
+  PrismaPluginRepository,
   PrismaProjectRepository,
   PrismaSettingsRepository,
 } from '@cloudforge/database';
@@ -39,6 +41,7 @@ export interface AppContainer {
   readonly infrastructureService: InfrastructureService;
   readonly deploymentService: DeploymentService;
   readonly activityService: ActivityService;
+  readonly pluginService: PluginService;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -78,6 +81,7 @@ export async function initContainer(): Promise<AppContainer> {
     new PrismaDeploymentRepository(db),
   );
   const activityService = new ActivityService(new PrismaActivityRepository(db));
+  const pluginService = new PluginService(new PrismaPluginRepository(db));
 
   container = {
     projectService,
@@ -87,6 +91,7 @@ export async function initContainer(): Promise<AppContainer> {
     infrastructureService,
     deploymentService,
     activityService,
+    pluginService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

@@ -14,6 +14,7 @@ export * from './domain/project/project.js';
 export * from './domain/credential/credential-kind.js';
 export * from './domain/credential/credential.js';
 export * from './domain/provider/provider-kind.js';
+export * from './domain/plugin/plugin.js';
 
 // Application — ports
 export * from './application/ports/project-repository.js';
@@ -26,6 +27,7 @@ export * from './application/ports/plan-store.js';
 export * from './application/ports/deployer.js';
 export * from './application/ports/deployment-repository.js';
 export * from './application/ports/activity-repository.js';
+export * from './application/ports/plugin-repository.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -41,6 +43,9 @@ export * from './application/providers/cloud-provider.js';
 export * from './application/providers/provider-connection-service.js';
 export * from './application/infrastructure/infrastructure-plan.js';
 export * from './application/infrastructure/infrastructure-service.js';
+export * from './application/infrastructure/infrastructure-template.js';
 export * from './application/deployment/deployment-template.js';
 export * from './application/deployment/deployment-service.js';
 export * from './application/activity/activity-service.js';
+export * from './application/plugins/plugin-catalog.js';
+export * from './application/plugins/plugin-service.js';
