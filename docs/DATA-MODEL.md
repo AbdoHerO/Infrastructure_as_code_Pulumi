@@ -43,7 +43,7 @@ The aggregate root — one managed infrastructure.
 | `description`             | String     | default `""`                                                                    |
 | `environment`             | String     | `development` \| `staging` \| `production`                                      |
 | `region`                  | String     | provider region                                                                 |
-| `providerId`              | String?    | FK → Provider (SetNull)                                                         |
+| `providerId`              | String?    | FK → **Credential** (SetNull) — the linked cloud-provider credential            |
 | `templateId`              | String?    | originating template, if any                                                    |
 | `status`                  | String     | `draft` \| `provisioning` \| `active` \| `error` \| `destroying` \| `destroyed` |
 | `tags`                    | String     | JSON array                                                                      |
@@ -51,11 +51,23 @@ The aggregate root — one managed infrastructure.
 | `notes`                   | String     | free text                                                                       |
 | `createdAt` / `updatedAt` | DateTime   | indexed on `updatedAt`                                                          |
 
-Relations: has many `Deployment`, `SshKey`, `Activity`; belongs to `Provider`.
+Relations: has many `Deployment`, `SshKey`, `Activity`; belongs to `Credential`
+(the cloud-provider account used to provision it — this is what `providerId`
+references).
+
+> **`providerId` links a project to a `Credential`**, not to the `Provider`
+> table. A project's provider account _is_ its stored credential (the credential
+> resolver decrypts `providerId` to authenticate the engine). Databases created
+> before this was corrected are migrated in place on startup by
+> `migrateSchema(db)`, which rebuilds the `Project` table with the fixed foreign
+> key after backing up the `.db` file.
 
 ### Provider
 
 A connected cloud provider account (metadata; credentials are separate).
+**Currently unused** — the app models a provider account as a `Credential`, so no
+`Provider` rows are created. The table is retained for a future first-class
+provider-connection concept.
 
 | Column     | Type       | Notes                  |
 | ---------- | ---------- | ---------------------- |
@@ -80,16 +92,18 @@ Encrypted secret material for one external service.
 
 ### Template
 
-Persisted infrastructure/deployment templates (built-ins live in code; this
-table supports user/plugin-provided templates).
+Persisted templates. Built-in templates live in code; this table stores
+**user-saved custom infrastructure templates** ("Save as template"), where
+`definition` holds the serialized `InfrastructurePlan` and `builtIn` is `false`
+(see [`PrismaTemplateStore`](../packages/database/src/repositories/prisma-template-store.ts)).
 
-| Column                | Type       | Notes                            |
-| --------------------- | ---------- | -------------------------------- |
-| `id`                  | String @id |                                  |
-| `kind`                | String     | `infrastructure` \| `deployment` |
-| `name`, `description` | String     |                                  |
-| `definition`          | String     | JSON                             |
-| `builtIn`             | Boolean    |                                  |
+| Column                | Type       | Notes                                        |
+| --------------------- | ---------- | -------------------------------------------- |
+| `id`                  | String @id |                                              |
+| `kind`                | String     | `infrastructure` \| `deployment`             |
+| `name`, `description` | String     |                                              |
+| `definition`          | String     | JSON — the saved `InfrastructurePlan`        |
+| `builtIn`             | Boolean    | `false` for user-saved templates             |
 
 ### Deployment
 
@@ -192,7 +206,9 @@ The audit / activity feed powering the Logs module and dashboard timeline.
 | Credentials (encrypted)           | `Credential`                                                     |
 | App settings                      | `Setting` (`app.settings`)                                       |
 | Infrastructure plan (per project) | `Setting` (`plan:<projectId>`)                                   |
+| Custom infrastructure templates   | `Template` (`kind = infrastructure`, `builtIn = false`)          |
 | Pulumi state                      | local file backend under `userData/pulumi/state` (not in SQLite) |
 | Deployment history                | `Deployment`                                                     |
 | Activity/audit                    | `Activity`                                                       |
 | Installed plugins                 | `Plugin`                                                         |
+| Application log file              | `userData/logs/cloudforge.log` (not in SQLite — see [Modules](MODULES.md)) |

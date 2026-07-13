@@ -106,6 +106,15 @@ All request/response channels, grouped by feature. `void` means no payload.
 | `infra:outputs`       | `{ projectId }`                                     | `Record<string, unknown>`              |
 | `infra:templates`     | `void`                                              | `InfrastructureTemplateSummary[]`      |
 | `infra:applyTemplate` | `{ projectId, templateId, sshPublicKey?, region? }` | `InfrastructurePlan`                   |
+| `infra:customTemplates`     | `void`                          | `CustomTemplateSummary[]` (user-saved templates) |
+| `infra:saveTemplate`        | `{ name, description?, plan }`  | `CustomTemplateSummary` (save current plan)      |
+| `infra:deleteTemplate`      | `{ id }`                        | `void`                                           |
+| `infra:applyCustomTemplate` | `{ projectId, templateId }`     | `InfrastructurePlan`                             |
+
+`infra:preview` / `infra:apply` require the project to have a **linked provider
+credential**; the service resolves it (via `ProviderCredentialResolver`) and the
+engine builds the cloud provider from it. A missing link surfaces as a typed
+`InfrastructureError` telling the user to link one.
 
 ### Deployments
 
@@ -126,6 +135,15 @@ All request/response channels, grouped by feature. `void` means no payload.
 | `plugins:setEnabled` | `{ id, enabled }` | `void`                          |
 | `plugins:uninstall`  | `{ id }`          | `void`                          |
 | `updates:check`      | `void`            | `{ current, latest, upToDate }` |
+
+### Logs (application log file)
+
+| Channel            | Request                             | Response              |
+| ------------------ | ----------------------------------- | --------------------- |
+| `logs:info`        | `void`                              | `{ path, dir }`       |
+| `logs:tail`        | `{ lines? }`                        | `string[]` (last N)   |
+| `logs:openFolder`  | `void`                              | `void`                |
+| `logs:report`      | `{ level, message, stack?, source? }` | `void` — renderer errors forwarded to the log file |
 
 ## How a call flows
 

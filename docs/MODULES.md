@@ -43,18 +43,27 @@ Lists credentials whose kind is a cloud provider. Per card: **Test connection**
 Browse **infrastructure templates** (Web Server, AI Server, Database Host,
 Kubernetes Node) and **deployment templates** (Docker Host, Nginx, Node,
 Next.js, WordPress, Ollama). "Apply to project" generates a plan from an infra
-template and saves it. Channels: `infra:templates`, `infra:applyTemplate`,
+template and saves it. A **"Your templates"** section lists user-saved custom
+templates (created via Infrastructure → "Save as template") with apply-to-project
+and delete. Channels: `infra:templates`, `infra:applyTemplate`,
+`infra:customTemplates`, `infra:applyCustomTemplate`, `infra:deleteTemplate`,
 `deploy:templates`.
 
 ## Infrastructure (`/infrastructure`)
 
 The core provisioning surface. Pick a project, then **compose a declarative
 plan**: add/remove/edit networks, subnets, firewalls (with a rules editor),
-compute instances and volumes. Client-side `validatePlan` surfaces issues.
-Actions **Save plan / Preview / Apply / Destroy** run against the Pulumi engine
-with a live, streamed `LogTerminal`. Channels: `infra:getPlan`, `infra:savePlan`,
-`infra:preview`, `infra:apply`, `infra:destroy`, `infra:outputs`; event
-`engine:log`.
+compute instances and volumes — use **Add resource → Compute instance** to add
+as many instances as you like. Each resource has an **OCI-aware editor**: compute
+shapes and availability domains are populated **live from the linked account**
+(with a built-in fallback), OCPUs/memory appear for flexible shapes, the image is
+a curated OS list or a specific image OCID, and network/subnet/instance
+references are dropdowns of the plan's own resources. **Save as template** stores
+the current plan for reuse. Client-side `validatePlan` surfaces issues. Actions
+**Save plan / Preview / Apply / Destroy** run against the Pulumi engine with a
+live, streamed `LogTerminal`; preview/apply require a linked provider credential.
+Channels: `infra:getPlan`, `infra:savePlan`, `infra:preview`, `infra:apply`,
+`infra:destroy`, `infra:outputs`, `infra:saveTemplate`; event `engine:log`.
 
 ## Deployments (`/deployments`)
 
@@ -72,8 +81,12 @@ implement following the same module pattern.
 
 ## Logs (`/logs`)
 
-A searchable, category-filterable, **JSON-exportable** activity feed built on the
-reusable `ActivityTimeline` with relative timestamps. Channel: `activity:list`.
+Two tabs. **Activity** — a searchable, category-filterable, **JSON-exportable**
+activity feed built on the reusable `ActivityTimeline`. **Application log** — the
+raw `cloudforge.log` file (path, copy-path, open-folder, and a live tail): every
+IPC call, streamed engine output, crashes and forwarded renderer errors, with
+secrets/payloads never written. Channels: `activity:list`, `logs:info`,
+`logs:tail`, `logs:openFolder`, `logs:report`.
 
 ## Secrets (`/secrets`) — the Credential Manager
 

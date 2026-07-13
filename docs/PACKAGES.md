@@ -64,8 +64,12 @@ Interfaces implemented by adapters:
 
 `ProjectRepository` · `CredentialRepository` · `SettingsRepository` ·
 `DeploymentRepository` · `ActivityRepository` · `PluginRepository` ·
-`PlanStore` · `SecretCipher` · `ProviderFactory` · `InfrastructureEngine` ·
-`Deployer`.
+`PlanStore` · `TemplateStore` · `SecretCipher` · `ProviderFactory` ·
+`ProviderCredentialResolver` · `InfrastructureEngine` · `Deployer`.
+
+`ProviderCredentialResolver` resolves a project's linked credential into the raw
+provider fields the engine needs; `TemplateStore` persists user-saved custom
+infrastructure templates.
 
 ### Application — services (`src/application/…`)
 
@@ -75,7 +79,7 @@ Interfaces implemented by adapters:
 | `CredentialService`         | Encrypt-on-write / decrypt-on-reveal credentials; metadata-only listing.                                      |
 | `SettingsService`           | Typed `AppSettings` merged over defaults, JSON-persisted.                                                     |
 | `ProviderConnectionService` | Decrypt a credential → build a `CloudProvider` via `ProviderFactory` → run a capability.                      |
-| `InfrastructureService`     | Persist a plan (`PlanStore`), validate it, run preview/apply/destroy/outputs; apply infrastructure templates. |
+| `InfrastructureService`     | Persist a plan (`PlanStore`), validate it, resolve the project's credential and run preview/apply/destroy/outputs; apply built-in templates; save/list/delete/apply **custom** templates (`TemplateStore`). |
 | `DeploymentService`         | Build steps from a deployment template → run via `Deployer` → record the deployment.                          |
 | `ActivityService`           | Record and read the audit/activity feed.                                                                      |
 | `PluginService`             | Merge the marketplace catalog with local install/enable state.                                                |
@@ -87,7 +91,9 @@ Interfaces implemented by adapters:
 - `infrastructure/infrastructure-template.ts` — `INFRASTRUCTURE_TEMPLATES` (Web
   Server, AI Server, Database Host, Kubernetes Node) → full plans.
 - `infrastructure/infrastructure-plan.ts` — the declarative plan model +
-  `validatePlan`.
+  `validatePlan`. Compute resources carry `shape`, `image`, `ocpus`, `memoryGb`,
+  `bootVolumeGb`, `availabilityDomain`, `subnetName`, `sshPublicKey` and
+  `assignPublicIp`.
 - `plugins/plugin-catalog.ts` — `PLUGIN_CATALOG`.
 
 Tested: `Project`, `ProjectService`, `CredentialService`, `validatePlan`,
@@ -119,10 +125,13 @@ Prisma client + SQLite adapters. Consumed only by the main process.
   ambient `DATABASE_URL` is needed) + the `Db` type.
 - `schema-bootstrap.ts` — `ensureSchema(db)` creates the schema in a fresh
   database from DDL **derived from `schema.prisma`** (via `prisma migrate diff`,
-  inlined at build time). Single source of truth; see [Data Model](DATA-MODEL.md).
+  inlined at build time); `migrateSchema(db)` applies idempotent in-place fixes to
+  existing databases (e.g. repointing the `Project.providerId` foreign key at
+  `Credential`, with a file backup). Single source of truth; see
+  [Data Model](DATA-MODEL.md).
 - Repositories: `PrismaProjectRepository`, `PrismaCredentialRepository`,
-  `PrismaSettingsRepository`, `PrismaPlanStore`, `PrismaDeploymentRepository`,
-  `PrismaActivityRepository`, `PrismaPluginRepository`.
+  `PrismaSettingsRepository`, `PrismaPlanStore`, `PrismaTemplateStore`,
+  `PrismaDeploymentRepository`, `PrismaActivityRepository`, `PrismaPluginRepository`.
 - `mappers/project-mapper.ts` — domain ⇄ row mapping (JSON-in-TEXT).
 
 Runtime dep `@prisma/client` stays **external** in the bundle.
@@ -150,13 +159,19 @@ API**. Pulumi is fully encapsulated here; no other layer references it.
 
 - `pulumi-engine.ts` — `PulumiEngine` (inline programs, local file backend,
   encrypted stack secrets): `isAvailable`, `preview`, `apply`, `refresh`,
-  `destroy`, `outputs`, with a streamed event sink.
-- `build-program.ts` — `buildProgram(plan)` compiles an `InfrastructurePlan`
-  into a Pulumi program (unit-tested). _Extension point for real provider
-  resources._
+  `destroy`, `outputs`, with a streamed event sink. `preview`/`apply` receive the
+  provider credentials and pass them to the program.
+- `build-program.ts` — `buildProgram(plan, credentials?)` dispatches on
+  `providerKind`; without credentials it falls back to a metadata-only program
+  (offline validation / unit tests).
+- `oci-program.ts` — `buildOracleProgram(plan, creds)` translates the plan into
+  **real Oracle Cloud resources** via the Pulumi OCI provider: VCN + internet
+  gateway + route table per network, security lists from firewall rules, subnets,
+  compute Instances (live image lookup, flex-shape OCPU/RAM), and block Volumes.
 
-Runtime dep `@pulumi/pulumi` stays **external**; the Pulumi **CLI** is a runtime
-prerequisite.
+Runtime deps `@pulumi/pulumi` and `@pulumi/oci` stay **external**; the Pulumi
+**CLI** is a runtime prerequisite, and the OCI resource plugin is downloaded
+automatically on the first preview/apply.
 
 ---
 
@@ -178,7 +193,10 @@ Three processes plus a shared app-internal folder:
 
 - `src/main/` — app lifecycle, hardened `BrowserWindow`, the **composition root**
   (`container.ts`), the IPC handler registry and per-feature handlers, the
-  `SecretCipher` factory (`security/`), and the Pulumi engine factory (`infra/`).
+  `SecretCipher` factory (`security/`), the Pulumi engine factory (`infra/`), and
+  the **Pino application logger** (`logging/logger.ts`) that writes everything to
+  `userData/logs/cloudforge.log` (lifecycle, every IPC call — never payloads or
+  secrets — streamed engine output, crashes and forwarded renderer errors).
 - `src/preload/` — the single `contextBridge` surface (`window.cloudforge`) with
   typed `invoke` + `subscribe`.
 - `src/shared/ipc/` — the typed **IPC contract** (the app's source of truth for
