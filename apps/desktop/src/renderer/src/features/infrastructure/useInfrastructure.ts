@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type {
   ApplyResult,
   AvailabilityDomain,
+  CustomTemplateSummary,
   InfrastructurePlan,
   PreviewResult,
   Shape,
 } from '@cloudforge/core';
 import { invoke, subscribe } from '../../lib/ipc.js';
+
+const CUSTOM_TEMPLATES_KEY = ['infra', 'customTemplates'] as const;
 
 /** Load the persisted infrastructure plan for a project (null if none). */
 export function usePlan(projectId: string | null): UseQueryResult<InfrastructurePlan | null> {
@@ -83,6 +92,50 @@ export function useAvailabilityDomains(
     enabled: credentialId !== null && credentialId !== '',
     staleTime: 5 * 60 * 1000,
     retry: false,
+  });
+}
+
+/** List the user's saved (custom) infrastructure templates. */
+export function useCustomTemplates(): UseQueryResult<CustomTemplateSummary[]> {
+  return useQuery({
+    queryKey: CUSTOM_TEMPLATES_KEY,
+    queryFn: () => invoke('infra:customTemplates', undefined),
+  });
+}
+
+/** Save the current plan as a reusable custom template. */
+export function useSaveTemplate(): UseMutationResult<
+  CustomTemplateSummary,
+  Error,
+  { name: string; description?: string; plan: InfrastructurePlan }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => invoke('infra:saveTemplate', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOM_TEMPLATES_KEY }),
+  });
+}
+
+/** Delete a custom template. */
+export function useDeleteTemplate(): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invoke('infra:deleteTemplate', { id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOM_TEMPLATES_KEY }),
+  });
+}
+
+/** Apply a custom template's stored plan to a project. */
+export function useApplyCustomTemplate(): UseMutationResult<
+  InfrastructurePlan,
+  Error,
+  { projectId: string; templateId: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args) => invoke('infra:applyCustomTemplate', args),
+    onSuccess: (_data, variables) =>
+      queryClient.invalidateQueries({ queryKey: ['infra', 'plan', variables.projectId] }),
   });
 }
 

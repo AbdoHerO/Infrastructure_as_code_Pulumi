@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, Hammer, Loader2, Plus, Save, Trash } from 'lucide-react';
+import { BookmarkPlus, Eye, Hammer, Loader2, Plus, Save, Trash } from 'lucide-react';
 import {
   Button,
   Card,
@@ -23,6 +23,7 @@ import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
+import { SaveTemplateDialog } from './SaveTemplateDialog.js';
 import { ADDABLE_KINDS, createResource, uniqueName } from './resource-templates.js';
 import {
   useApply,
@@ -42,6 +43,7 @@ export function InfrastructurePage(): JSX.Element {
   const [resources, setResources] = useState<ResourceSpec[]>([]);
   const [config, setConfig] = useState<Record<string, string>>({});
   const [streamId] = useState(() => crypto.randomUUID());
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const credentialId = projects?.find((p) => p.id === projectId)?.providerId ?? null;
   const shapes = useShapes(credentialId);
@@ -172,6 +174,13 @@ export function InfrastructurePage(): JSX.Element {
         <Button variant="secondary" disabled={busy} onClick={() => void persist()}>
           <Save className="size-4" /> Save plan
         </Button>
+        <Button
+          variant="secondary"
+          disabled={busy || resources.length === 0}
+          onClick={() => setSavingTemplate(true)}
+        >
+          <BookmarkPlus className="size-4" /> Save as template
+        </Button>
         <div className="bg-border mx-1 h-6 w-px" />
         <Button variant="outline" disabled={busy} onClick={() => void runOperation('preview')}>
           {preview.isPending ? (
@@ -237,6 +246,12 @@ export function InfrastructurePage(): JSX.Element {
           <LogTerminal lines={lines} emptyMessage="Run a preview or apply to see engine output." />
         </div>
       </div>
+
+      <SaveTemplateDialog
+        open={savingTemplate}
+        onOpenChange={setSavingTemplate}
+        plan={currentPlan}
+      />
     </>
   );
 }

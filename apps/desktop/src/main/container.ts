@@ -28,6 +28,7 @@ import {
   PrismaPluginRepository,
   PrismaProjectRepository,
   PrismaSettingsRepository,
+  PrismaTemplateStore,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
@@ -130,6 +131,7 @@ export async function initContainer(): Promise<AppContainer> {
     createInfrastructureEngine(),
     new PrismaPlanStore(db),
     credentialResolver,
+    new PrismaTemplateStore(db),
   );
   const deploymentService = new DeploymentService(
     new SshDeployer(),

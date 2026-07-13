@@ -139,8 +139,18 @@ recheck them against [Configuration & Credentials](CONFIGURATION.md).
 1. **Infrastructure** → select your project.
 2. Either **Add resource** (network → subnet → firewall → compute → volume) and
    edit fields, **or** start from a blueprint in **Templates → Apply to project**.
-3. **Save plan**, then **Preview** (a dry run) and watch the live engine log.
-4. **Apply** to provision. **Destroy** tears it down.
+   Use **Add resource → Compute instance** as many times as you like to add more
+   instances.
+3. Customise each resource. For a compute instance you can set the **shape**
+   (populated live from your OCI account when a provider is linked), **OCPUs**
+   and **memory** (for flexible shapes), the **OS/image** (or a specific image
+   OCID), **boot-volume size**, **subnet**, **availability domain**, public-IP
+   assignment and the **SSH public key**. Network/subnet/instance references are
+   dropdowns of the resources already in your plan.
+4. **Save plan**, then **Preview** (a dry run) and watch the live engine log.
+5. **Apply** to provision. **Destroy** tears it down.
+6. To reuse a plan, click **Save as template** — it appears under **Templates →
+   Your templates**, where you can apply it to any project or delete it.
 
 Apply creates **real Oracle Cloud resources** — a VCN per network (with an
 internet gateway and route table for public subnets), security lists from your

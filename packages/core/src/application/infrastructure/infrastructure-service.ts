@@ -1,10 +1,12 @@
 import {
   err,
   type InfrastructureError,
+  newUuid,
   NotFoundError,
   ok,
   type PersistenceError,
   type Result,
+  ValidationError,
 } from '@cloudforge/shared';
 import type {
   ApplyResult,
@@ -15,6 +17,11 @@ import type {
 } from '../ports/infrastructure-engine.js';
 import type { PlanStore } from '../ports/plan-store.js';
 import type { ProviderCredentialResolver } from '../ports/provider-credential-resolver.js';
+import type {
+  CustomTemplate,
+  CustomTemplateSummary,
+  TemplateStore,
+} from '../ports/template-store.js';
 import { type InfrastructurePlan, type PlanIssue, validatePlan } from './infrastructure-plan.js';
 import {
   findInfrastructureTemplate,
@@ -33,6 +40,7 @@ export class InfrastructureService {
     private readonly engine: InfrastructureEngine,
     private readonly plans: PlanStore,
     private readonly credentials: ProviderCredentialResolver,
+    private readonly templates: TemplateStore,
   ) {}
 
   /** Whether the underlying IaC engine is available on this host. */
@@ -72,6 +80,50 @@ export class InfrastructureService {
     const saved = await this.plans.save(projectId, plan);
     if (!saved.ok) return saved;
     return ok(plan);
+  }
+
+  /** List user-saved (custom) infrastructure templates. */
+  listCustomTemplates(): Promise<Result<CustomTemplateSummary[], PersistenceError>> {
+    return this.templates.list();
+  }
+
+  /** Save the given plan as a reusable custom template. */
+  async saveCustomTemplate(input: {
+    name: string;
+    description?: string;
+    plan: InfrastructurePlan;
+  }): Promise<Result<CustomTemplateSummary, ValidationError | PersistenceError>> {
+    const name = input.name.trim();
+    if (name.length === 0) return err(new ValidationError('Template name is required'));
+    const template: CustomTemplate = {
+      id: newUuid(),
+      name,
+      description: input.description?.trim() ?? '',
+      plan: input.plan,
+    };
+    const saved = await this.templates.save(template);
+    if (!saved.ok) return saved;
+    return ok({ id: template.id, name: template.name, description: template.description });
+  }
+
+  /** Delete a custom template. */
+  deleteCustomTemplate(id: string): Promise<Result<void, PersistenceError>> {
+    return this.templates.delete(id);
+  }
+
+  /** Apply a custom template's stored plan to a project, persisting it. */
+  async applyCustomTemplate(
+    projectId: string,
+    templateId: string,
+  ): Promise<Result<InfrastructurePlan, PersistenceError | NotFoundError>> {
+    const template = await this.templates.get(templateId);
+    if (!template.ok) return template;
+    if (template.value === null) {
+      return err(new NotFoundError('Custom template not found', { context: { templateId } }));
+    }
+    const saved = await this.plans.save(projectId, template.value.plan);
+    if (!saved.ok) return saved;
+    return ok(template.value.plan);
   }
 
   async preview(

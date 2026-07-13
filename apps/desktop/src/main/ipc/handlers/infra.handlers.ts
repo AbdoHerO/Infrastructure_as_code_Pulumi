@@ -83,4 +83,26 @@ export function registerInfraHandlers(): void {
       }),
     ),
   );
+
+  registerHandler('infra:customTemplates', async () =>
+    orThrow(await getContainer().infrastructureService.listCustomTemplates()),
+  );
+
+  registerHandler('infra:saveTemplate', async ({ name, description, plan }) =>
+    orThrow(
+      await getContainer().infrastructureService.saveCustomTemplate({
+        name,
+        plan,
+        ...(description ? { description } : {}),
+      }),
+    ),
+  );
+
+  registerHandler('infra:deleteTemplate', async ({ id }) =>
+    orThrow(await getContainer().infrastructureService.deleteCustomTemplate(id)),
+  );
+
+  registerHandler('infra:applyCustomTemplate', async ({ projectId, templateId }) =>
+    orThrow(await getContainer().infrastructureService.applyCustomTemplate(projectId, templateId)),
+  );
 }

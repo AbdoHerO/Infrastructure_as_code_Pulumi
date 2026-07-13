@@ -8,6 +8,7 @@ import type {
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
+  CustomTemplateSummary,
   DeployEvent,
   DeploymentDto,
   DeploymentTemplateSummary,
@@ -99,6 +100,16 @@ export interface IpcContract {
   'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
   'infra:applyTemplate': {
     request: { projectId: string; templateId: string; sshPublicKey?: string; region?: string };
+    response: InfrastructurePlan;
+  };
+  'infra:customTemplates': { request: void; response: CustomTemplateSummary[] };
+  'infra:saveTemplate': {
+    request: { name: string; description?: string; plan: InfrastructurePlan };
+    response: CustomTemplateSummary;
+  };
+  'infra:deleteTemplate': { request: { id: string }; response: void };
+  'infra:applyCustomTemplate': {
+    request: { projectId: string; templateId: string };
     response: InfrastructurePlan;
   };
 
@@ -211,6 +222,10 @@ export const IPC_CHANNELS = [
   'activity:list',
   'infra:templates',
   'infra:applyTemplate',
+  'infra:customTemplates',
+  'infra:saveTemplate',
+  'infra:deleteTemplate',
+  'infra:applyCustomTemplate',
   'plugins:list',
   'plugins:install',
   'plugins:setEnabled',
