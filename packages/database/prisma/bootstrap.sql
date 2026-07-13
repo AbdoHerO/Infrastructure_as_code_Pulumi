@@ -13,7 +13,7 @@ CREATE TABLE "Project" (
     "notes" TEXT NOT NULL DEFAULT '',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "Project_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Provider" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    CONSTRAINT "Project_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable

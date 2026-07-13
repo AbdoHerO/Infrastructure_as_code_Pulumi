@@ -6,7 +6,7 @@
  * the Electron main process; never by the renderer.
  */
 export { createPrismaClient, PrismaClient, type Db } from './client.js';
-export { ensureSchema } from './schema-bootstrap.js';
+export { ensureSchema, migrateSchema, type MigrateSchemaHooks } from './schema-bootstrap.js';
 export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
 export { PrismaCredentialRepository } from './repositories/prisma-credential-repository.js';
 export { PrismaSettingsRepository } from './repositories/prisma-settings-repository.js';

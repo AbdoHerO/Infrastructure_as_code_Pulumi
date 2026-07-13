@@ -1,3 +1,4 @@
+import { copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { err, InfrastructureError, ok, type Result, unwrap } from '@cloudforge/shared';
@@ -19,6 +20,7 @@ import {
   createPrismaClient,
   type Db,
   ensureSchema,
+  migrateSchema,
   PrismaActivityRepository,
   PrismaCredentialRepository,
   PrismaDeploymentRepository,
@@ -64,6 +66,21 @@ export async function initContainer(): Promise<AppContainer> {
   const db: Db = createPrismaClient(toSqliteUrl(dbPath));
   await db.$connect();
   await ensureSchema(db);
+  // Repair older databases whose Project.providerId FK targeted the unused
+  // Provider table. Backs the file up before the (rare, one-time) table rebuild.
+  const migrated = await migrateSchema(db, {
+    onBeforeProjectRebuild: async () => {
+      const backup = `${dbPath}.bak-${Date.now()}`;
+      await copyFile(dbPath, backup);
+      log().warn({ event: 'schema.backup', backup }, 'Backed up database before migration');
+    },
+  });
+  if (migrated) {
+    log().info(
+      { event: 'schema.migrated' },
+      'Migrated Project.providerId foreign key to reference Credential',
+    );
+  }
   log().info({ event: 'db.ready', dbPath }, 'Database connected and schema ensured');
 
   // `unwrap` is safe here: a missing cipher is an unrecoverable startup fault.

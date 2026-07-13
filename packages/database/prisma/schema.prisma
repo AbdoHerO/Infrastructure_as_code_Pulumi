@@ -28,7 +28,9 @@ model Project {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  provider    Provider?    @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  // A project is linked to a stored Credential (the cloud-provider account used
+  // to provision it). `providerId` holds that Credential's id.
+  credential  Credential?  @relation(fields: [providerId], references: [id], onDelete: SetNull)
   deployments Deployment[]
   sshKeys     SshKey[]
   activities  Activity[]
@@ -46,7 +48,6 @@ model Provider {
   updatedAt   DateTime @updatedAt
 
   credentials Credential[]
-  projects    Project[]
 }
 
 model Credential {
@@ -60,6 +61,7 @@ model Credential {
   updatedAt  DateTime @updatedAt
 
   provider   Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  projects   Project[]
 }
 
 model Template {
