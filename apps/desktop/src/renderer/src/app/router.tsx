@@ -1,18 +1,11 @@
 import { createHashRouter } from 'react-router-dom';
-import {
-  Blocks,
-  Container,
-  FileCode2,
-  KeyRound,
-  RefreshCw,
-  Rocket,
-  ScrollText,
-} from 'lucide-react';
+import { Blocks, Container, FileCode2, KeyRound, RefreshCw, ScrollText } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
 import { InfrastructurePage } from '../features/infrastructure/InfrastructurePage.js';
+import { DeploymentsPage } from '../features/deployments/DeploymentsPage.js';
 import { ProvidersPage } from '../features/providers/ProvidersPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
@@ -31,17 +24,7 @@ export const router = createHashRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'infrastructure', element: <InfrastructurePage /> },
-      {
-        path: 'deployments',
-        element: (
-          <PlaceholderPage
-            title="Deployments"
-            description="Provision, configure and deploy applications end to end."
-            icon={Rocket}
-            phase="Phase 8"
-          />
-        ),
-      },
+      { path: 'deployments', element: <DeploymentsPage /> },
       {
         path: 'containers',
         element: (

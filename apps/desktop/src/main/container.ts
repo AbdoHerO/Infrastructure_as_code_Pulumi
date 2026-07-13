@@ -3,17 +3,20 @@ import { app } from 'electron';
 import { unwrap } from '@cloudforge/shared';
 import {
   CredentialService,
+  DeploymentService,
   InfrastructureService,
   ProjectService,
   ProviderConnectionService,
   SettingsService,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
+import { SshDeployer } from '@cloudforge/deployment';
 import {
   createPrismaClient,
   type Db,
   ensureSchema,
   PrismaCredentialRepository,
+  PrismaDeploymentRepository,
   PrismaPlanStore,
   PrismaProjectRepository,
   PrismaSettingsRepository,
@@ -32,6 +35,7 @@ export interface AppContainer {
   readonly settingsService: SettingsService;
   readonly providerService: ProviderConnectionService;
   readonly infrastructureService: InfrastructureService;
+  readonly deploymentService: DeploymentService;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -66,6 +70,10 @@ export async function initContainer(): Promise<AppContainer> {
     createInfrastructureEngine(),
     new PrismaPlanStore(db),
   );
+  const deploymentService = new DeploymentService(
+    new SshDeployer(),
+    new PrismaDeploymentRepository(db),
+  );
 
   container = {
     projectService,
@@ -73,6 +81,7 @@ export async function initContainer(): Promise<AppContainer> {
     settingsService,
     providerService,
     infrastructureService,
+    deploymentService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

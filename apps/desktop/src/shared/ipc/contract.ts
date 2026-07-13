@@ -7,6 +7,9 @@ import type {
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
+  DeployEvent,
+  DeploymentDto,
+  DeploymentTemplateSummary,
   EngineEvent,
   InfrastructurePlan,
   PlanIssue,
@@ -69,6 +72,24 @@ export interface IpcContract {
   'infra:apply': { request: { projectId: string; streamId: string }; response: ApplyResult };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
   'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
+
+  'deploy:templates': { request: void; response: DeploymentTemplateSummary[] };
+  'deploy:list': { request: { projectId: string }; response: DeploymentDto[] };
+  'deploy:count': { request: void; response: number };
+  'deploy:run': {
+    request: {
+      projectId: string;
+      templateId: string;
+      host: string;
+      port: number;
+      username: string;
+      sshCredentialId: string;
+      appImage?: string;
+      domain?: string;
+      streamId: string;
+    };
+    response: DeploymentDto;
+  };
 }
 
 /**
@@ -77,13 +98,17 @@ export interface IpcContract {
  */
 export interface IpcEventContract {
   'engine:log': { streamId: string; event: EngineEvent };
+  'deploy:log': { streamId: string; event: DeployEvent };
 }
 
 export type IpcEventChannel = keyof IpcEventContract;
 export type IpcEventPayload<C extends IpcEventChannel> = IpcEventContract[C];
 
 /** Runtime-iterable list of event channels (allow-list for the bridge). */
-export const IPC_EVENT_CHANNELS = ['engine:log'] as const satisfies readonly IpcEventChannel[];
+export const IPC_EVENT_CHANNELS = [
+  'engine:log',
+  'deploy:log',
+] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */
 export type IpcChannel = keyof IpcContract;
@@ -145,4 +170,8 @@ export const IPC_CHANNELS = [
   'infra:apply',
   'infra:destroy',
   'infra:outputs',
+  'deploy:templates',
+  'deploy:list',
+  'deploy:count',
+  'deploy:run',
 ] as const satisfies readonly IpcChannel[];

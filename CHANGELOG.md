@@ -3,6 +3,29 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 8] — Deployment Pipeline
+
+### Added
+
+- **Deployment templates** (core): a registry of reproducible, provider-agnostic
+  templates (Docker Host, Nginx, Node, Next.js, WordPress, Ollama) that emit
+  ordered, idempotent shell steps (Docker install, UFW/fail2ban hardening, app
+  launch). Pure step builders, unit-tested.
+- **`Deployer` port** + **`DeploymentService`** coordinating: build steps →
+  execute on the host → record the deployment. `DeploymentRepository` port +
+  `PrismaDeploymentRepository`. SSH private keys now live in the Credential
+  Manager via a new `ssh` credential kind.
+- **`@cloudforge/deployment`** — `SshDeployer` (via `ssh2`) runs steps
+  sequentially over SSH, streaming stdout/stderr per step and stopping on the
+  first failure.
+- **Deployments** module: pick a project, template, host and SSH key; run with a
+  live streamed log terminal (`deploy:log` events); deployment history table.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (43) and `pnpm build` all green;
+  `ssh2` stays external in the main bundle.
+
 ## [Phase 7] — Infrastructure Module
 
 ### Added

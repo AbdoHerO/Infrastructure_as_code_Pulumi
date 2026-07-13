@@ -9,6 +9,7 @@ export const CREDENTIAL_KINDS = [
   'anthropic',
   'dockerhub',
   'gitlab',
+  'ssh',
 ] as const;
 
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
@@ -116,6 +117,14 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
     kind: 'gitlab',
     label: 'GitLab',
     fields: [field('token', 'Access Token', { secret: true })],
+  },
+  ssh: {
+    kind: 'ssh',
+    label: 'SSH Key',
+    fields: [
+      field('privateKey', 'Private Key (PEM)', { secret: true, multiline: true }),
+      field('passphrase', 'Passphrase', { secret: true, required: false }),
+    ],
   },
 };
 
