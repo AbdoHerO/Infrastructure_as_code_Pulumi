@@ -2,10 +2,15 @@ import type { SerializedAppError } from '@cloudforge/shared';
 import type {
   AppSettings,
   AvailabilityDomain,
+  ApplyResult,
   ConnectionTestResult,
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
+  EngineEvent,
+  InfrastructurePlan,
+  PlanIssue,
+  PreviewResult,
   ProjectDto,
   Region,
   RevealedCredentialDto,
@@ -54,7 +59,31 @@ export interface IpcContract {
   };
 
   'infra:engineStatus': { request: void; response: { available: boolean } };
+  'infra:getPlan': { request: { projectId: string }; response: InfrastructurePlan | null };
+  'infra:savePlan': { request: { projectId: string; plan: InfrastructurePlan }; response: void };
+  'infra:validate': { request: { plan: InfrastructurePlan }; response: PlanIssue[] };
+  'infra:preview': {
+    request: { projectId: string; streamId: string };
+    response: PreviewResult;
+  };
+  'infra:apply': { request: { projectId: string; streamId: string }; response: ApplyResult };
+  'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
+  'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
 }
+
+/**
+ * Fire-and-forget events pushed from the main process to the renderer (as
+ * opposed to request/response `invoke`). Correlated by `streamId`.
+ */
+export interface IpcEventContract {
+  'engine:log': { streamId: string; event: EngineEvent };
+}
+
+export type IpcEventChannel = keyof IpcEventContract;
+export type IpcEventPayload<C extends IpcEventChannel> = IpcEventContract[C];
+
+/** Runtime-iterable list of event channels (allow-list for the bridge). */
+export const IPC_EVENT_CHANNELS = ['engine:log'] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */
 export type IpcChannel = keyof IpcContract;
@@ -109,4 +138,11 @@ export const IPC_CHANNELS = [
   'providers:listShapes',
   'providers:listAvailabilityDomains',
   'infra:engineStatus',
+  'infra:getPlan',
+  'infra:savePlan',
+  'infra:validate',
+  'infra:preview',
+  'infra:apply',
+  'infra:destroy',
+  'infra:outputs',
 ] as const satisfies readonly IpcChannel[];

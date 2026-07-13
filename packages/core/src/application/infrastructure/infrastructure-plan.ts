@@ -39,7 +39,7 @@ export interface SubnetResource extends BaseResource {
 
 export interface FirewallRule {
   readonly protocol: 'tcp' | 'udp' | 'icmp' | 'all';
-  readonly port?: number;
+  readonly port?: number | undefined;
   readonly source: string;
   readonly direction: 'ingress' | 'egress';
 }

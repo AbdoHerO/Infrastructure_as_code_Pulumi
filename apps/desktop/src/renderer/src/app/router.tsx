@@ -7,12 +7,12 @@ import {
   RefreshCw,
   Rocket,
   ScrollText,
-  Server,
 } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
+import { InfrastructurePage } from '../features/infrastructure/InfrastructurePage.js';
 import { ProvidersPage } from '../features/providers/ProvidersPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
@@ -30,17 +30,7 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'projects', element: <ProjectsPage /> },
-      {
-        path: 'infrastructure',
-        element: (
-          <PlaceholderPage
-            title="Infrastructure"
-            description="Virtual machines, networks, firewalls, volumes and more."
-            icon={Server}
-            phase="Phase 7"
-          />
-        ),
-      },
+      { path: 'infrastructure', element: <InfrastructurePage /> },
       {
         path: 'deployments',
         element: (

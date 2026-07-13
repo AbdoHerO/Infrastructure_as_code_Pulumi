@@ -10,4 +10,5 @@ export { ensureSchema } from './schema-bootstrap.js';
 export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
 export { PrismaCredentialRepository } from './repositories/prisma-credential-repository.js';
 export { PrismaSettingsRepository } from './repositories/prisma-settings-repository.js';
+export { PrismaPlanStore } from './repositories/prisma-plan-store.js';
 export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

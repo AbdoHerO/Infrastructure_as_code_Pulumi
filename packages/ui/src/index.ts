@@ -23,3 +23,4 @@ export * from './components/skeleton.js';
 export * from './components/table.js';
 export * from './components/toast.js';
 export * from './components/command.js';
+export * from './components/log-terminal.js';

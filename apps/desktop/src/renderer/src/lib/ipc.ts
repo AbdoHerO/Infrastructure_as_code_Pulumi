@@ -1,5 +1,11 @@
 import { err, ok, type Result, type SerializedAppError } from '@cloudforge/shared';
-import type { IpcChannel, IpcRequest, IpcResponse } from '@shared/ipc/contract.js';
+import type {
+  IpcChannel,
+  IpcEventChannel,
+  IpcEventPayload,
+  IpcRequest,
+  IpcResponse,
+} from '@shared/ipc/contract.js';
 
 /** Error thrown by {@link invoke} carrying the serialized main-process error. */
 export class IpcCallError extends Error {
@@ -35,4 +41,12 @@ export async function tryInvoke<C extends IpcChannel>(
 ): Promise<Result<IpcResponse<C>, SerializedAppError>> {
   const result = await window.cloudforge.invoke(channel, payload);
   return result.ok ? ok(result.value) : err(result.error);
+}
+
+/** Subscribe to a main→renderer event channel; returns an unsubscribe function. */
+export function subscribe<C extends IpcEventChannel>(
+  channel: C,
+  listener: (payload: IpcEventPayload<C>) => void,
+): () => void {
+  return window.cloudforge.subscribe(channel, listener);
 }

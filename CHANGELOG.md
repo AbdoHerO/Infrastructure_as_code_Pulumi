@@ -3,6 +3,27 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 7] — Infrastructure Module
+
+### Added
+
+- **Typed IPC event streaming** (main → renderer): an allow-listed event channel
+  in the contract, a `subscribe` method on the secure bridge, and an `emitEvent`
+  broadcaster — used to stream live engine output (and reused by later phases).
+- **`InfrastructureService`** (core) coordinating a project's plan: persistence
+  via a new `PlanStore` port (`PrismaPlanStore`, keyed per project), validation,
+  and preview / apply / destroy / outputs against the engine with a streamed
+  event sink. Infra IPC channels + handlers derive a stable stack reference per
+  project.
+- Renderer **Infrastructure** module: project selector, a schema-driven plan
+  editor (add/remove/edit networks, subnets, firewalls, compute, volumes),
+  client-side plan validation, and **Preview / Apply / Destroy** actions with a
+  live terminal-style log viewer (new reusable `LogTerminal` component).
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (41) and `pnpm build` all green.
+
 ## [Phase 6] — Pulumi Infrastructure Engine
 
 ### Added
