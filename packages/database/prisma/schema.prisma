@@ -1,0 +1,161 @@
+// CloudForge persistence schema (SQLite via Prisma).
+//
+// JSON-shaped values (tags, variables, outputs, metadata) are stored as TEXT
+// containing serialized JSON, because the SQLite connector has no native JSON
+// column type. Mapping happens in the repository layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id
+  name        String
+  description String   @default("")
+  environment String
+  region      String
+  providerId  String?
+  templateId  String?
+  status      String   @default("draft")
+  tags        String   @default("[]")
+  variables   String   @default("{}")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  provider    Provider?    @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  deployments Deployment[]
+  sshKeys     SshKey[]
+  activities  Activity[]
+
+  @@index([updatedAt])
+}
+
+model Provider {
+  id          String   @id
+  kind        String // 'oracle' | 'aws' | 'azure' | ...
+  name        String
+  status      String   @default("disconnected")
+  metadata    String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  credentials Credential[]
+  projects    Project[]
+}
+
+model Credential {
+  id         String   @id
+  providerId String?
+  kind       String // logical credential type, e.g. 'oracle' | 'aws' | 'github'
+  name       String
+  ciphertext String // encrypted blob (base64) — never plaintext
+  metadata   String   @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+}
+
+model Template {
+  id          String   @id
+  kind        String // 'infrastructure' | 'deployment'
+  name        String
+  description String   @default("")
+  definition  String   @default("{}")
+  builtIn     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Deployment {
+  id          String    @id
+  projectId   String
+  status      String    @default("pending")
+  strategy    String    @default("")
+  outputs     String    @default("{}")
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs        LogEntry[]
+
+  @@index([projectId])
+}
+
+model LogEntry {
+  id           String   @id
+  deploymentId String?
+  projectId    String?
+  level        String   @default("info")
+  source       String   @default("app")
+  message      String
+  metadata     String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@index([deploymentId])
+  @@index([createdAt])
+}
+
+model SshKey {
+  id          String   @id
+  projectId   String?
+  name        String
+  publicKey   String
+  ciphertext  String? // encrypted private key, optional
+  fingerprint String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model Secret {
+  id         String   @id
+  scope      String   @default("global") // 'global' | 'project:<id>'
+  name       String
+  ciphertext String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([scope, name])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Plugin {
+  id        String   @id
+  name      String
+  version   String
+  kind      String // 'provider' | 'template' | 'widget' | 'theme' | ...
+  enabled   Boolean  @default(true)
+  manifest  String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Activity {
+  id        String   @id
+  projectId String?
+  type      String
+  message   String
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}

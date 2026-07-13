@@ -3,6 +3,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { APP } from '@cloudforge/shared';
 import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc/index.js';
+import { initContainer } from './container.js';
 
 /**
  * Apply a strict Content-Security-Policy to every response. In production the
@@ -27,7 +28,7 @@ function applyContentSecurityPolicy(): void {
   });
 }
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   electronApp.setAppUserModelId(APP.id);
 
   // Harden: refuse creation of additional web contents from untrusted sources.
@@ -40,6 +41,9 @@ function bootstrap(): void {
   });
 
   applyContentSecurityPolicy();
+
+  // Initialise persistence and services before any IPC handler can be invoked.
+  await initContainer();
   registerIpcHandlers();
   createMainWindow();
 

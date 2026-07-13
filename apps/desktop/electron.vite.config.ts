@@ -8,12 +8,21 @@ import react from '@vitejs/plugin-react';
  */
 const workspaceAliases = {
   '@cloudforge/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
+  '@cloudforge/core': resolve(__dirname, '../../packages/core/src/index.ts'),
+  '@cloudforge/database': resolve(__dirname, '../../packages/database/src/index.ts'),
   '@cloudforge/ui': resolve(__dirname, '../../packages/ui/src/index.ts'),
 };
 
+/**
+ * Workspace packages must be BUNDLED into the main/preload output (they ship as
+ * TypeScript source and cannot be `require`d at runtime). Everything else —
+ * notably `@prisma/client` and its native engine — stays external.
+ */
+const WORKSPACE_PACKAGES = Object.keys(workspaceAliases);
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     resolve: {
       alias: {
         ...workspaceAliases,
@@ -28,7 +37,7 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     resolve: {
       alias: {
         ...workspaceAliases,

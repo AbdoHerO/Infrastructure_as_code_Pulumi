@@ -1,7 +1,6 @@
 import { createHashRouter } from 'react-router-dom';
 import {
   Blocks,
-  Boxes,
   Cloud,
   Container,
   FileCode2,
@@ -16,6 +15,7 @@ import {
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
+import { ProjectsPage } from '../features/projects/ProjectsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
 
 /**
@@ -29,17 +29,7 @@ export const router = createHashRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <DashboardPage /> },
-      {
-        path: 'projects',
-        element: (
-          <PlaceholderPage
-            title="Projects"
-            description="Each project represents one infrastructure."
-            icon={Boxes}
-            phase="Phase 2"
-          />
-        ),
-      },
+      { path: 'projects', element: <ProjectsPage /> },
       {
         path: 'infrastructure',
         element: (

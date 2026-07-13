@@ -1,0 +1,152 @@
+-- CreateTable
+CREATE TABLE "Project" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL DEFAULT '',
+    "environment" TEXT NOT NULL,
+    "region" TEXT NOT NULL,
+    "providerId" TEXT,
+    "templateId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "tags" TEXT NOT NULL DEFAULT '[]',
+    "variables" TEXT NOT NULL DEFAULT '{}',
+    "notes" TEXT NOT NULL DEFAULT '',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Project_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Provider" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Provider" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "kind" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'disconnected',
+    "metadata" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Credential" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "providerId" TEXT,
+    "kind" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "ciphertext" TEXT NOT NULL,
+    "metadata" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Credential_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Provider" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Template" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "kind" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL DEFAULT '',
+    "definition" TEXT NOT NULL DEFAULT '{}',
+    "builtIn" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Deployment" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "strategy" TEXT NOT NULL DEFAULT '',
+    "outputs" TEXT NOT NULL DEFAULT '{}',
+    "startedAt" DATETIME,
+    "finishedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Deployment_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "LogEntry" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "deploymentId" TEXT,
+    "projectId" TEXT,
+    "level" TEXT NOT NULL DEFAULT 'info',
+    "source" TEXT NOT NULL DEFAULT 'app',
+    "message" TEXT NOT NULL,
+    "metadata" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "LogEntry_deploymentId_fkey" FOREIGN KEY ("deploymentId") REFERENCES "Deployment" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "SshKey" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT,
+    "name" TEXT NOT NULL,
+    "publicKey" TEXT NOT NULL,
+    "ciphertext" TEXT,
+    "fingerprint" TEXT NOT NULL DEFAULT '',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "SshKey_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "Secret" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "scope" TEXT NOT NULL DEFAULT 'global',
+    "name" TEXT NOT NULL,
+    "ciphertext" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Setting" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "value" TEXT NOT NULL,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Plugin" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "version" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "manifest" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Activity" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT,
+    "type" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "metadata" TEXT NOT NULL DEFAULT '{}',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Activity_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE INDEX "Project_updatedAt_idx" ON "Project"("updatedAt");
+
+-- CreateIndex
+CREATE INDEX "Deployment_projectId_idx" ON "Deployment"("projectId");
+
+-- CreateIndex
+CREATE INDEX "LogEntry_deploymentId_idx" ON "LogEntry"("deploymentId");
+
+-- CreateIndex
+CREATE INDEX "LogEntry_createdAt_idx" ON "LogEntry"("createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Secret_scope_name_key" ON "Secret"("scope", "name");
+
+-- CreateIndex
+CREATE INDEX "Activity_createdAt_idx" ON "Activity"("createdAt");
+

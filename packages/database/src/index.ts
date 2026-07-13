@@ -1,0 +1,11 @@
+/**
+ * `@cloudforge/database` — the persistence Infrastructure layer.
+ *
+ * Provides the Prisma client factory, runtime schema bootstrap and concrete
+ * repository implementations of the Application-layer ports. Consumed only by
+ * the Electron main process; never by the renderer.
+ */
+export { createPrismaClient, PrismaClient, type Db } from './client.js';
+export { ensureSchema } from './schema-bootstrap.js';
+export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
+export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

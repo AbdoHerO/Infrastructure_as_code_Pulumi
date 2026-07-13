@@ -1,4 +1,5 @@
 import type { SerializedAppError } from '@cloudforge/shared';
+import type { CreateProjectInput, ProjectDto, UpdateProjectInput } from '@cloudforge/core';
 
 /**
  * The typed IPC contract shared by the main, preload and renderer processes.
@@ -10,6 +11,16 @@ import type { SerializedAppError } from '@cloudforge/shared';
 export interface IpcContract {
   'app:getInfo': { request: void; response: AppInfo };
   'app:ping': { request: string; response: string };
+
+  'projects:list': { request: void; response: ProjectDto[] };
+  'projects:get': { request: { id: string }; response: ProjectDto };
+  'projects:create': { request: CreateProjectInput; response: ProjectDto };
+  'projects:update': {
+    request: { id: string; changes: UpdateProjectInput };
+    response: ProjectDto;
+  };
+  'projects:delete': { request: { id: string }; response: void };
+  'projects:count': { request: void; response: number };
 }
 
 /** Union of all valid IPC channel names. */
@@ -44,4 +55,13 @@ export interface AppInfo {
 }
 
 /** All channel names as a runtime-iterable list (kept in sync with the contract). */
-export const IPC_CHANNELS = ['app:getInfo', 'app:ping'] as const satisfies readonly IpcChannel[];
+export const IPC_CHANNELS = [
+  'app:getInfo',
+  'app:ping',
+  'projects:list',
+  'projects:get',
+  'projects:create',
+  'projects:update',
+  'projects:delete',
+  'projects:count',
+] as const satisfies readonly IpcChannel[];

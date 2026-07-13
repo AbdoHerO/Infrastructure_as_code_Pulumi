@@ -2,26 +2,34 @@ import { Boxes, Cloud, Rocket, Server } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useProjects } from '../projects/useProjects.js';
 import { StatCard } from './StatCard.js';
 import { useAppInfo } from './useAppInfo.js';
-
-const STATS = [
-  { label: 'Projects', value: 0, hint: 'No projects yet', icon: Boxes },
-  { label: 'Deployments', value: 0, hint: 'Nothing deployed', icon: Rocket },
-  { label: 'Providers', value: 0, hint: 'Connect a provider', icon: Cloud },
-  { label: 'Infrastructure', value: 0, hint: 'No resources', icon: Server },
-] as const;
 
 /** The application landing dashboard: summary metrics, status and system info. */
 export function DashboardPage(): JSX.Element {
   const { data: info } = useAppInfo();
+  const { data: projects } = useProjects();
+  const projectCount = projects?.length ?? 0;
+
+  const stats = [
+    {
+      label: 'Projects',
+      value: projectCount,
+      hint: projectCount === 0 ? 'No projects yet' : 'Managed infrastructures',
+      icon: Boxes,
+    },
+    { label: 'Deployments', value: 0, hint: 'Nothing deployed', icon: Rocket },
+    { label: 'Providers', value: 0, hint: 'Connect a provider', icon: Cloud },
+    { label: 'Infrastructure', value: 0, hint: 'No resources', icon: Server },
+  ];
 
   return (
     <>
       <PageHeader title="Dashboard" description={`${APP.subtitle} — ${APP.tagline.join(' ')}`} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {STATS.map((stat, index) => (
+        {stats.map((stat, index) => (
           <StatCard key={stat.label} index={index} {...stat} />
         ))}
       </div>

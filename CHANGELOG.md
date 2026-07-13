@@ -3,6 +3,41 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 2] — Domain Model & Persistence
+
+### Added
+
+- **`@cloudforge/core`** — the Domain and Application layers:
+  - `Project` aggregate root with value objects (`Environment`, `ProjectStatus`),
+    validating factory/update methods returning `Result`, and a base `Entity`.
+  - `ProjectRepository` port and the `ProjectService` use-cases
+    (create/list/get/update/remove/count) returning DTOs and typed errors.
+  - 12 unit tests (domain invariants + service behaviour with an in-memory repo).
+- **`@cloudforge/database`** — the persistence Infrastructure layer:
+  - Full Prisma schema on SQLite for all 11 tables (Project, Provider,
+    Credential, Template, Deployment, LogEntry, SshKey, Secret, Setting, Plugin,
+    Activity).
+  - Runtime-configurable Prisma client factory and a `schema.prisma`-derived
+    bootstrap that creates the schema in a fresh database.
+  - `PrismaProjectRepository` and domain⇄row mappers.
+- **Desktop wiring** — a main-process composition root (`container.ts`) that
+  initialises the database and services; project IPC channels + handlers; and a
+  real **Projects** module in the renderer (list, create via React Hook Form +
+  Zod, delete) driven end-to-end through the typed IPC contract. The Dashboard
+  now shows the live project count.
+- Design-system additions: `Input`, `Label`, `Textarea`, `Select`, `Badge`.
+
+### Fixed
+
+- Workspace packages are now **bundled** into the Electron main/preload output
+  (they ship as TypeScript source and cannot be `require`d at runtime);
+  `@prisma/client` remains external.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (30 passing) and `pnpm build`
+  (with all 11 tables' DDL inlined into the main bundle) all green.
+
 ## [Phase 1] — Foundation & Running Shell
 
 ### Added
