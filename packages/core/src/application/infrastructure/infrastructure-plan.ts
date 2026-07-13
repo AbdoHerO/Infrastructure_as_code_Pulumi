@@ -52,12 +52,21 @@ export interface FirewallResource extends BaseResource {
 
 export interface ComputeResource extends BaseResource {
   readonly kind: 'compute';
+  /** OCI compute shape, e.g. `VM.Standard.E4.Flex` or `VM.Standard.E2.1.Micro`. */
   readonly shape: string;
+  /** Either an OS identifier (`ubuntu-22.04`) resolved live, or an image OCID. */
   readonly image: string;
   readonly subnetName: string;
   readonly sshPublicKey: string;
   readonly assignPublicIp: boolean;
+  /** vCPUs for flexible shapes (ignored by fixed shapes). Defaults to 1. */
+  readonly ocpus?: number;
+  /** Memory in GB for flexible shapes (ignored by fixed shapes). Defaults to 6. */
+  readonly memoryGb?: number;
+  /** Boot volume size in GB. Omit to use the image default (~47 GB). */
   readonly bootVolumeGb?: number;
+  /** Availability domain name. Omit to use the compartment's first AD. */
+  readonly availabilityDomain?: string;
 }
 
 export interface VolumeResource extends BaseResource {

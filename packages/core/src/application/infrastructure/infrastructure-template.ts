@@ -41,6 +41,9 @@ function compute(shape: string, ctx: InfraTemplateContext): ResourceSpec {
     subnetName: 'subnet',
     sshPublicKey: ctx.sshPublicKey ?? '',
     assignPublicIp: true,
+    ocpus: 1,
+    memoryGb: 8,
+    bootVolumeGb: 50,
   };
 }
 function firewall(ports: readonly number[]): ResourceSpec {

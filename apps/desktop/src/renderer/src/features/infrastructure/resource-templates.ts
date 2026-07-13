@@ -21,14 +21,18 @@ export function createResource(kind: ResourceKind, name: string): ResourceSpec {
       return {
         kind,
         name,
-        shape: 'VM.Standard.E4.Flex',
+        shape: 'VM.Standard.E2.1.Micro',
         image: 'ubuntu-22.04',
         subnetName: 'subnet',
         sshPublicKey: '',
         assignPublicIp: true,
+        ocpus: 1,
+        memoryGb: 1,
+        bootVolumeGb: 50,
+        availabilityDomain: '',
       };
     case 'volume':
-      return { kind, name, sizeGb: 50 };
+      return { kind, name, sizeGb: 50, attachTo: '' };
     default:
       return { kind: 'network', name, cidrBlock: '10.0.0.0/16' };
   }

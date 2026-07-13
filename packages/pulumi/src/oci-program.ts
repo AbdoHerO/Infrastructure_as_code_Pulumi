@@ -174,30 +174,34 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
       const subnet = subnets.get(spec.subnetName);
       if (!subnet) continue;
 
-      const image = imageQuery(spec.image);
-      const imageId = oci.core
-        .getImages(
-          {
-            compartmentId,
-            operatingSystem: image.operatingSystem,
-            operatingSystemVersion: image.version,
-            shape: spec.shape,
-            sortBy: 'TIMECREATED',
-            sortOrder: 'DESC',
-          },
-          invokeOpts,
-        )
-        .then((result) => result.images[0]?.id ?? '');
+      // Accept either a specific image OCID or an OS identifier resolved live
+      // against the account (newest image matching the OS + shape architecture).
+      const imageId = spec.image.trim().startsWith('ocid1.image')
+        ? spec.image.trim()
+        : oci.core
+            .getImages(
+              {
+                compartmentId,
+                ...imageQuery(spec.image),
+                shape: spec.shape,
+                sortBy: 'TIMECREATED',
+                sortOrder: 'DESC',
+              },
+              invokeOpts,
+            )
+            .then((result) => result.images[0]?.id ?? '');
 
       const instance = new oci.core.Instance(
         spec.name,
         {
           compartmentId,
-          availabilityDomain,
+          availabilityDomain: spec.availabilityDomain?.trim()
+            ? spec.availabilityDomain.trim()
+            : availabilityDomain,
           shape: spec.shape,
           // Flexible shapes require an explicit OCPU/memory allocation.
           ...(spec.shape.includes('Flex')
-            ? { shapeConfig: { ocpus: 1, memoryInGbs: 6 } }
+            ? { shapeConfig: { ocpus: spec.ocpus ?? 1, memoryInGbs: spec.memoryGb ?? 6 } }
             : {}),
           sourceDetails: {
             sourceType: 'image',
@@ -283,12 +287,12 @@ function portOptions(rule: FirewallRule): {
 }
 
 /** Map a plan image identifier (e.g. `ubuntu-22.04`) to an OCI image search. */
-function imageQuery(image: string): { operatingSystem: string; version: string } {
+function imageQuery(image: string): { operatingSystem: string; operatingSystemVersion: string } {
   const normalized = image.trim().toLowerCase();
   const match = /^([a-z-]+?)-?(\d+(?:\.\d+)?)$/.exec(normalized);
-  const version = match?.[2] ?? '22.04';
+  const operatingSystemVersion = match?.[2] ?? '22.04';
   const family = match?.[1] ?? 'ubuntu';
-  if (family.includes('oracle')) return { operatingSystem: 'Oracle Linux', version };
-  if (family.includes('centos')) return { operatingSystem: 'CentOS', version };
-  return { operatingSystem: 'Canonical Ubuntu', version };
+  if (family.includes('oracle')) return { operatingSystem: 'Oracle Linux', operatingSystemVersion };
+  if (family.includes('centos')) return { operatingSystem: 'CentOS', operatingSystemVersion };
+  return { operatingSystem: 'Canonical Ubuntu', operatingSystemVersion };
 }
