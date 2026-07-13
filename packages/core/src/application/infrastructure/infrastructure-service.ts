@@ -1,6 +1,6 @@
 import {
   err,
-  type InfrastructureError,
+  InfrastructureError,
   newUuid,
   NotFoundError,
   ok,
@@ -12,6 +12,7 @@ import type {
   ApplyResult,
   EngineEventSink,
   InfrastructureEngine,
+  ManagedStackSummary,
   PreviewResult,
   StackReference,
 } from '../ports/infrastructure-engine.js';
@@ -46,6 +47,31 @@ export class InfrastructureService {
   /** Whether the underlying IaC engine is available on this host. */
   isEngineAvailable(): Promise<Result<boolean, InfrastructureError>> {
     return this.engine.isAvailable();
+  }
+
+  /** All stacks tracked by CloudForge's private Pulumi backend. */
+  listManagedStacks(): Promise<Result<ManagedStackSummary[], InfrastructureError>> {
+    return this.engine.listManagedStacks();
+  }
+
+  /** Destroy a discovered stack, including one whose database project is gone. */
+  async destroyManagedStack(
+    ref: StackReference,
+    onEvent?: EngineEventSink,
+  ): Promise<Result<void, InfrastructureError>> {
+    const stacks = await this.engine.listManagedStacks();
+    if (!stacks.ok) return stacks;
+    const exists = stacks.value.some(
+      (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
+    );
+    if (!exists) {
+      return err(
+        new InfrastructureError('Managed stack not found', {
+          context: { project: ref.project, stack: ref.stack },
+        }),
+      );
+    }
+    return this.engine.destroy(ref, onEvent);
   }
 
   getPlan(projectId: string): Promise<Result<InfrastructurePlan | null, PersistenceError>> {

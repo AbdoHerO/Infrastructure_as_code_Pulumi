@@ -3,15 +3,12 @@ import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
+import { projectStackReference } from '../../infra/stack-reference.js';
 
 /** Derive a stable Pulumi stack reference from a project. */
 async function stackRef(projectId: string): Promise<StackReference> {
   const project = orThrow(await getContainer().projectService.get(projectId));
-  const slug = project.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-  return { project: `${slug || 'project'}-${projectId.slice(0, 8)}`, stack: project.environment };
+  return projectStackReference(project);
 }
 
 /** Forward engine output to the renderer as `engine:log` events. */
@@ -71,6 +68,18 @@ export function registerInfraHandlers(): void {
   registerHandler('infra:outputs', async ({ projectId }) => {
     const ref = await stackRef(projectId);
     return orThrow(await getContainer().infrastructureService.outputs(ref));
+  });
+
+  registerHandler('infra:managedStacks', async () =>
+    orThrow(await getContainer().infrastructureService.listManagedStacks()),
+  );
+
+  registerHandler('infra:destroyStack', async ({ ref, streamId }) => {
+    orThrow(await getContainer().infrastructureService.destroyManagedStack(ref, sink(streamId)));
+    getContainer().activityService.recordSafe({
+      type: 'infrastructure.destroyed',
+      message: `Destroyed managed stack ${ref.project}/${ref.stack}`,
+    });
   });
 
   registerHandler('infra:templates', () => getContainer().infrastructureService.listTemplates());

@@ -189,7 +189,15 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
               },
               invokeOpts,
             )
-            .then((result) => result.images[0]?.id ?? '');
+            .then((result) => {
+              const match = result.images[0]?.id;
+              if (!match) {
+                throw new Error(
+                  `No OCI image matching "${spec.image}" and shape "${spec.shape}" was found in ${creds.region}`,
+                );
+              }
+              return match;
+            });
 
       const instance = new oci.core.Instance(
         spec.name,
@@ -217,8 +225,9 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
             ? { metadata: { ssh_authorized_keys: spec.sshPublicKey } }
             : {}),
           displayName: spec.name,
+          preserveBootVolume: false,
         },
-        opts,
+        { ...opts, replaceOnChanges: ['sourceDetails', 'metadata'] },
       );
       instances.set(spec.name, instance);
       outputs[`${spec.name}PublicIp`] = instance.publicIp;

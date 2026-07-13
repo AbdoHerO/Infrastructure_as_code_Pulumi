@@ -5,6 +5,7 @@ import type {
   AvailabilityDomain,
   ApplyResult,
   ConnectionTestResult,
+  CloudInstance,
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
@@ -15,6 +16,7 @@ import type {
   EngineEvent,
   InfrastructurePlan,
   InfrastructureTemplateSummary,
+  ManagedStackSummary,
   PlanIssue,
   PluginListItem,
   PreviewResult,
@@ -64,6 +66,11 @@ export interface IpcContract {
     request: { credentialId: string };
     response: AvailabilityDomain[];
   };
+  'providers:listInstances': { request: { credentialId: string }; response: CloudInstance[] };
+  'providers:terminateInstance': {
+    request: { credentialId: string; instanceId: string };
+    response: void;
+  };
 
   'infra:engineStatus': { request: void; response: { available: boolean } };
   'infra:getPlan': { request: { projectId: string }; response: InfrastructurePlan | null };
@@ -76,6 +83,11 @@ export interface IpcContract {
   'infra:apply': { request: { projectId: string; streamId: string }; response: ApplyResult };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
   'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
+  'infra:managedStacks': { request: void; response: ManagedStackSummary[] };
+  'infra:destroyStack': {
+    request: { ref: { project: string; stack: string }; streamId: string };
+    response: void;
+  };
 
   'deploy:templates': { request: void; response: DeploymentTemplateSummary[] };
   'deploy:list': { request: { projectId: string }; response: DeploymentDto[] };
@@ -207,6 +219,8 @@ export const IPC_CHANNELS = [
   'providers:listRegions',
   'providers:listShapes',
   'providers:listAvailabilityDomains',
+  'providers:listInstances',
+  'providers:terminateInstance',
   'infra:engineStatus',
   'infra:getPlan',
   'infra:savePlan',
@@ -215,6 +229,8 @@ export const IPC_CHANNELS = [
   'infra:apply',
   'infra:destroy',
   'infra:outputs',
+  'infra:managedStacks',
+  'infra:destroyStack',
   'deploy:templates',
   'deploy:list',
   'deploy:count',

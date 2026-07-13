@@ -28,6 +28,20 @@ export interface ApplyResult {
   readonly summary: string;
 }
 
+/** A cloud resource tracked by a local infrastructure stack. */
+export interface ManagedResourceSummary {
+  readonly name: string;
+  readonly type: string;
+  readonly provider: string;
+}
+
+/** A locally-managed stack, including stacks whose project record was removed. */
+export interface ManagedStackSummary {
+  readonly ref: StackReference;
+  readonly resources: readonly ManagedResourceSummary[];
+  readonly updatedAt: string | null;
+}
+
 /**
  * Port abstracting the Infrastructure-as-Code engine. The concrete
  * implementation (Pulumi Automation API) lives in `@cloudforge/pulumi`; the
@@ -36,6 +50,9 @@ export interface ApplyResult {
 export interface InfrastructureEngine {
   /** Whether the engine is usable on this machine (e.g. the CLI is installed). */
   isAvailable(): Promise<Result<boolean, InfrastructureError>>;
+
+  /** Discover every stack in the app's local backend, including orphaned stacks. */
+  listManagedStacks(): Promise<Result<ManagedStackSummary[], InfrastructureError>>;
 
   /**
    * Dry-run: compute the changes a plan would make. Provider credentials are

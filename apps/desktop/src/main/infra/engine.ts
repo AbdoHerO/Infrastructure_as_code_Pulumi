@@ -27,6 +27,7 @@ export function createInfrastructureEngine(): PulumiEngine {
 
   return new PulumiEngine({
     home,
+    stateDir: state,
     // Pulumi's DIY/file backend strips the `file://` prefix and runs
     // `filepath.Abs()` on the remainder, so the URL must be `file://` + a plain
     // absolute path with forward slashes and NO leading slash before the drive.

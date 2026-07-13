@@ -1,13 +1,21 @@
-import { CheckCircle2, Cpu, Globe, Loader2, PlugZap, XCircle } from 'lucide-react';
+import { CheckCircle2, Cpu, Globe, Loader2, PlugZap, Server, Trash2, XCircle } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Separator } from '@cloudforge/ui';
 import { type CredentialSummaryDto, PROVIDER_LABELS, type ProviderKind } from '@cloudforge/core';
-import { useLoadRegions, useLoadShapes, useTestConnection } from './useProviders.js';
+import {
+  useLoadInstances,
+  useLoadRegions,
+  useLoadShapes,
+  useTerminateInstance,
+  useTestConnection,
+} from './useProviders.js';
 
 /** A single provider connection: test it and discover regions/shapes. */
 export function ProviderCard({ credential }: { credential: CredentialSummaryDto }): JSX.Element {
   const test = useTestConnection();
   const regions = useLoadRegions();
   const shapes = useLoadShapes();
+  const instances = useLoadInstances();
+  const terminate = useTerminateInstance();
 
   const result = test.data;
 
@@ -73,6 +81,19 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 <Cpu className="size-4" />
                 {shapes.data ? `${shapes.data.length} shapes` : 'Load shapes'}
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={instances.isPending}
+                onClick={() => instances.mutate(credential.id)}
+              >
+                {instances.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Server className="size-4" />
+                )}
+                {instances.data ? `${instances.data.length} instances` : 'Load instances'}
+              </Button>
             </div>
             {regions.data && regions.data.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
@@ -82,6 +103,59 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                     {region.isHome ? ' ★' : ''}
                   </Badge>
                 ))}
+              </div>
+            ) : null}
+            {instances.isError ? (
+              <p className="text-destructive text-xs">{instances.error.message}</p>
+            ) : null}
+            {terminate.isError ? (
+              <p className="text-destructive text-xs">{terminate.error.message}</p>
+            ) : null}
+            {instances.data ? (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-xs">
+                  Account instances include servers created outside CloudForge. Termination is
+                  permanent and deletes the boot volume.
+                </p>
+                {instances.data.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No active instances.</p>
+                ) : (
+                  instances.data.map((instance) => (
+                    <div
+                      key={instance.id}
+                      className="bg-secondary/40 flex items-center justify-between gap-3 rounded-lg p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{instance.name}</p>
+                        <p className="text-muted-foreground truncate text-xs">
+                          {instance.state} · {instance.shape} · {instance.region}
+                        </p>
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={terminate.isPending}
+                        onClick={() => {
+                          const typed = window.prompt(
+                            `Permanently terminate "${instance.name}" and delete its boot volume? Type the instance name to confirm.`,
+                          );
+                          if (typed !== instance.name) return;
+                          terminate.mutate(
+                            { credentialId: credential.id, instanceId: instance.id },
+                            { onSuccess: () => instances.mutate(credential.id) },
+                          );
+                        }}
+                      >
+                        {terminate.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                        Terminate
+                      </Button>
+                    </div>
+                  ))
+                )}
               </div>
             ) : null}
           </>

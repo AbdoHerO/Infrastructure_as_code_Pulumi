@@ -22,6 +22,17 @@ export interface Shape {
   readonly memoryGb?: number;
 }
 
+/** A compute instance discovered directly from the provider account. */
+export interface CloudInstance {
+  readonly id: string;
+  readonly name: string;
+  readonly state: string;
+  readonly shape: string;
+  readonly availabilityDomain: string;
+  readonly region: string;
+  readonly createdAt?: string;
+}
+
 /** Basic account/tenancy information shown after a successful connection. */
 export interface AccountInfo {
   readonly accountId: string;
@@ -62,4 +73,10 @@ export interface CloudProvider {
 
   /** List the compute shapes available to this account. */
   listShapes(): Promise<Result<Shape[], ProviderError>>;
+
+  /** List instances even when they were created outside CloudForge. */
+  listInstances(): Promise<Result<CloudInstance[], ProviderError>>;
+
+  /** Permanently terminate an instance and its boot volume. */
+  terminateInstance(instanceId: string): Promise<Result<void, ProviderError>>;
 }

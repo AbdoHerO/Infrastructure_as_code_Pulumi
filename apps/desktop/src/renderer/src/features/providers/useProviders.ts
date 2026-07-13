@@ -2,6 +2,7 @@ import { useMutation, type UseMutationResult } from '@tanstack/react-query';
 import {
   type AvailabilityDomain,
   type ConnectionTestResult,
+  type CloudInstance,
   type CredentialSummaryDto,
   isProviderKind,
   type Region,
@@ -49,5 +50,23 @@ export function useLoadAvailabilityDomains(): UseMutationResult<
   return useMutation({
     mutationFn: (credentialId: string) =>
       invoke('providers:listAvailabilityDomains', { credentialId }),
+  });
+}
+
+/** Discover instances created inside or outside CloudForge. */
+export function useLoadInstances(): UseMutationResult<CloudInstance[], Error, string> {
+  return useMutation({
+    mutationFn: (credentialId: string) => invoke('providers:listInstances', { credentialId }),
+  });
+}
+
+/** Permanently terminate a provider instance and its boot volume. */
+export function useTerminateInstance(): UseMutationResult<
+  void,
+  Error,
+  { credentialId: string; instanceId: string }
+> {
+  return useMutation({
+    mutationFn: (request) => invoke('providers:terminateInstance', request),
   });
 }

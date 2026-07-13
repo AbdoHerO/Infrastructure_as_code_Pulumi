@@ -31,21 +31,32 @@ const step = (name: string, command: string): DeploymentStep => ({ name, command
 /** Base hardening + Docker installation shared by most templates. */
 function dockerBase(): DeploymentStep[] {
   return [
-    step('Update packages', 'sudo apt-get update -y && sudo apt-get upgrade -y'),
+    step(
+      'Update packages',
+      'if command -v apt-get >/dev/null; then sudo apt-get update -y; elif command -v dnf >/dev/null; then sudo dnf -y makecache; else echo "Unsupported package manager" >&2; exit 1; fi',
+    ),
     step(
       'Install prerequisites',
-      'sudo apt-get install -y ca-certificates curl gnupg ufw fail2ban',
+      'if command -v apt-get >/dev/null; then sudo apt-get install -y ca-certificates curl git gnupg ufw fail2ban; else sudo dnf install -y ca-certificates curl git dnf-utils firewalld; fi',
     ),
-    step('Install Docker', 'curl -fsSL https://get.docker.com | sudo sh'),
+    step(
+      'Install Docker',
+      'if command -v apt-get >/dev/null; then curl -fsSL https://get.docker.com | sudo sh; else sudo dnf remove -y --noautoremove oci-oke-node-minimal cri-o runc || true; sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y --allowerasing docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi',
+    ),
     step('Enable Docker', 'sudo systemctl enable --now docker'),
+    step('Grant Docker access', 'sudo usermod -aG docker "$USER"'),
     step(
       'Configure firewall',
-      'sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw --force enable',
+      'if command -v ufw >/dev/null; then sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw --force enable; else sudo systemctl enable --now firewalld && sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --permanent --add-service=http && sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload; fi',
     ),
   ];
 }
 
-const nginx = (): DeploymentStep => step('Install Nginx', 'sudo apt-get install -y nginx');
+const nginx = (): DeploymentStep =>
+  step(
+    'Install Nginx',
+    'if command -v apt-get >/dev/null; then sudo apt-get install -y nginx; else sudo dnf install -y nginx; fi',
+  );
 
 /** The built-in deployment templates. */
 export const DEPLOYMENT_TEMPLATES: readonly DeploymentTemplate[] = [

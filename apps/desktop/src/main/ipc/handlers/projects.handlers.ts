@@ -1,4 +1,6 @@
+import { ConflictError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
+import { projectStackReference } from '../../infra/stack-reference.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 
@@ -29,6 +31,19 @@ export function registerProjectHandlers(): void {
   );
 
   registerHandler('projects:delete', async ({ id }) => {
+    const project = orThrow(await getContainer().projectService.get(id));
+    const ref = projectStackReference(project);
+    const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
+    if (
+      stacks.some(
+        (managed) => managed.ref.project === ref.project && managed.ref.stack === ref.stack,
+      )
+    ) {
+      throw new ConflictError(
+        'This project still has managed cloud resources. Destroy its infrastructure first, then delete the project.',
+        { context: { project: ref.project, stack: ref.stack } },
+      );
+    }
     orThrow(await getContainer().projectService.remove(id));
     getContainer().activityService.recordSafe({
       type: 'project.deleted',

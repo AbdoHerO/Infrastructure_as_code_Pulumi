@@ -1,6 +1,7 @@
 import { map, ok, ProviderError, type Result } from '@cloudforge/shared';
 import type {
   AvailabilityDomain,
+  CloudInstance,
   CloudProvider,
   ConnectionTestResult,
   AccountInfo,
@@ -38,6 +39,14 @@ interface OciShape {
   shape: string;
   ocpus?: number;
   memoryInGBs?: number;
+}
+interface OciInstance {
+  id: string;
+  displayName: string;
+  lifecycleState: string;
+  shape: string;
+  availabilityDomain: string;
+  timeCreated?: string;
 }
 
 /**
@@ -101,6 +110,15 @@ export class OracleProvider implements CloudProvider {
     });
   }
 
+  private delete(url: string): Promise<Result<void, ProviderError>> {
+    return ociRequest<void>({
+      method: 'DELETE',
+      url,
+      keyId: this.keyId,
+      privateKeyPem: this.config.privateKey,
+    });
+  }
+
   async getAccountInfo(): Promise<Result<AccountInfo, ProviderError>> {
     const user = await this.get<OciUser>(
       this.identity(`/20160918/users/${encodeURIComponent(this.config.userOcid)}`),
@@ -158,6 +176,33 @@ export class OracleProvider implements CloudProvider {
         ...(s.ocpus !== undefined ? { ocpus: s.ocpus } : {}),
         ...(s.memoryInGBs !== undefined ? { memoryGb: s.memoryInGBs } : {}),
       })),
+    );
+  }
+
+  async listInstances(): Promise<Result<CloudInstance[], ProviderError>> {
+    const params = new URLSearchParams({ compartmentId: this.config.compartmentOcid });
+    const instances = await this.get<OciInstance[]>(
+      this.iaas(`/20160918/instances?${params.toString()}`),
+    );
+    return map(instances, (list) =>
+      list
+        .filter((instance) => instance.lifecycleState !== 'TERMINATED')
+        .map((instance) => ({
+          id: instance.id,
+          name: instance.displayName,
+          state: instance.lifecycleState,
+          shape: instance.shape,
+          availabilityDomain: instance.availabilityDomain,
+          region: this.config.region,
+          ...(instance.timeCreated ? { createdAt: instance.timeCreated } : {}),
+        })),
+    );
+  }
+
+  terminateInstance(instanceId: string): Promise<Result<void, ProviderError>> {
+    const params = new URLSearchParams({ preserveBootVolume: 'false' });
+    return this.delete(
+      this.iaas(`/20160918/instances/${encodeURIComponent(instanceId)}?${params.toString()}`),
     );
   }
 }

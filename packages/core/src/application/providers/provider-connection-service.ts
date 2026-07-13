@@ -4,6 +4,7 @@ import type { ProviderFactory } from '../ports/provider-factory.js';
 import type { CredentialService } from '../credentials/credential-service.js';
 import type {
   AvailabilityDomain,
+  CloudInstance,
   CloudProvider,
   ConnectionTestResult,
   Region,
@@ -37,6 +38,17 @@ export class ProviderConnectionService {
     credentialId: string,
   ): Promise<Result<AvailabilityDomain[], ProviderError>> {
     return this.withProvider(credentialId, (provider) => provider.listAvailabilityDomains());
+  }
+
+  listInstances(credentialId: string): Promise<Result<CloudInstance[], ProviderError>> {
+    return this.withProvider(credentialId, (provider) => provider.listInstances());
+  }
+
+  terminateInstance(
+    credentialId: string,
+    instanceId: string,
+  ): Promise<Result<void, ProviderError>> {
+    return this.withProvider(credentialId, (provider) => provider.terminateInstance(instanceId));
   }
 
   /** Resolve a provider from a credential id and run an operation against it. */

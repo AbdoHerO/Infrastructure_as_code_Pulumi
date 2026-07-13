@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookmarkPlus, Eye, Hammer, Loader2, Plus, Save, Trash } from 'lucide-react';
+import { BookmarkPlus, Eye, Hammer, Loader2, Plus, Save, ServerCog, Trash } from 'lucide-react';
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -15,6 +16,8 @@ import {
 } from '@cloudforge/ui';
 import {
   type InfrastructurePlan,
+  type ManagedStackSummary,
+  type ProjectDto,
   type ResourceKind,
   type ResourceSpec,
   validatePlan,
@@ -29,7 +32,10 @@ import {
   useApply,
   useAvailabilityDomains,
   useDestroy,
+  useDestroyManagedStack,
   useEngineLogs,
+  useManagedStacks,
+  useOutputs,
   usePlan,
   usePreview,
   useSavePlan,
@@ -54,6 +60,16 @@ export function InfrastructurePage(): JSX.Element {
   const preview = usePreview();
   const apply = useApply();
   const destroy = useDestroy();
+  const destroyManagedStack = useDestroyManagedStack();
+  const managedStacks = useManagedStacks();
+  const currentProject = projects?.find((project) => project.id === projectId);
+  const currentRef = currentProject ? stackReference(currentProject) : null;
+  const currentStackExists =
+    currentRef !== null &&
+    (managedStacks.data ?? []).some(
+      ({ ref }) => ref.project === currentRef.project && ref.stack === currentRef.stack,
+    );
+  const outputs = useOutputs(projectId, currentStackExists);
   const { lines, clear } = useEngineLogs(streamId);
 
   // Default to the first project and hydrate local state from its stored plan.
@@ -75,7 +91,12 @@ export function InfrastructurePage(): JSX.Element {
     [plan?.providerKind, config, resources],
   );
   const issues = useMemo(() => validatePlan(currentPlan), [currentPlan]);
-  const busy = preview.isPending || apply.isPending || destroy.isPending || savePlan.isPending;
+  const busy =
+    preview.isPending ||
+    apply.isPending ||
+    destroy.isPending ||
+    destroyManagedStack.isPending ||
+    savePlan.isPending;
 
   const editorContext: EditorContext = useMemo(
     () => ({
@@ -86,7 +107,13 @@ export function InfrastructurePage(): JSX.Element {
       availabilityDomains: availabilityDomains.data ?? [],
       liveLoading: shapes.isFetching || availabilityDomains.isFetching,
     }),
-    [resources, shapes.data, shapes.isFetching, availabilityDomains.data, availabilityDomains.isFetching],
+    [
+      resources,
+      shapes.data,
+      shapes.isFetching,
+      availabilityDomains.data,
+      availabilityDomains.isFetching,
+    ],
   );
 
   if (projects?.length === 0) {
@@ -101,6 +128,23 @@ export function InfrastructurePage(): JSX.Element {
             </Button>
           </CardContent>
         </Card>
+        <ManagedStacksPanel
+          stacks={managedStacks.data ?? []}
+          projects={projects ?? []}
+          busy={destroyManagedStack.isPending}
+          onDestroy={(stack) => {
+            if (!confirmDestroy(stack)) return;
+            clear();
+            destroyManagedStack.mutate(
+              { ref: stack.ref, streamId },
+              {
+                onSuccess: () => toast.success('Managed cloud resources destroyed'),
+                onError: (error) =>
+                  toast.error(error instanceof IpcCallError ? error.message : 'Destroy failed'),
+              },
+            );
+          }}
+        />
       </>
     );
   }
@@ -122,6 +166,12 @@ export function InfrastructurePage(): JSX.Element {
 
   const runOperation = async (operation: 'preview' | 'apply' | 'destroy'): Promise<void> => {
     if (!projectId) return;
+    if (
+      operation === 'destroy' &&
+      !window.confirm('Destroy every cloud resource in this project stack? This cannot be undone.')
+    ) {
+      return;
+    }
     clear();
     if (operation !== 'destroy' && !(await persist())) return;
     const mutation = operation === 'preview' ? preview : operation === 'apply' ? apply : destroy;
@@ -244,8 +294,41 @@ export function InfrastructurePage(): JSX.Element {
         <div className="space-y-2">
           <p className="text-sm font-medium">Engine output</p>
           <LogTerminal lines={lines} emptyMessage="Run a preview or apply to see engine output." />
+          {outputs.data ? (
+            <Card>
+              <CardContent className="py-4">
+                <p className="mb-2 text-sm font-medium">Stack outputs</p>
+                <dl className="space-y-2 text-sm">
+                  {Object.entries(outputs.data).map(([key, value]) => (
+                    <div key={key} className="flex flex-wrap justify-between gap-2">
+                      <dt className="text-muted-foreground">{key}</dt>
+                      <dd className="font-mono">{String(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
+
+      <ManagedStacksPanel
+        stacks={managedStacks.data ?? []}
+        projects={projects ?? []}
+        busy={destroyManagedStack.isPending}
+        onDestroy={(stack) => {
+          if (!confirmDestroy(stack)) return;
+          clear();
+          destroyManagedStack.mutate(
+            { ref: stack.ref, streamId },
+            {
+              onSuccess: () => toast.success('Managed cloud resources destroyed'),
+              onError: (error) =>
+                toast.error(error instanceof IpcCallError ? error.message : 'Destroy failed'),
+            },
+          );
+        }}
+      />
 
       <SaveTemplateDialog
         open={savingTemplate}
@@ -253,5 +336,88 @@ export function InfrastructurePage(): JSX.Element {
         plan={currentPlan}
       />
     </>
+  );
+}
+
+function ManagedStacksPanel({
+  stacks,
+  projects,
+  busy,
+  onDestroy,
+}: {
+  stacks: readonly ManagedStackSummary[];
+  projects: readonly ProjectDto[];
+  busy: boolean;
+  onDestroy: (stack: ManagedStackSummary) => void;
+}): JSX.Element {
+  if (stacks.length === 0) return <></>;
+  const projectRefs = new Set(
+    projects.map((project) => {
+      const ref = stackReference(project);
+      return `${ref.project}/${ref.stack}`;
+    }),
+  );
+
+  return (
+    <div className="mt-6 space-y-3">
+      <div>
+        <p className="font-medium">Managed cloud stacks</p>
+        <p className="text-muted-foreground text-sm">
+          Resources tracked by CloudForge, including stacks whose project record was removed.
+        </p>
+      </div>
+      {stacks.map((stack) => {
+        const key = `${stack.ref.project}/${stack.ref.stack}`;
+        const orphaned = !projectRefs.has(key);
+        return (
+          <Card key={key} className={orphaned ? 'border-amber-500/40' : undefined}>
+            <CardContent className="py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <ServerCog className="size-4" />
+                    <span className="font-mono text-sm">{key}</span>
+                    {orphaned ? <Badge variant="warning">Orphaned</Badge> : null}
+                  </div>
+                  <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    {stack.resources.map((resource) => (
+                      <span key={`${resource.type}:${resource.name}`}>
+                        {resource.name} · {resource.type}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <Button variant="destructive" disabled={busy} onClick={() => onDestroy(stack)}>
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash className="size-4" />
+                  )}
+                  Destroy stack
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function stackReference(project: ProjectDto): { project: string; stack: string } {
+  const slug = project.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+  return {
+    project: `${slug || 'project'}-${project.id.slice(0, 8)}`,
+    stack: project.environment,
+  };
+}
+
+function confirmDestroy(stack: ManagedStackSummary): boolean {
+  const names = stack.resources.map((resource) => resource.name).join(', ');
+  return window.confirm(
+    `Destroy stack ${stack.ref.project}/${stack.ref.stack} and all ${stack.resources.length} tracked resources?\n\n${names}\n\nThis cannot be undone.`,
   );
 }

@@ -11,12 +11,15 @@ import type {
   AvailabilityDomain,
   CustomTemplateSummary,
   InfrastructurePlan,
+  ManagedStackSummary,
   PreviewResult,
   Shape,
+  StackReference,
 } from '@cloudforge/core';
 import { invoke, subscribe } from '../../lib/ipc.js';
 
 const CUSTOM_TEMPLATES_KEY = ['infra', 'customTemplates'] as const;
+const MANAGED_STACKS_KEY = ['infra', 'managedStacks'] as const;
 
 /** Load the persisted infrastructure plan for a project (null if none). */
 export function usePlan(projectId: string | null): UseQueryResult<InfrastructurePlan | null> {
@@ -51,9 +54,14 @@ export function usePreview(): ReturnType<
 export function useApply(): ReturnType<
   typeof useMutation<ApplyResult, Error, { projectId: string; streamId: string }>
 > {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ projectId, streamId }: { projectId: string; streamId: string }) =>
       invoke('infra:apply', { projectId, streamId }),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
+      void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
+    },
   });
 }
 
@@ -61,9 +69,48 @@ export function useApply(): ReturnType<
 export function useDestroy(): ReturnType<
   typeof useMutation<void, Error, { projectId: string; streamId: string }>
 > {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ projectId, streamId }: { projectId: string; streamId: string }) =>
       invoke('infra:destroy', { projectId, streamId }),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
+      void queryClient.removeQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
+    },
+  });
+}
+
+/** Read the current stack outputs, including instance public/private IPs. */
+export function useOutputs(
+  projectId: string | null,
+  enabled: boolean,
+): UseQueryResult<Record<string, unknown>> {
+  return useQuery({
+    queryKey: ['infra', 'outputs', projectId],
+    queryFn: () => invoke('infra:outputs', { projectId: projectId ?? '' }),
+    enabled: projectId !== null && enabled,
+    retry: false,
+  });
+}
+
+/** Discover every stack in CloudForge's local backend, including orphaned stacks. */
+export function useManagedStacks(): UseQueryResult<ManagedStackSummary[]> {
+  return useQuery({
+    queryKey: MANAGED_STACKS_KEY,
+    queryFn: () => invoke('infra:managedStacks', undefined),
+  });
+}
+
+/** Safely destroy a stack that was returned by {@link useManagedStacks}. */
+export function useDestroyManagedStack(): UseMutationResult<
+  void,
+  Error,
+  { ref: StackReference; streamId: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args) => invoke('infra:destroyStack', args),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY }),
   });
 }
 
@@ -88,7 +135,8 @@ export function useAvailabilityDomains(
 ): UseQueryResult<AvailabilityDomain[]> {
   return useQuery({
     queryKey: ['providers', 'availabilityDomains', credentialId],
-    queryFn: () => invoke('providers:listAvailabilityDomains', { credentialId: credentialId ?? '' }),
+    queryFn: () =>
+      invoke('providers:listAvailabilityDomains', { credentialId: credentialId ?? '' }),
     enabled: credentialId !== null && credentialId !== '',
     staleTime: 5 * 60 * 1000,
     retry: false,

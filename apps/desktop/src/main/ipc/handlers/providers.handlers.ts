@@ -19,4 +19,17 @@ export function registerProviderHandlers(): void {
   registerHandler('providers:listAvailabilityDomains', async ({ credentialId }) =>
     orThrow(await getContainer().providerService.listAvailabilityDomains(credentialId)),
   );
+
+  registerHandler('providers:listInstances', async ({ credentialId }) =>
+    orThrow(await getContainer().providerService.listInstances(credentialId)),
+  );
+
+  registerHandler('providers:terminateInstance', async ({ credentialId, instanceId }) => {
+    const container = getContainer();
+    orThrow(await container.providerService.terminateInstance(credentialId, instanceId));
+    container.activityService.recordSafe({
+      type: 'provider.instance_terminated',
+      message: `Terminated cloud instance ${instanceId}`,
+    });
+  });
 }

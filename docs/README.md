@@ -15,6 +15,7 @@ infrastructure without touching the command line.
 | Document                                        | What it covers                                                                                                    |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | [Getting Started](GETTING-STARTED.md)           | **Run, test and use** the app end to end, plus troubleshooting                                                    |
+| [First OCI Instance](FIRST-INSTANCE.md)         | Provision, SSH into, discover, and safely delete OCI instances entirely from CloudForge                           |
 | [Configuration & Credentials](CONFIGURATION.md) | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
 | [Overview](OVERVIEW.md)                         | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
 | [Architecture](ARCHITECTURE.md)                 | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
@@ -41,7 +42,7 @@ Project-level entry points: the top-level [README](../README.md) and the
 | **Configuration engine**   | SSH (`ssh2`) executing idempotent deployment steps                         |
 | **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)              |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app  |
-| **Tests**                  | 45 unit tests (Vitest); `pnpm test:coverage` for a V8 report               |
+| **Tests**                  | 47 unit tests (Vitest); `pnpm test:coverage` for a V8 report               |
 | **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`           |
 
 ## Reading order
