@@ -1,12 +1,16 @@
 import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import { Toaster } from '@cloudforge/ui';
 import { Sidebar } from './Sidebar.js';
 import { Titlebar } from './Titlebar.js';
 import { applyTheme, useThemeStore } from '../theme/theme-store.js';
+import { CommandPalette } from '../command/CommandPalette.js';
+import { useGlobalShortcuts } from '../command/useGlobalShortcuts.js';
 
 /** Root application chrome: sidebar rail, draggable titlebar and routed content. */
 export function AppShell(): JSX.Element {
   const mode = useThemeStore((s) => s.mode);
+  useGlobalShortcuts();
 
   useEffect(() => {
     applyTheme(mode);
@@ -27,6 +31,8 @@ export function AppShell(): JSX.Element {
           </div>
         </main>
       </div>
+      <CommandPalette />
+      <Toaster />
     </div>
   );
 }

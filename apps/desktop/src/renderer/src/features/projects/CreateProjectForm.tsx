@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Card, CardContent, Input, Label, Select, Textarea } from '@cloudforge/ui';
+import { Button, Card, CardContent, Input, Label, Select, Textarea, toast } from '@cloudforge/ui';
 import { ENVIRONMENTS } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
 import { useCreateProject } from './useProjects.js';
@@ -42,6 +42,7 @@ export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProp
         region: values.region,
         ...(values.description ? { description: values.description } : {}),
       });
+      toast.success(`Project "${values.name}" created`);
       onCreated();
     } catch (error) {
       const message = error instanceof IpcCallError ? error.message : 'Failed to create project';

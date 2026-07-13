@@ -2,6 +2,7 @@ import { Monitor, Moon, Search, Sun } from 'lucide-react';
 import { Button } from '@cloudforge/ui';
 import type { ThemeMode } from '@cloudforge/shared';
 import { useThemeStore } from '../theme/theme-store.js';
+import { useCommandPalette } from '../command/command-store.js';
 
 const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
   light: 'dark',
@@ -19,12 +20,14 @@ const MODE_ICON = {
 export function Titlebar(): JSX.Element {
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
+  const openPalette = useCommandPalette((s) => s.setOpen);
   const ModeIcon = MODE_ICON[mode];
 
   return (
     <header className="drag-region border-border/60 bg-background/80 flex h-12 shrink-0 items-center justify-between border-b px-4 backdrop-blur">
       <button
         type="button"
+        onClick={() => openPalette(true)}
         className="no-drag border-input bg-secondary/50 text-muted-foreground hover:bg-secondary flex h-8 w-72 items-center gap-2 rounded-md border px-3 text-sm transition-colors"
       >
         <Search className="size-3.5" />

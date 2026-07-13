@@ -3,6 +3,23 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 3] — Design System & Command Palette
+
+### Added
+
+- **Design-system components** in `@cloudforge/ui`, built on Radix and styled to
+  the token set: `Dialog`, `DropdownMenu`, `Tabs`, `Switch`, `Tooltip`,
+  `Separator`, `Skeleton`, `Table`, a `sonner`-based `Toaster` + `toast`, and a
+  `cmdk`-based `Command`/`CommandDialog`. `Button` now supports `asChild`.
+- **Command palette** (⌘K / Ctrl+K): fuzzy-search and jump to any module, wired
+  to a global keyboard-shortcut hook and the titlebar search field.
+- App-wide `TooltipProvider` and `Toaster`; toast feedback on project
+  create/delete.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (30) and `pnpm build` all green.
+
 ## [Phase 2] — Domain Model & Persistence
 
 ### Added

@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TooltipProvider } from '@cloudforge/ui';
 
-/** Application-wide context providers (data fetching, and more as we grow). */
+/** Application-wide context providers (data fetching, tooltips, and more). */
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
   const [queryClient] = useState(
     () =>
@@ -12,5 +13,9 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
       }),
   );
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+    </QueryClientProvider>
+  );
 }

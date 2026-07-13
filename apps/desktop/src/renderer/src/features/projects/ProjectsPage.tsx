@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Boxes, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, CardContent } from '@cloudforge/ui';
+import { Badge, Button, Card, CardContent, toast } from '@cloudforge/ui';
 import type { ProjectDto } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { CreateProjectForm } from './CreateProjectForm.js';
@@ -85,7 +85,12 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
           size="icon"
           title="Delete project"
           disabled={deleteProject.isPending}
-          onClick={() => deleteProject.mutate(project.id)}
+          onClick={() =>
+            deleteProject.mutate(project.id, {
+              onSuccess: () => toast.success(`Project "${project.name}" deleted`),
+              onError: () => toast.error('Failed to delete project'),
+            })
+          }
         >
           <Trash2 className="size-4" />
         </Button>
