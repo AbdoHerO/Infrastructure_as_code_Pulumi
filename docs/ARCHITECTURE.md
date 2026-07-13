@@ -22,27 +22,35 @@ provider independence.
 ## 2. Layers
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Presentation   apps/desktop/src/renderer (React)             │
-│                – components, hooks, stores, routing          │
-├─────────────────────────────────────────────────────────────┤
-│ IPC boundary   apps/desktop/src/{preload,shared,main/ipc}    │
-│                – typed contract, secure context bridge       │
-├─────────────────────────────────────────────────────────────┤
-│ Application    packages/core (Phase 2)                       │
-│                – use cases, ports (repository/provider/…)     │
-├─────────────────────────────────────────────────────────────┤
-│ Domain         packages/core/domain (Phase 2)                │
-│                – entities, value objects, domain services     │
-├─────────────────────────────────────────────────────────────┤
-│ Infrastructure packages/{database,providers,pulumi,ansible}  │
-│                – Prisma, cloud SDKs, Pulumi Automation API    │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Presentation   apps/desktop/src/renderer (React)                  │
+│                – features/ (14 modules), app shell, command palette │
+├──────────────────────────────────────────────────────────────────┤
+│ IPC boundary   apps/desktop/src/{preload, shared/ipc, main/ipc}   │
+│                – typed contract, secure context bridge, streaming  │
+├──────────────────────────────────────────────────────────────────┤
+│ Application    packages/core/src/application                      │
+│                – services (use cases), ports, DTOs, templates      │
+├──────────────────────────────────────────────────────────────────┤
+│ Domain         packages/core/src/domain                          │
+│                – entities, value objects, invariants               │
+├──────────────────────────────────────────────────────────────────┤
+│ Infrastructure packages/{database, providers, pulumi, deployment} │
+│                – Prisma/SQLite · Oracle (OCI) · Pulumi · SSH       │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+Dependencies point **inward**: Infrastructure adapters implement ports defined
+by the Application layer; the Domain depends on nothing but `shared`. The
+composition root (`apps/desktop/src/main/container.ts`) is the only place that
+wires adapters into services.
 
 The **shared kernel** (`packages/shared`) sits beside every layer. It is
 framework- and environment-agnostic (no Node- or browser-only APIs) so it can be
 imported by the main process, the renderer and every package alike.
+
+> For the per-package breakdown see [Packages](PACKAGES.md); for the full IPC
+> catalogue see [IPC Reference](IPC.md).
 
 ## 3. Monorepo & build model
 

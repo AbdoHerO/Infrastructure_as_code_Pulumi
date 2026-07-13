@@ -62,8 +62,15 @@ depends only on `shared`; `database`, `providers`, `pulumi` and `deployment`
 are Infrastructure adapters that implement `core`'s ports; the Electron app is
 the Presentation layer and talks to services only through the typed IPC contract.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered (Clean Architecture)
-design, the secure IPC contract and the security model.
+## Documentation
+
+Full documentation lives in [`docs/`](docs/README.md):
+
+- [Overview](docs/OVERVIEW.md) · [Architecture](docs/ARCHITECTURE.md) ·
+  [Packages](docs/PACKAGES.md) · [Modules](docs/MODULES.md)
+- [IPC Reference](docs/IPC.md) · [Data Model](docs/DATA-MODEL.md) ·
+  [Security](docs/SECURITY.md)
+- [Development](docs/DEVELOPMENT.md) · [Packaging](docs/PACKAGING.md)
 
 ## Getting started
 
