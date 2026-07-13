@@ -1,6 +1,27 @@
 import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
+
+/**
+ * Inject a strict Content-Security-Policy <meta> into the PRODUCTION HTML only.
+ * In development the meta is omitted so Vite's React-refresh inline preamble can
+ * run; the main process applies a relaxed dev CSP via response headers instead.
+ */
+function productionCspMeta(): Plugin {
+  const meta =
+    '<meta http-equiv="Content-Security-Policy" content="' +
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws:;" +
+    '" />';
+  return {
+    name: 'cloudforge:production-csp-meta',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace('</head>', `  ${meta}\n  </head>`);
+    },
+  };
+}
 
 /**
  * Workspace packages are published as TypeScript source, so we alias them to
@@ -65,7 +86,7 @@ export default defineConfig({
         '@shared': resolve(__dirname, 'src/shared'),
       },
     },
-    plugins: [react()],
+    plugins: [react(), productionCspMeta()],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },

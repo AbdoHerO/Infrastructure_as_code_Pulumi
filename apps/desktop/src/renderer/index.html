@@ -3,10 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws:;"
-    />
+    <!--
+      The Content-Security-Policy <meta> is injected into the production build
+      only (see electron.vite.config.ts). In development it is omitted so the
+      Vite/React-refresh inline preamble can run; the main process applies a
+      relaxed dev CSP and a strict production CSP via response headers.
+    -->
     <title>CloudForge</title>
   </head>
   <body>

@@ -1,28 +1,39 @@
 import { app, BrowserWindow, session } from 'electron';
-import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { APP } from '@cloudforge/shared';
 import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { initContainer } from './container.js';
 
 /**
- * Apply a strict Content-Security-Policy to every response. In production the
- * renderer is fully self-contained, so only same-origin `self` resources and
- * inline styles (required by the CSS-in-JS layer) are permitted.
+ * Apply a Content-Security-Policy to every response.
+ *
+ * In production the renderer is fully self-contained, so a strict policy allows
+ * only same-origin resources (plus inline styles for the CSS layer). In
+ * development the policy is relaxed to permit Vite's HMR / React-refresh inline
+ * and eval'd scripts and the dev-server websocket — otherwise React never mounts
+ * and the window renders black.
  */
 function applyContentSecurityPolicy(): void {
+  const policy = is.dev
+    ? "default-src 'self'; " +
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+      "style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; " +
+      "font-src 'self' data:; " +
+      "connect-src 'self' ws: wss: http://localhost:*;"
+    : "default-src 'self'; " +
+      "script-src 'self'; " +
+      "style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; " +
+      "font-src 'self' data:; " +
+      "connect-src 'self' ws:;";
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-            "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data:; " +
-            "font-src 'self' data:; " +
-            "connect-src 'self' ws:;",
-        ],
+        'Content-Security-Policy': [policy],
       },
     });
   });
