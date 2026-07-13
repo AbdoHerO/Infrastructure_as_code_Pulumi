@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { app } from 'electron';
 import { PulumiEngine } from '@cloudforge/pulumi';
 
@@ -27,7 +28,10 @@ export function createInfrastructureEngine(): PulumiEngine {
 
   return new PulumiEngine({
     home,
-    backendUrl: `file://${state.replace(/\\/g, '/')}`,
+    // A proper file URL (e.g. `file:///C:/Users/.../state` on Windows). Building
+    // it by hand as `file://<path>` treats the drive letter as a host and breaks
+    // the Pulumi local/DIY backend.
+    backendUrl: pathToFileURL(state).href,
     passphrase,
   });
 }

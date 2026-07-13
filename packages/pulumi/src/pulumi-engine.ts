@@ -47,7 +47,7 @@ export class PulumiEngine implements InfrastructureEngine {
     plan: InfrastructurePlan,
     onEvent?: EngineEventSink,
   ): Promise<Result<PreviewResult, InfrastructureError>> {
-    return this.withStack(ref, plan, async (stack) => {
+    return this.withStack(ref, plan, onEvent, async (stack) => {
       const result = await stack.preview(outputOpts(onEvent));
       const changes: Record<string, number> = {};
       for (const [op, count] of Object.entries(result.changeSummary)) {
@@ -62,7 +62,7 @@ export class PulumiEngine implements InfrastructureEngine {
     plan: InfrastructurePlan,
     onEvent?: EngineEventSink,
   ): Promise<Result<ApplyResult, InfrastructureError>> {
-    return this.withStack(ref, plan, async (stack) => {
+    return this.withStack(ref, plan, onEvent, async (stack) => {
       const result = await stack.up(outputOpts(onEvent));
       return { outputs: mapOutputs(result.outputs), summary: result.summary.result };
     });
@@ -72,7 +72,7 @@ export class PulumiEngine implements InfrastructureEngine {
     ref: StackReference,
     onEvent?: EngineEventSink,
   ): Promise<Result<void, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), async (stack) => {
+    return this.withStack(ref, emptyPlan(), onEvent, async (stack) => {
       await stack.refresh(outputOpts(onEvent));
     });
   }
@@ -81,7 +81,7 @@ export class PulumiEngine implements InfrastructureEngine {
     ref: StackReference,
     onEvent?: EngineEventSink,
   ): Promise<Result<void, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), async (stack) => {
+    return this.withStack(ref, emptyPlan(), onEvent, async (stack) => {
       await stack.destroy(outputOpts(onEvent));
     });
   }
@@ -89,13 +89,16 @@ export class PulumiEngine implements InfrastructureEngine {
   async outputs(
     ref: StackReference,
   ): Promise<Result<Record<string, unknown>, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), async (stack) => mapOutputs(await stack.outputs()));
+    return this.withStack(ref, emptyPlan(), undefined, async (stack) =>
+      mapOutputs(await stack.outputs()),
+    );
   }
 
   /** Create/select the stack and run an operation, normalising failures. */
   private async withStack<T>(
     ref: StackReference,
     plan: InfrastructurePlan,
+    onEvent: EngineEventSink | undefined,
     operation: (stack: Stack) => Promise<T>,
   ): Promise<Result<T, InfrastructureError>> {
     try {
@@ -127,8 +130,12 @@ export class PulumiEngine implements InfrastructureEngine {
 
       return ok(await operation(stack));
     } catch (cause) {
+      // Surface the real Pulumi/CLI error to the live log and the error message,
+      // so failures are diagnosable instead of a bare "operation failed".
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      onEvent?.({ stream: 'stderr', message: detail });
       return err(
-        new InfrastructureError('Pulumi operation failed', {
+        new InfrastructureError(`Pulumi operation failed: ${firstLine(detail)}`, {
           cause,
           context: { project: ref.project, stack: ref.stack },
         }),
@@ -153,4 +160,13 @@ function mapOutputs(outputs: OutputMap): Record<string, unknown> {
 /** Refresh/destroy/outputs don't need the plan; supply an empty one. */
 function emptyPlan(): InfrastructurePlan {
   return { providerKind: '', config: {}, resources: [] };
+}
+
+/** First non-empty line of a (possibly multi-line) error message, trimmed. */
+function firstLine(message: string): string {
+  const line = message
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return (line ?? 'unknown error').slice(0, 300);
 }
