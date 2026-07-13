@@ -48,15 +48,19 @@ cloudforge/
 └─ packages/
    ├─ shared/           # Shared kernel: Result, errors, branded IDs, types
    ├─ ui/               # Design system: Tailwind preset, tokens, components
-   ├─ core/             # Application + Domain layers (added Phase 2)
-   ├─ database/         # Prisma schema & repositories (added Phase 2)
-   ├─ providers/        # Cloud provider plugin interface + impls (Phase 5)
-   ├─ pulumi/           # Pulumi Automation API service (Phase 6)
-   ├─ ansible/          # Ansible orchestration (Phase 8)
-   ├─ deployment/       # Deployment pipeline (Phase 8)
-   ├─ templates/        # Infrastructure & deployment templates (Phase 10)
-   └─ plugins/          # Plugin system (Phase 10)
+   ├─ core/             # Domain + Application layers: entities, ports,
+   │                    #   services, templates & the plugin system
+   ├─ database/         # Prisma schema & repository implementations
+   ├─ providers/        # CloudProvider contract impls (Oracle Cloud)
+   ├─ pulumi/           # Pulumi Automation API engine (InfrastructureEngine)
+   └─ deployment/       # SSH deployment engine (Deployer)
 ```
+
+Cross-cutting concerns follow **Clean Architecture**: `core` owns the Domain and
+Application layers (entities, value objects, ports and use-case services) and
+depends only on `shared`; `database`, `providers`, `pulumi` and `deployment`
+are Infrastructure adapters that implement `core`'s ports; the Electron app is
+the Presentation layer and talks to services only through the typed IPC contract.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered (Clean Architecture)
 design, the secure IPC contract and the security model.
