@@ -1,0 +1,105 @@
+<div align="center">
+
+# CloudForge
+
+### Modern Infrastructure Platform
+
+**Provision. Configure. Deploy. Manage.**
+
+A production-grade desktop application to provision, configure, deploy and manage
+cloud infrastructure through a modern graphical interface — no command line required.
+
+</div>
+
+---
+
+## What is CloudForge?
+
+CloudForge is the **operating system for cloud infrastructure**. It lets developers,
+DevOps engineers and small teams manage real cloud infrastructure end to end from a
+beautiful desktop app.
+
+Under the hood it uses the **Pulumi Automation API** as its infrastructure engine and
+**Ansible** for post-provisioning configuration — but users never touch either
+directly. The application is the product; the tooling is an implementation detail.
+
+### Core principles
+
+Everything is **reproducible**, **configurable**, **versioned**, **extensible** and
+**provider-independent**. No provider-specific logic ever leaks into the UI.
+
+## Technology
+
+| Layer          | Technology                                                       |
+| -------------- | ---------------------------------------------------------------- |
+| Desktop shell  | Electron, Vite, `electron-vite`                                  |
+| UI             | React, TypeScript, TailwindCSS, shadcn/ui, Framer Motion, Lucide |
+| State / data   | Zustand, TanStack Query, React Hook Form, Zod                    |
+| Backend (main) | Node.js, TypeScript, Prisma + SQLite, Pino                       |
+| Infra engine   | Pulumi Automation API                                            |
+| Configuration  | Ansible, SSH, Docker SDK                                         |
+
+## Monorepo layout
+
+```
+cloudforge/
+├─ apps/
+│  └─ desktop/          # Electron app: main · preload · renderer (React)
+└─ packages/
+   ├─ shared/           # Shared kernel: Result, errors, branded IDs, types
+   ├─ ui/               # Design system: Tailwind preset, tokens, components
+   ├─ core/             # Application + Domain layers (added Phase 2)
+   ├─ database/         # Prisma schema & repositories (added Phase 2)
+   ├─ providers/        # Cloud provider plugin interface + impls (Phase 5)
+   ├─ pulumi/           # Pulumi Automation API service (Phase 6)
+   ├─ ansible/          # Ansible orchestration (Phase 8)
+   ├─ deployment/       # Deployment pipeline (Phase 8)
+   ├─ templates/        # Infrastructure & deployment templates (Phase 10)
+   └─ plugins/          # Plugin system (Phase 10)
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered (Clean Architecture)
+design, the secure IPC contract and the security model.
+
+## Getting started
+
+**Prerequisites:** Node.js ≥ 20.18 and pnpm ≥ 9.
+
+```bash
+pnpm install        # install the workspace
+pnpm desktop        # run the desktop app in development
+```
+
+### Workspace scripts
+
+| Command          | Description                               |
+| ---------------- | ----------------------------------------- |
+| `pnpm desktop`   | Run the Electron app in development (HMR) |
+| `pnpm build`     | Build every package and the desktop app   |
+| `pnpm typecheck` | Type-check the whole workspace            |
+| `pnpm lint`      | Lint the whole workspace                  |
+| `pnpm test`      | Run all unit tests                        |
+| `pnpm format`    | Format the codebase with Prettier         |
+
+## Roadmap
+
+CloudForge is built in disciplined phases; each ends green (typecheck, lint, test,
+build) before the next begins.
+
+| Phase | Scope                                                                    |
+| ----- | ------------------------------------------------------------------------ |
+| **1** | ✅ Monorepo foundation, tooling, shared kernel, design system, app shell |
+| 2     | Domain model, Prisma/SQLite database, repositories, secure IPC layer     |
+| 3     | Full design system (shadcn/ui), navigation, command palette, theming     |
+| 4     | Credential Manager (OS keychain + encryption) and Settings               |
+| 5     | Cloud provider plugin interface + Oracle Cloud + connection testing      |
+| 6     | Pulumi Automation API service (preview/apply/destroy/refresh)            |
+| 7     | Infrastructure module (VMs, networks, firewalls, volumes, …)             |
+| 8     | Deployment pipeline (SSH → Ansible → Docker) + deployment templates      |
+| 9     | Live logs, dashboard charts, activity timeline                           |
+| 10    | Templates, plugin system, marketplace, updates                           |
+| 11    | Hardening, coverage, packaging                                           |
+
+## License
+
+Proprietary — all rights reserved.

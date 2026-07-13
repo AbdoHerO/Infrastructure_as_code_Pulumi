@@ -1,0 +1,47 @@
+{
+  "name": "@cloudforge/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CloudForge desktop application (Electron + React).",
+  "main": "./out/main/index.js",
+  "author": "CloudForge",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "package": "electron-vite build && electron-builder",
+    "clean": "rimraf out dist release *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@cloudforge/shared": "workspace:*",
+    "@cloudforge/ui": "workspace:*",
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@tanstack/react-query": "^5.59.13",
+    "framer-motion": "^11.11.9",
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.0.2",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.47",
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.3"
+  }
+}

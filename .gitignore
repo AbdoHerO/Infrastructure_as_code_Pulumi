@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+out/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Electron
+release/
+apps/desktop/out/
+apps/desktop/dist/
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+apps/desktop/prisma/*.db
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/fixtures/**/*.pem
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Misc
+*.local
+.cache/

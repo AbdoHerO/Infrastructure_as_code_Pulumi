@@ -1,0 +1,16 @@
+# Normalize line endings to LF across all platforms
+* text=auto eol=lf
+
+# Binary assets should never be normalized
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Lockfiles
+pnpm-lock.yaml -diff
