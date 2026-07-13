@@ -3,6 +3,28 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 6] — Pulumi Infrastructure Engine
+
+### Added
+
+- **`InfrastructureEngine` port** in `@cloudforge/core` (preview / apply / refresh
+  / destroy / outputs / availability, with a streamed event sink) and a
+  provider-agnostic, declarative **`InfrastructurePlan`** model (network, subnet,
+  firewall, compute, volume, …) with a pure, unit-tested `validatePlan`.
+- **`@cloudforge/pulumi`** — the engine implementation using the **Pulumi
+  Automation API** (inline programs, local file backend, encrypted stack
+  secrets). Pulumi is fully encapsulated here; no other layer references it. A
+  `buildProgram` interpreter turns a plan into a Pulumi program (unit-tested;
+  extended to real cloud resources in Phase 7).
+- Engine wired into the composition root (private Pulumi home + local backend +
+  persisted passphrase under `userData`), an `infra:engineStatus` IPC channel,
+  and a live "IaC engine" status row on the dashboard.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (41) and `pnpm build` all green;
+  `@pulumi/pulumi` stays external in the main bundle while the engine is bundled.
+
 ## [Phase 5] — Cloud Providers & Oracle Cloud
 
 ### Added

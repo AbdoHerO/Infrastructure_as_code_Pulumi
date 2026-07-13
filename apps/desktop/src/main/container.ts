@@ -3,6 +3,7 @@ import { app } from 'electron';
 import { unwrap } from '@cloudforge/shared';
 import {
   CredentialService,
+  type InfrastructureEngine,
   ProjectService,
   ProviderConnectionService,
   SettingsService,
@@ -17,6 +18,7 @@ import {
   PrismaSettingsRepository,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
+import { createInfrastructureEngine } from './infra/engine.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -28,6 +30,7 @@ export interface AppContainer {
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
   readonly providerService: ProviderConnectionService;
+  readonly infrastructureEngine: InfrastructureEngine;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -58,12 +61,14 @@ export async function initContainer(): Promise<AppContainer> {
     credentialService,
     new DefaultProviderFactory(),
   );
+  const infrastructureEngine = createInfrastructureEngine();
 
   container = {
     projectService,
     credentialService,
     settingsService,
     providerService,
+    infrastructureEngine,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

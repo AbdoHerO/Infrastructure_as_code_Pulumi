@@ -5,11 +5,13 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
 import { StatCard } from './StatCard.js';
 import { useAppInfo } from './useAppInfo.js';
+import { useEngineStatus } from './useEngineStatus.js';
 
 /** The application landing dashboard: summary metrics, status and system info. */
 export function DashboardPage(): JSX.Element {
   const { data: info } = useAppInfo();
   const { data: projects } = useProjects();
+  const { data: engine } = useEngineStatus();
   const projectCount = projects?.length ?? 0;
 
   const stats = [
@@ -59,6 +61,10 @@ export function DashboardPage(): JSX.Element {
             <InfoRow label="Electron" value={info?.versions.electron ?? '—'} />
             <InfoRow label="Node" value={info?.versions.node ?? '—'} />
             <InfoRow label="Chrome" value={info?.versions.chrome ?? '—'} />
+            <InfoRow
+              label="IaC engine"
+              value={engine ? (engine.available ? 'Pulumi ready' : 'Pulumi not installed') : '—'}
+            />
           </CardContent>
         </Card>
       </div>

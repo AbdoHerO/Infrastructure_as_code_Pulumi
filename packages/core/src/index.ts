@@ -21,6 +21,7 @@ export * from './application/ports/credential-repository.js';
 export * from './application/ports/secret-cipher.js';
 export * from './application/ports/settings-repository.js';
 export * from './application/ports/provider-factory.js';
+export * from './application/ports/infrastructure-engine.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -33,3 +34,4 @@ export * from './application/settings/settings.js';
 export * from './application/settings/settings-service.js';
 export * from './application/providers/cloud-provider.js';
 export * from './application/providers/provider-connection-service.js';
+export * from './application/infrastructure/infrastructure-plan.js';

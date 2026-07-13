@@ -52,6 +52,8 @@ export interface IpcContract {
     request: { credentialId: string };
     response: AvailabilityDomain[];
   };
+
+  'infra:engineStatus': { request: void; response: { available: boolean } };
 }
 
 /** Union of all valid IPC channel names. */
@@ -106,4 +108,5 @@ export const IPC_CHANNELS = [
   'providers:listRegions',
   'providers:listShapes',
   'providers:listAvailabilityDomains',
+  'infra:engineStatus',
 ] as const satisfies readonly IpcChannel[];
