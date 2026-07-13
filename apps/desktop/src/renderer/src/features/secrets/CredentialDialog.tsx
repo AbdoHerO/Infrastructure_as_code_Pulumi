@@ -56,15 +56,15 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0">
+        <DialogHeader className="shrink-0 p-6 pb-4">
           <DialogTitle>Add credential</DialogTitle>
           <DialogDescription>
             Secrets are encrypted with your OS keychain and never stored in plaintext.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6">
           <div className="space-y-1.5">
             <Label>Provider</Label>
             <Select
@@ -122,7 +122,7 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
           ))}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-border shrink-0 border-t p-6 pt-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

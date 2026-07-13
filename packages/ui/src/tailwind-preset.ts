@@ -89,9 +89,12 @@ export const cloudforgePreset = {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        // Opacity-only: must NOT animate `transform`, or it would override the
+        // `-translate-x-1/2 -translate-y-1/2` centering of Radix dialogs (and the
+        // popper transforms of dropdowns/tooltips), pushing them off-screen.
         'fade-in': {
-          from: { opacity: '0', transform: 'translateY(4px)' },
-          to: { opacity: '1', transform: 'translateY(0)' },
+          from: { opacity: '0' },
+          to: { opacity: '1' },
         },
         shimmer: {
           '100%': { transform: 'translateX(100%)' },

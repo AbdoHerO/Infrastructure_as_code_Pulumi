@@ -45,10 +45,10 @@ export function RevealDialog({ credential, onClose }: RevealDialogProps): JSX.El
 
   return (
     <Dialog open={credential !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-4">
-            <span>{credential?.name}</span>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0">
+        <DialogHeader className="shrink-0 p-6 pb-4">
+          <DialogTitle className="flex items-center justify-between gap-4 pr-6">
+            <span className="truncate">{credential?.name}</span>
             <Button variant="outline" size="sm" onClick={() => setVisible((v) => !v)}>
               {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               {visible ? 'Hide' : 'Show'}
@@ -60,7 +60,7 @@ export function RevealDialog({ credential, onClose }: RevealDialogProps): JSX.El
         {data === null ? (
           <p className="text-muted-foreground py-6 text-center text-sm">Decrypting…</p>
         ) : (
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6 pt-0">
             {spec?.fields
               .filter((field) => data[field.key] !== undefined)
               .map((field) => (
