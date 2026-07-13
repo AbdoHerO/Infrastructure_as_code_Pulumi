@@ -27,6 +27,7 @@ import {
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
+import { log } from './logging/logger.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -61,9 +62,14 @@ export async function initContainer(): Promise<AppContainer> {
   const db: Db = createPrismaClient(toSqliteUrl(dbPath));
   await db.$connect();
   await ensureSchema(db);
+  log().info({ event: 'db.ready', dbPath }, 'Database connected and schema ensured');
 
   // `unwrap` is safe here: a missing cipher is an unrecoverable startup fault.
   const cipher = unwrap(createSecretCipher());
+  log().info(
+    { event: 'cipher.ready', backedByOsKeychain: cipher.backedByOsKeychain },
+    `Secret encryption ready (${cipher.backedByOsKeychain ? 'OS keychain' : 'local key'})`,
+  );
 
   const projectService = new ProjectService(new PrismaProjectRepository(db));
   const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
@@ -98,6 +104,7 @@ export async function initContainer(): Promise<AppContainer> {
       container = null;
     },
   };
+  log().info({ event: 'container.ready' }, 'Application services initialised');
   return container;
 }
 

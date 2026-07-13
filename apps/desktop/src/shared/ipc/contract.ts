@@ -111,6 +111,19 @@ export interface IpcContract {
     request: void;
     response: { current: string; latest: string; upToDate: boolean };
   };
+
+  'logs:info': { request: void; response: { path: string; dir: string } };
+  'logs:tail': { request: { lines?: number }; response: string[] };
+  'logs:openFolder': { request: void; response: void };
+  'logs:report': {
+    request: {
+      level: 'error' | 'warn' | 'info';
+      message: string;
+      stack?: string;
+      source?: string;
+    };
+    response: void;
+  };
 }
 
 /**
@@ -203,4 +216,8 @@ export const IPC_CHANNELS = [
   'plugins:setEnabled',
   'plugins:uninstall',
   'updates:check',
+  'logs:info',
+  'logs:tail',
+  'logs:openFolder',
+  'logs:report',
 ] as const satisfies readonly IpcChannel[];

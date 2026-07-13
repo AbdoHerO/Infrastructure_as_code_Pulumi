@@ -4,6 +4,7 @@ import { APP } from '@cloudforge/shared';
 import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { initContainer } from './container.js';
+import { initLogger, log } from './logging/logger.js';
 
 /**
  * Apply a Content-Security-Policy to every response.
@@ -51,6 +52,11 @@ function hardenPermissions(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  initLogger();
+  log().info(
+    { event: 'app.start', version: app.getVersion(), platform: process.platform },
+    'Starting CloudForge',
+  );
   electronApp.setAppUserModelId(APP.id);
 
   // Harden: refuse creation of additional web contents from untrusted sources.
@@ -66,9 +72,15 @@ async function bootstrap(): Promise<void> {
   hardenPermissions();
 
   // Initialise persistence and services before any IPC handler can be invoked.
-  await initContainer();
+  try {
+    await initContainer();
+  } catch (err) {
+    log().fatal({ err, event: 'app.init-failed' }, 'Failed to initialise application');
+    throw err;
+  }
   registerIpcHandlers();
   createMainWindow();
+  log().info({ event: 'app.ready' }, 'CloudForge ready');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -78,5 +90,6 @@ async function bootstrap(): Promise<void> {
 void app.whenReady().then(bootstrap);
 
 app.on('window-all-closed', () => {
+  log().info({ event: 'app.window-all-closed' }, 'All windows closed');
   if (process.platform !== 'darwin') app.quit();
 });
