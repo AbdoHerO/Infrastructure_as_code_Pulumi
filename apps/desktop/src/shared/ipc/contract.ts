@@ -1,5 +1,6 @@
 import type { SerializedAppError } from '@cloudforge/shared';
 import type {
+  ActivityDto,
   AppSettings,
   AvailabilityDomain,
   ApplyResult,
@@ -90,6 +91,8 @@ export interface IpcContract {
     };
     response: DeploymentDto;
   };
+
+  'activity:list': { request: { limit?: number }; response: ActivityDto[] };
 }
 
 /**
@@ -174,4 +177,5 @@ export const IPC_CHANNELS = [
   'deploy:list',
   'deploy:count',
   'deploy:run',
+  'activity:list',
 ] as const satisfies readonly IpcChannel[];

@@ -25,6 +25,7 @@ export * from './application/ports/infrastructure-engine.js';
 export * from './application/ports/plan-store.js';
 export * from './application/ports/deployer.js';
 export * from './application/ports/deployment-repository.js';
+export * from './application/ports/activity-repository.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -42,3 +43,4 @@ export * from './application/infrastructure/infrastructure-plan.js';
 export * from './application/infrastructure/infrastructure-service.js';
 export * from './application/deployment/deployment-template.js';
 export * from './application/deployment/deployment-service.js';
+export * from './application/activity/activity-service.js';

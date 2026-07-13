@@ -3,7 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
+import { ActivityTimeline } from '../activity/ActivityTimeline.js';
+import { useActivity } from '../activity/useActivity.js';
 import { StatCard } from './StatCard.js';
+import { EnvironmentChart } from './EnvironmentChart.js';
 import { useAppInfo } from './useAppInfo.js';
 import { useEngineStatus } from './useEngineStatus.js';
 
@@ -12,6 +15,7 @@ export function DashboardPage(): JSX.Element {
   const { data: info } = useAppInfo();
   const { data: projects } = useProjects();
   const { data: engine } = useEngineStatus();
+  const { data: activity } = useActivity(20);
   const projectCount = projects?.length ?? 0;
 
   const stats = [
@@ -42,12 +46,7 @@ export function DashboardPage(): JSX.Element {
             <CardTitle>Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-12 text-center text-sm">
-              <p>No activity yet.</p>
-              <p className="text-xs">
-                Provisioning, deployments and provider events will appear here.
-              </p>
-            </div>
+            <ActivityTimeline items={(activity ?? []).slice(0, 7)} />
           </CardContent>
         </Card>
 
@@ -67,6 +66,10 @@ export function DashboardPage(): JSX.Element {
             />
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <EnvironmentChart projects={projects ?? []} />
       </div>
     </>
   );

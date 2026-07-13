@@ -1,11 +1,12 @@
 import { createHashRouter } from 'react-router-dom';
-import { Blocks, Container, FileCode2, KeyRound, RefreshCw, ScrollText } from 'lucide-react';
+import { Blocks, Container, FileCode2, KeyRound, RefreshCw } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
 import { InfrastructurePage } from '../features/infrastructure/InfrastructurePage.js';
 import { DeploymentsPage } from '../features/deployments/DeploymentsPage.js';
+import { LogsPage } from '../features/logs/LogsPage.js';
 import { ProvidersPage } from '../features/providers/ProvidersPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
@@ -60,17 +61,7 @@ export const router = createHashRouter([
           />
         ),
       },
-      {
-        path: 'logs',
-        element: (
-          <PlaceholderPage
-            title="Logs"
-            description="Beautiful live logs with search, filter and export."
-            icon={ScrollText}
-            phase="Phase 9"
-          />
-        ),
-      },
+      { path: 'logs', element: <LogsPage /> },
       {
         path: 'plugins',
         element: (

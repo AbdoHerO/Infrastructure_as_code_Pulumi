@@ -31,11 +31,17 @@ export function registerDeployHandlers(): void {
       ...(req.domain ? { domain: req.domain } : {}),
     };
 
-    return orThrow(
+    const dto = orThrow(
       await getContainer().deploymentService.run(
         { projectId: req.projectId, templateId: req.templateId, target, context },
         (event) => emitEvent('deploy:log', { streamId: req.streamId, event }),
       ),
     );
+    getContainer().activityService.recordSafe({
+      type: `deployment.${dto.status}`,
+      message: `Deployment "${req.templateId}" ${dto.status} on ${req.host}`,
+      projectId: req.projectId,
+    });
+    return dto;
   });
 }

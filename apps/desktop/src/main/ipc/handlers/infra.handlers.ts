@@ -47,14 +47,25 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:apply', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    return orThrow(
+    const result = orThrow(
       await getContainer().infrastructureService.apply(ref, projectId, sink(streamId)),
     );
+    getContainer().activityService.recordSafe({
+      type: 'infrastructure.applied',
+      message: 'Applied infrastructure plan',
+      projectId,
+    });
+    return result;
   });
 
   registerHandler('infra:destroy', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    return orThrow(await getContainer().infrastructureService.destroy(ref, sink(streamId)));
+    orThrow(await getContainer().infrastructureService.destroy(ref, sink(streamId)));
+    getContainer().activityService.recordSafe({
+      type: 'infrastructure.destroyed',
+      message: 'Destroyed infrastructure',
+      projectId,
+    });
   });
 
   registerHandler('infra:outputs', async ({ projectId }) => {

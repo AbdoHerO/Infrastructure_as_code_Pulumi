@@ -14,15 +14,26 @@ export function registerProjectHandlers(): void {
     orThrow(await getContainer().projectService.get(id)),
   );
 
-  registerHandler('projects:create', async (input) =>
-    orThrow(await getContainer().projectService.create(input)),
-  );
+  registerHandler('projects:create', async (input) => {
+    const project = orThrow(await getContainer().projectService.create(input));
+    getContainer().activityService.recordSafe({
+      type: 'project.created',
+      message: `Created project "${project.name}"`,
+      projectId: project.id,
+    });
+    return project;
+  });
 
   registerHandler('projects:update', async ({ id, changes }) =>
     orThrow(await getContainer().projectService.update(id, changes)),
   );
 
-  registerHandler('projects:delete', async ({ id }) =>
-    orThrow(await getContainer().projectService.remove(id)),
-  );
+  registerHandler('projects:delete', async ({ id }) => {
+    orThrow(await getContainer().projectService.remove(id));
+    getContainer().activityService.recordSafe({
+      type: 'project.deleted',
+      message: 'Deleted a project',
+      projectId: id,
+    });
+  });
 }

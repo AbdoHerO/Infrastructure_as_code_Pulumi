@@ -3,6 +3,23 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 9] — Logs, Activity & Charts
+
+### Added
+
+- **Activity/audit feed**: `ActivityService` + `ActivityRepository` port +
+  `PrismaActivityRepository`. Notable events (project created/deleted,
+  infrastructure applied/destroyed, deployment succeeded/failed) are recorded
+  best-effort and exposed via `activity:list`.
+- **Logs** module: a searchable, category-filterable, JSON-exportable activity
+  feed with a reusable `ActivityTimeline` and relative timestamps.
+- **Dashboard**: the Activity card now streams the real recent activity, plus a
+  new "Projects by environment" bar chart (accessible, theme-aware).
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (43) and `pnpm build` all green.
+
 ## [Phase 8] — Deployment Pipeline
 
 ### Added
