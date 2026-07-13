@@ -1,5 +1,14 @@
 import type { SerializedAppError } from '@cloudforge/shared';
-import type { CreateProjectInput, ProjectDto, UpdateProjectInput } from '@cloudforge/core';
+import type {
+  AppSettings,
+  CreateCredentialInput,
+  CreateProjectInput,
+  CredentialSummaryDto,
+  ProjectDto,
+  RevealedCredentialDto,
+  SettingsPatch,
+  UpdateProjectInput,
+} from '@cloudforge/core';
 
 /**
  * The typed IPC contract shared by the main, preload and renderer processes.
@@ -21,6 +30,16 @@ export interface IpcContract {
   };
   'projects:delete': { request: { id: string }; response: void };
   'projects:count': { request: void; response: number };
+
+  'credentials:list': { request: void; response: CredentialSummaryDto[] };
+  'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
+  'credentials:reveal': { request: { id: string }; response: RevealedCredentialDto };
+  'credentials:delete': { request: { id: string }; response: void };
+
+  'settings:get': { request: void; response: AppSettings };
+  'settings:update': { request: SettingsPatch; response: AppSettings };
+
+  'security:status': { request: void; response: { backedByOsKeychain: boolean } };
 }
 
 /** Union of all valid IPC channel names. */
@@ -64,4 +83,11 @@ export const IPC_CHANNELS = [
   'projects:update',
   'projects:delete',
   'projects:count',
+  'credentials:list',
+  'credentials:create',
+  'credentials:reveal',
+  'credentials:delete',
+  'settings:get',
+  'settings:update',
+  'security:status',
 ] as const satisfies readonly IpcChannel[];

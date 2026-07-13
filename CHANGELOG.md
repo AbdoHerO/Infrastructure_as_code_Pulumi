@@ -3,6 +3,32 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 4] — Credential Manager & Settings
+
+### Added
+
+- **Credential Manager** — encrypted storage for provider/service secrets:
+  - Schema-driven credential kinds (Oracle, AWS, Azure, GitHub, Cloudflare,
+    OpenAI, Anthropic, Docker Hub, GitLab) — one declarative registry drives both
+    validation and dynamic form generation.
+  - `Credential` domain entity + `CredentialService` that encrypts secret
+    material through a `SecretCipher` port before persistence and decrypts only
+    on explicit reveal or internal provider use; list returns metadata-only
+    summaries (never secrets).
+  - Main-process `SecretCipher`: OS keychain via Electron `safeStorage` when
+    available, AES-256-GCM with a `0600` local key as fallback — never plaintext.
+  - `PrismaCredentialRepository`; credential IPC channels + handlers.
+  - Renderer **Secrets** module: security banner, credential table, schema-driven
+    add dialog, masked reveal-with-copy dialog, delete.
+- **Settings** — `SettingsService` (typed settings merged over defaults, stored
+  as JSON), `PrismaSettingsRepository`, IPC channels, and a tabbed **Settings**
+  page (General, Appearance, Deployment, Security) wired to live persistence and
+  the theme store.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (35) and `pnpm build` all green.
+
 ## [Phase 3] — Design System & Command Palette
 
 ### Added

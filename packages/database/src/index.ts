@@ -8,4 +8,6 @@
 export { createPrismaClient, PrismaClient, type Db } from './client.js';
 export { ensureSchema } from './schema-bootstrap.js';
 export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
+export { PrismaCredentialRepository } from './repositories/prisma-credential-repository.js';
+export { PrismaSettingsRepository } from './repositories/prisma-settings-repository.js';
 export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

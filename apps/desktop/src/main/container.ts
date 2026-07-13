@@ -1,12 +1,16 @@
 import { join } from 'node:path';
 import { app } from 'electron';
-import { ProjectService } from '@cloudforge/core';
+import { unwrap } from '@cloudforge/shared';
+import { CredentialService, ProjectService, SettingsService } from '@cloudforge/core';
 import {
   createPrismaClient,
   type Db,
   ensureSchema,
+  PrismaCredentialRepository,
   PrismaProjectRepository,
+  PrismaSettingsRepository,
 } from '@cloudforge/database';
+import { createSecretCipher } from './security/secret-cipher.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -15,6 +19,9 @@ import {
  */
 export interface AppContainer {
   readonly projectService: ProjectService;
+  readonly credentialService: CredentialService;
+  readonly settingsService: SettingsService;
+  readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
 
@@ -34,10 +41,18 @@ export async function initContainer(): Promise<AppContainer> {
   await db.$connect();
   await ensureSchema(db);
 
+  // `unwrap` is safe here: a missing cipher is an unrecoverable startup fault.
+  const cipher = unwrap(createSecretCipher());
+
   const projectService = new ProjectService(new PrismaProjectRepository(db));
+  const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
+  const settingsService = new SettingsService(new PrismaSettingsRepository(db));
 
   container = {
     projectService,
+    credentialService,
+    settingsService,
+    secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();
       container = null;

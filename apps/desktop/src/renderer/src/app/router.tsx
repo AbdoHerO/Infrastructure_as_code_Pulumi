@@ -9,13 +9,13 @@ import {
   Rocket,
   ScrollText,
   Server,
-  Settings,
-  ShieldCheck,
 } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
+import { SecretsPage } from '../features/secrets/SecretsPage.js';
+import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
 
 /**
@@ -85,17 +85,7 @@ export const router = createHashRouter([
           />
         ),
       },
-      {
-        path: 'secrets',
-        element: (
-          <PlaceholderPage
-            title="Secrets"
-            description="Encrypted secrets and the credential manager."
-            icon={ShieldCheck}
-            phase="Phase 4"
-          />
-        ),
-      },
+      { path: 'secrets', element: <SecretsPage /> },
       {
         path: 'ssh-keys',
         element: (
@@ -140,17 +130,7 @@ export const router = createHashRouter([
           />
         ),
       },
-      {
-        path: 'settings',
-        element: (
-          <PlaceholderPage
-            title="Settings"
-            description="General, appearance, providers, deployment and more."
-            icon={Settings}
-            phase="Phase 4"
-          />
-        ),
-      },
+      { path: 'settings', element: <SettingsPage /> },
       { path: 'about', element: <AboutPage /> },
     ],
   },

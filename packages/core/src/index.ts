@@ -11,8 +11,21 @@ export * from './domain/shared/entity.js';
 export * from './domain/project/environment.js';
 export * from './domain/project/project-status.js';
 export * from './domain/project/project.js';
+export * from './domain/credential/credential-kind.js';
+export * from './domain/credential/credential.js';
 
-// Application
-export * from './application/dto/project-dto.js';
+// Application — ports
 export * from './application/ports/project-repository.js';
+export * from './application/ports/credential-repository.js';
+export * from './application/ports/secret-cipher.js';
+export * from './application/ports/settings-repository.js';
+
+// Application — DTOs
+export * from './application/dto/project-dto.js';
+export * from './application/dto/credential-dto.js';
+
+// Application — services
 export * from './application/projects/project-service.js';
+export * from './application/credentials/credential-service.js';
+export * from './application/settings/settings.js';
+export * from './application/settings/settings-service.js';

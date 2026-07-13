@@ -1,5 +1,7 @@
 import { registerAppHandlers } from './handlers/app.handlers.js';
 import { registerProjectHandlers } from './handlers/projects.handlers.js';
+import { registerCredentialHandlers } from './handlers/credentials.handlers.js';
+import { registerSettingsHandlers } from './handlers/settings.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -8,4 +10,6 @@ import { registerProjectHandlers } from './handlers/projects.handlers.js';
 export function registerIpcHandlers(): void {
   registerAppHandlers();
   registerProjectHandlers();
+  registerCredentialHandlers();
+  registerSettingsHandlers();
 }
