@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "package": "electron-vite build && electron-builder",
+    "package:dir": "electron-vite build && electron-builder --dir",
     "clean": "rimraf out dist release *.tsbuildinfo"
   },
   "dependencies": {
@@ -47,6 +48,7 @@
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.47",
     "rimraf": "^6.0.1",

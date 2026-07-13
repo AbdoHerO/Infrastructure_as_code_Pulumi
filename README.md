@@ -86,19 +86,22 @@ pnpm desktop        # run the desktop app in development
 CloudForge is built in disciplined phases; each ends green (typecheck, lint, test,
 build) before the next begins.
 
-| Phase | Scope                                                                    |
-| ----- | ------------------------------------------------------------------------ |
-| **1** | ✅ Monorepo foundation, tooling, shared kernel, design system, app shell |
-| 2     | Domain model, Prisma/SQLite database, repositories, secure IPC layer     |
-| 3     | Full design system (shadcn/ui), navigation, command palette, theming     |
-| 4     | Credential Manager (OS keychain + encryption) and Settings               |
-| 5     | Cloud provider plugin interface + Oracle Cloud + connection testing      |
-| 6     | Pulumi Automation API service (preview/apply/destroy/refresh)            |
-| 7     | Infrastructure module (VMs, networks, firewalls, volumes, …)             |
-| 8     | Deployment pipeline (SSH → Ansible → Docker) + deployment templates      |
-| 9     | Live logs, dashboard charts, activity timeline                           |
-| 10    | Templates, plugin system, marketplace, updates                           |
-| 11    | Hardening, coverage, packaging                                           |
+| Phase  | Scope                                                                |
+| ------ | -------------------------------------------------------------------- |
+| **1**  | ✅ Monorepo foundation, tooling, shared kernel, design system, shell |
+| **2**  | ✅ Domain model, Prisma/SQLite database, repositories, secure IPC    |
+| **3**  | ✅ Design system (Radix), navigation, command palette, theming       |
+| **4**  | ✅ Credential Manager (OS keychain + encryption) and Settings        |
+| **5**  | ✅ Cloud provider interface + Oracle Cloud + connection testing      |
+| **6**  | ✅ Pulumi Automation API engine (preview/apply/destroy/refresh)      |
+| **7**  | ✅ Infrastructure module (plan editor, live provisioning)            |
+| **8**  | ✅ Deployment pipeline (SSH) + deployment templates                  |
+| **9**  | ✅ Live logs, activity timeline, dashboard charts                    |
+| **10** | ✅ Templates, plugin system, marketplace, updates                    |
+| **11** | ✅ Hardening, coverage, packaging (electron-builder)                 |
+
+All fourteen modules are implemented. See [docs/PACKAGING.md](docs/PACKAGING.md)
+for building distributables and the runtime prerequisites (Pulumi CLI, Ansible).
 
 ## License
 

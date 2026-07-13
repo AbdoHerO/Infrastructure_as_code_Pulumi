@@ -28,6 +28,17 @@ function applyContentSecurityPolicy(): void {
   });
 }
 
+/**
+ * Deny every renderer permission request (camera, microphone, geolocation, …).
+ * CloudForge's renderer needs none of them, so the safest default is to refuse.
+ */
+function hardenPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
+  session.defaultSession.setPermissionCheckHandler(() => false);
+}
+
 async function bootstrap(): Promise<void> {
   electronApp.setAppUserModelId(APP.id);
 
@@ -41,6 +52,7 @@ async function bootstrap(): Promise<void> {
   });
 
   applyContentSecurityPolicy();
+  hardenPermissions();
 
   // Initialise persistence and services before any IPC handler can be invoked.
   await initContainer();

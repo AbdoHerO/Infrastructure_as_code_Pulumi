@@ -3,6 +3,26 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 11] — Hardening, Coverage & Packaging
+
+### Added
+
+- **Security hardening**: the default session now denies every renderer
+  permission request (camera, microphone, geolocation, …) via
+  `setPermissionRequestHandler`/`setPermissionCheckHandler`, complementing the
+  existing context isolation, CSP and navigation guards.
+- **Coverage**: a Vitest workspace enables `pnpm test:coverage` to run all 45
+  tests with a single V8 coverage report from the repo root.
+- **Packaging**: `electron-builder` configuration (`electron-builder.yml`) with
+  Windows/macOS/Linux targets and `asarUnpack` for the native/runtime deps
+  (`@prisma/client`, `.prisma` engine, `ssh2`, `@pulumi/pulumi`); `package` /
+  `package:dir` scripts. See [docs/PACKAGING.md](docs/PACKAGING.md).
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` all green;
+  `pnpm test:coverage` runs 45 tests across the workspace.
+
 ## [Phase 10] — Templates, Plugins & Updates
 
 ### Added
