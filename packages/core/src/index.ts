@@ -24,6 +24,7 @@ export * from './application/ports/settings-repository.js';
 export * from './application/ports/provider-factory.js';
 export * from './application/ports/infrastructure-engine.js';
 export * from './application/ports/plan-store.js';
+export * from './application/ports/provider-credential-resolver.js';
 export * from './application/ports/deployer.js';
 export * from './application/ports/deployment-repository.js';
 export * from './application/ports/activity-repository.js';

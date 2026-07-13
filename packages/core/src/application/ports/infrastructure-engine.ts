@@ -1,5 +1,6 @@
 import type { InfrastructureError, Result } from '@cloudforge/shared';
 import type { InfrastructurePlan } from '../infrastructure/infrastructure-plan.js';
+import type { ProviderCredentials } from './provider-factory.js';
 
 /** Identifies a single stack: one environment of one project. */
 export interface StackReference {
@@ -36,17 +37,26 @@ export interface InfrastructureEngine {
   /** Whether the engine is usable on this machine (e.g. the CLI is installed). */
   isAvailable(): Promise<Result<boolean, InfrastructureError>>;
 
-  /** Dry-run: compute the changes a plan would make. */
+  /**
+   * Dry-run: compute the changes a plan would make. Provider credentials are
+   * required because the engine instantiates the real provider to diff against
+   * the live cloud account.
+   */
   preview(
     ref: StackReference,
     plan: InfrastructurePlan,
+    credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
   ): Promise<Result<PreviewResult, InfrastructureError>>;
 
-  /** Apply a plan, provisioning or updating infrastructure. */
+  /**
+   * Apply a plan, provisioning or updating real cloud infrastructure. Provider
+   * credentials authenticate the engine against the target account.
+   */
   apply(
     ref: StackReference,
     plan: InfrastructurePlan,
+    credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
   ): Promise<Result<ApplyResult, InfrastructureError>>;
 

@@ -22,6 +22,7 @@
   "dependencies": {
     "@cloudforge/core": "workspace:*",
     "@cloudforge/shared": "workspace:*",
+    "@pulumi/oci": "^4.19.0",
     "@pulumi/pulumi": "^3.136.0"
   },
   "devDependencies": {

@@ -14,6 +14,7 @@ import type {
   StackReference,
 } from '../ports/infrastructure-engine.js';
 import type { PlanStore } from '../ports/plan-store.js';
+import type { ProviderCredentialResolver } from '../ports/provider-credential-resolver.js';
 import { type InfrastructurePlan, type PlanIssue, validatePlan } from './infrastructure-plan.js';
 import {
   findInfrastructureTemplate,
@@ -31,6 +32,7 @@ export class InfrastructureService {
   constructor(
     private readonly engine: InfrastructureEngine,
     private readonly plans: PlanStore,
+    private readonly credentials: ProviderCredentialResolver,
   ) {}
 
   /** Whether the underlying IaC engine is available on this host. */
@@ -79,7 +81,9 @@ export class InfrastructureService {
   ): Promise<Result<PreviewResult, InfrastructureError | PersistenceError | NotFoundError>> {
     const plan = await this.requirePlan(projectId);
     if (!plan.ok) return plan;
-    return this.engine.preview(ref, plan.value, onEvent);
+    const credentials = await this.credentials.forProject(projectId);
+    if (!credentials.ok) return credentials;
+    return this.engine.preview(ref, plan.value, credentials.value, onEvent);
   }
 
   async apply(
@@ -89,7 +93,9 @@ export class InfrastructureService {
   ): Promise<Result<ApplyResult, InfrastructureError | PersistenceError | NotFoundError>> {
     const plan = await this.requirePlan(projectId);
     if (!plan.ok) return plan;
-    return this.engine.apply(ref, plan.value, onEvent);
+    const credentials = await this.credentials.forProject(projectId);
+    if (!credentials.ok) return credentials;
+    return this.engine.apply(ref, plan.value, credentials.value, onEvent);
   }
 
   destroy(

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { app } from 'electron';
-import { unwrap } from '@cloudforge/shared';
+import { err, InfrastructureError, ok, type Result, unwrap } from '@cloudforge/shared';
 import {
   ActivityService,
   CredentialService,
@@ -8,6 +8,8 @@ import {
   InfrastructureService,
   PluginService,
   ProjectService,
+  type ProviderCredentialResolver,
+  type ProviderCredentials,
   ProviderConnectionService,
   SettingsService,
 } from '@cloudforge/core';
@@ -78,9 +80,39 @@ export async function initContainer(): Promise<AppContainer> {
     credentialService,
     new DefaultProviderFactory(),
   );
+  // Resolve a project's linked cloud credential into the raw fields the
+  // infrastructure engine needs to authenticate against the provider account.
+  const credentialResolver: ProviderCredentialResolver = {
+    async forProject(projectId): Promise<Result<ProviderCredentials, InfrastructureError>> {
+      const project = await projectService.get(projectId);
+      if (!project.ok) {
+        return err(new InfrastructureError('Could not load project', { cause: project.error }));
+      }
+      const providerId = project.value.providerId;
+      if (!providerId) {
+        return err(
+          new InfrastructureError(
+            'No cloud provider is linked to this project. Open the project settings and select a provider credential before deploying.',
+            { context: { projectId } },
+          ),
+        );
+      }
+      const credential = await credentialService.getDecrypted(providerId);
+      if (!credential.ok) {
+        return err(
+          new InfrastructureError('Could not load the project’s provider credential', {
+            cause: credential.error,
+          }),
+        );
+      }
+      return ok(credential.value.data);
+    },
+  };
+
   const infrastructureService = new InfrastructureService(
     createInfrastructureEngine(),
     new PrismaPlanStore(db),
+    credentialResolver,
   );
   const deploymentService = new DeploymentService(
     new SshDeployer(),

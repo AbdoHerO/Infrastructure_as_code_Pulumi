@@ -13,6 +13,7 @@ import type {
   InfrastructureEngine,
   InfrastructurePlan,
   PreviewResult,
+  ProviderCredentials,
   StackReference,
 } from '@cloudforge/core';
 import { buildProgram } from './build-program.js';
@@ -45,9 +46,10 @@ export class PulumiEngine implements InfrastructureEngine {
   async preview(
     ref: StackReference,
     plan: InfrastructurePlan,
+    credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
   ): Promise<Result<PreviewResult, InfrastructureError>> {
-    return this.withStack(ref, plan, onEvent, async (stack) => {
+    return this.withStack(ref, plan, credentials, onEvent, async (stack) => {
       const result = await stack.preview(outputOpts(onEvent));
       const changes: Record<string, number> = {};
       for (const [op, count] of Object.entries(result.changeSummary)) {
@@ -60,9 +62,10 @@ export class PulumiEngine implements InfrastructureEngine {
   async apply(
     ref: StackReference,
     plan: InfrastructurePlan,
+    credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
   ): Promise<Result<ApplyResult, InfrastructureError>> {
-    return this.withStack(ref, plan, onEvent, async (stack) => {
+    return this.withStack(ref, plan, credentials, onEvent, async (stack) => {
       const result = await stack.up(outputOpts(onEvent));
       return { outputs: mapOutputs(result.outputs), summary: result.summary.result };
     });
@@ -72,7 +75,9 @@ export class PulumiEngine implements InfrastructureEngine {
     ref: StackReference,
     onEvent?: EngineEventSink,
   ): Promise<Result<void, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), onEvent, async (stack) => {
+    // Refresh/destroy operate on stored state; the provider (including its
+    // credentials) is reconstituted from the stack state, so none are supplied.
+    return this.withStack(ref, emptyPlan(), undefined, onEvent, async (stack) => {
       await stack.refresh(outputOpts(onEvent));
     });
   }
@@ -81,7 +86,7 @@ export class PulumiEngine implements InfrastructureEngine {
     ref: StackReference,
     onEvent?: EngineEventSink,
   ): Promise<Result<void, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), onEvent, async (stack) => {
+    return this.withStack(ref, emptyPlan(), undefined, onEvent, async (stack) => {
       await stack.destroy(outputOpts(onEvent));
     });
   }
@@ -89,7 +94,7 @@ export class PulumiEngine implements InfrastructureEngine {
   async outputs(
     ref: StackReference,
   ): Promise<Result<Record<string, unknown>, InfrastructureError>> {
-    return this.withStack(ref, emptyPlan(), undefined, async (stack) =>
+    return this.withStack(ref, emptyPlan(), undefined, undefined, async (stack) =>
       mapOutputs(await stack.outputs()),
     );
   }
@@ -98,6 +103,7 @@ export class PulumiEngine implements InfrastructureEngine {
   private async withStack<T>(
     ref: StackReference,
     plan: InfrastructurePlan,
+    credentials: ProviderCredentials | undefined,
     onEvent: EngineEventSink | undefined,
     operation: (stack: Stack) => Promise<T>,
   ): Promise<Result<T, InfrastructureError>> {
@@ -116,7 +122,7 @@ export class PulumiEngine implements InfrastructureEngine {
       };
 
       const stack = await LocalWorkspace.createOrSelectStack(
-        { stackName: ref.stack, projectName: ref.project, program: buildProgram(plan) },
+        { stackName: ref.stack, projectName: ref.project, program: buildProgram(plan, credentials) },
         workspaceOptions,
       );
 

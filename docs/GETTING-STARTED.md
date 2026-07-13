@@ -129,7 +129,10 @@ recheck them against [Configuration & Credentials](CONFIGURATION.md).
 
 1. **Projects** → **New Project**.
 2. Enter a name, environment (`development`/`staging`/`production`) and region.
-3. Create. A project is the container for one managed infrastructure.
+3. **Link a cloud provider credential** (the one from Step 2). This is required:
+   Preview and Apply authenticate against that account, and the engine refuses to
+   run without it.
+4. Create. A project is the container for one managed infrastructure.
 
 ### Step 4 — Compose & provision infrastructure (Infrastructure)
 
@@ -139,9 +142,21 @@ recheck them against [Configuration & Credentials](CONFIGURATION.md).
 3. **Save plan**, then **Preview** (a dry run) and watch the live engine log.
 4. **Apply** to provision. **Destroy** tears it down.
 
+Apply creates **real Oracle Cloud resources** — a VCN per network (with an
+internet gateway and route table for public subnets), security lists from your
+firewall rules, subnets, compute **Instances** launched from the newest matching
+platform image, and block **Volumes** — all visible in the Oracle Cloud Console.
+Instance public/private IPs are surfaced as stack outputs after Apply.
+
 > This requires the **Pulumi CLI** installed (the Dashboard's "IaC engine" row
-> shows _Pulumi ready_ when it's detected). Provisioning real resources also
-> requires valid provider credentials.
+> shows _Pulumi ready_ when it's detected) and the project's provider credential
+> linked (Step 3). On the first Apply, Pulumi downloads the Oracle resource
+> plugin, so it needs internet access and may take a minute.
+>
+> **Free-tier tip:** the built-in templates default to the `VM.Standard.E4.Flex`
+> shape, which is **not** Always-Free-eligible. To stay within the free tier,
+> edit the compute resource's shape to `VM.Standard.E2.1.Micro` (x86) or
+> `VM.Standard.A1.Flex` (Arm) before applying.
 
 ### Step 5 — Deploy an application (Deployments)
 
