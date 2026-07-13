@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { CreateProjectInput, ProjectDto } from '@cloudforge/core';
+import type { CreateProjectInput, ProjectDto, UpdateProjectInput } from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
 
 const PROJECTS_KEY = ['projects'] as const;
@@ -23,6 +23,19 @@ export function useCreateProject(): UseMutationResult<ProjectDto, Error, CreateP
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateProjectInput) => invoke('projects:create', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
+  });
+}
+
+/** Apply a partial update to a project (e.g. link a provider credential). */
+export function useUpdateProject(): UseMutationResult<
+  ProjectDto,
+  Error,
+  { id: string; changes: UpdateProjectInput }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changes }) => invoke('projects:update', { id, changes }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
   });
 }

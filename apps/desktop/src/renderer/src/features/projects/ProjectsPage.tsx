@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Boxes, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, CardContent, toast } from '@cloudforge/ui';
-import type { ProjectDto } from '@cloudforge/core';
+import { Badge, Button, Card, CardContent, Label, Select, toast } from '@cloudforge/ui';
+import { isProviderKind, PROVIDER_LABELS, type ProjectDto } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useCredentials } from '../secrets/useCredentials.js';
 import { CreateProjectForm } from './CreateProjectForm.js';
 import { statusVariant } from './project-status.js';
-import { useDeleteProject, useProjects } from './useProjects.js';
+import { useDeleteProject, useProjects, useUpdateProject } from './useProjects.js';
 
 /** The Projects module: create, list and delete infrastructure projects. */
 export function ProjectsPage(): JSX.Element {
@@ -65,7 +66,7 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
 
   return (
     <Card>
-      <CardContent className="flex items-center justify-between py-4">
+      <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
         <div className="flex items-center gap-4">
           <div className="bg-secondary text-muted-foreground flex size-10 items-center justify-center rounded-lg">
             <Boxes className="size-5" />
@@ -80,22 +81,69 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
             </p>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          title="Delete project"
-          disabled={deleteProject.isPending}
-          onClick={() =>
-            deleteProject.mutate(project.id, {
-              onSuccess: () => toast.success(`Project "${project.name}" deleted`),
-              onError: () => toast.error('Failed to delete project'),
-            })
-          }
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="flex items-center gap-3">
+          <ProviderLink project={project} />
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Delete project"
+            disabled={deleteProject.isPending}
+            onClick={() =>
+              deleteProject.mutate(project.id, {
+                onSuccess: () => toast.success(`Project "${project.name}" deleted`),
+                onError: () => toast.error('Failed to delete project'),
+              })
+            }
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Inline selector that links (or clears) the cloud-provider credential a
+ * project uses for provisioning. Required before Preview / Apply can run.
+ */
+function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
+  const { data: credentials } = useCredentials();
+  const updateProject = useUpdateProject();
+  const providerCredentials = (credentials ?? []).filter((c) => isProviderKind(c.kind));
+
+  const change = (providerId: string): void => {
+    updateProject.mutate(
+      { id: project.id, changes: { providerId: providerId || null } },
+      {
+        onSuccess: () =>
+          toast.success(providerId ? 'Cloud provider linked' : 'Cloud provider unlinked'),
+        onError: () => toast.error('Failed to update project'),
+      },
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Label className="text-muted-foreground text-[11px] uppercase tracking-wide">
+        Cloud provider
+      </Label>
+      <Select
+        className="h-9 w-56"
+        value={project.providerId ?? ''}
+        disabled={updateProject.isPending || providerCredentials.length === 0}
+        onChange={(event) => change(event.target.value)}
+      >
+        <option value="">
+          {providerCredentials.length === 0 ? 'Add one in Cloud Providers' : 'None (not linked)'}
+        </option>
+        {providerCredentials.map((credential) => (
+          <option key={credential.id} value={credential.id}>
+            {credential.name} ({PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
+          </option>
+        ))}
+      </Select>
+    </div>
   );
 }
 

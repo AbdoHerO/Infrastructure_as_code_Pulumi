@@ -3,14 +3,16 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, CardContent, Input, Label, Select, Textarea, toast } from '@cloudforge/ui';
-import { ENVIRONMENTS } from '@cloudforge/core';
+import { ENVIRONMENTS, isProviderKind, PROVIDER_LABELS } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
+import { useCredentials } from '../secrets/useCredentials.js';
 import { useCreateProject } from './useProjects.js';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(100, 'Name is too long'),
   environment: z.enum(ENVIRONMENTS),
   region: z.string().trim().min(1, 'Region is required'),
+  providerId: z.string().optional(),
   description: z.string().trim().max(500).optional(),
 });
 
@@ -24,6 +26,8 @@ interface CreateProjectFormProps {
 /** Inline form for creating a project, validated with Zod + React Hook Form. */
 export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProps): JSX.Element {
   const createProject = useCreateProject();
+  const { data: credentials } = useCredentials();
+  const providerCredentials = (credentials ?? []).filter((c) => isProviderKind(c.kind));
   const {
     register,
     handleSubmit,
@@ -40,6 +44,7 @@ export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProp
         name: values.name,
         environment: values.environment,
         region: values.region,
+        ...(values.providerId ? { providerId: values.providerId } : {}),
         ...(values.description ? { description: values.description } : {}),
       });
       toast.success(`Project "${values.name}" created`);
@@ -74,6 +79,24 @@ export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProp
                   </option>
                 ))}
               </Select>
+            </Field>
+            <Field label="Cloud provider" error={errors.providerId?.message}>
+              <Select {...register('providerId')} disabled={providerCredentials.length === 0}>
+                <option value="">
+                  {providerCredentials.length === 0 ? 'No provider credentials yet' : 'None'}
+                </option>
+                {providerCredentials.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {credential.name} ({PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
+                  </option>
+                ))}
+              </Select>
+              {providerCredentials.length === 0 ? (
+                <p className="text-muted-foreground text-xs">
+                  Add one under <span className="font-medium">Cloud Providers</span> first, then link
+                  it here (or on the project row). Required before Preview / Apply.
+                </p>
+              ) : null}
             </Field>
           </div>
           <Field label="Description" error={errors.description?.message}>
