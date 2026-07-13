@@ -66,6 +66,8 @@ the Presentation layer and talks to services only through the typed IPC contract
 
 Full documentation lives in [`docs/`](docs/README.md):
 
+- **[Getting Started](docs/GETTING-STARTED.md)** — run, test and use it ·
+  **[Configuration & Credentials](docs/CONFIGURATION.md)** — keys & how to get them
 - [Overview](docs/OVERVIEW.md) · [Architecture](docs/ARCHITECTURE.md) ·
   [Packages](docs/PACKAGES.md) · [Modules](docs/MODULES.md)
 - [IPC Reference](docs/IPC.md) · [Data Model](docs/DATA-MODEL.md) ·
@@ -77,9 +79,14 @@ Full documentation lives in [`docs/`](docs/README.md):
 **Prerequisites:** Node.js ≥ 20.18 and pnpm ≥ 9.
 
 ```bash
-pnpm install        # install the workspace
-pnpm desktop        # run the desktop app in development
+pnpm install                                          # install the workspace
+pnpm --filter @cloudforge/database prisma:generate    # generate the Prisma client
+pnpm desktop                                          # run the desktop app in development
 ```
+
+Then follow the [Getting Started guide](docs/GETTING-STARTED.md) to use the app,
+and [Configuration & Credentials](docs/CONFIGURATION.md) to set up Oracle Cloud,
+SSH keys and the Pulumi CLI.
 
 ### Workspace scripts
 

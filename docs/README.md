@@ -12,17 +12,19 @@ infrastructure without touching the command line.
 
 ## Table of contents
 
-| Document                        | What it covers                                                                                                    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [Overview](OVERVIEW.md)         | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
-| [Architecture](ARCHITECTURE.md) | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
-| [Packages](PACKAGES.md)         | Every workspace package: purpose, public exports, key files                                                       |
-| [Modules](MODULES.md)           | Every one of the 14 UI modules: behaviour and data flow                                                           |
-| [IPC Reference](IPC.md)         | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
-| [Data Model](DATA-MODEL.md)     | The Prisma/SQLite schema — all 11 tables and conventions                                                          |
-| [Security](SECURITY.md)         | The security model: encryption, keychain, hardening, threat notes                                                 |
-| [Development](DEVELOPMENT.md)   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
-| [Packaging](PACKAGING.md)       | Building distributables and runtime prerequisites                                                                 |
+| Document                                        | What it covers                                                                                                    |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [Getting Started](GETTING-STARTED.md)           | **Run, test and use** the app end to end, plus troubleshooting                                                    |
+| [Configuration & Credentials](CONFIGURATION.md) | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
+| [Overview](OVERVIEW.md)                         | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
+| [Architecture](ARCHITECTURE.md)                 | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
+| [Packages](PACKAGES.md)                         | Every workspace package: purpose, public exports, key files                                                       |
+| [Modules](MODULES.md)                           | Every one of the 14 UI modules: behaviour and data flow                                                           |
+| [IPC Reference](IPC.md)                         | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
+| [Data Model](DATA-MODEL.md)                     | The Prisma/SQLite schema — all 11 tables and conventions                                                          |
+| [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
+| [Development](DEVELOPMENT.md)                   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
+| [Packaging](PACKAGING.md)                       | Building distributables and runtime prerequisites                                                                 |
 
 Project-level entry points: the top-level [README](../README.md) and the
 [CHANGELOG](../CHANGELOG.md) (a phase-by-phase build history).
@@ -44,6 +46,8 @@ Project-level entry points: the top-level [README](../README.md) and the
 
 ## Reading order
 
+- **Just want to run it?** Go straight to [Getting Started](GETTING-STARTED.md)
+  and [Configuration & Credentials](CONFIGURATION.md).
 - **New to the project?** Start with [Overview](OVERVIEW.md), then
   [Architecture](ARCHITECTURE.md).
 - **Contributing code?** Read [Architecture](ARCHITECTURE.md),
