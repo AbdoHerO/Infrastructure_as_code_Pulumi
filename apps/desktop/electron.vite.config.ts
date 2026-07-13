@@ -10,6 +10,7 @@ const workspaceAliases = {
   '@cloudforge/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
   '@cloudforge/core': resolve(__dirname, '../../packages/core/src/index.ts'),
   '@cloudforge/database': resolve(__dirname, '../../packages/database/src/index.ts'),
+  '@cloudforge/providers': resolve(__dirname, '../../packages/providers/src/index.ts'),
   '@cloudforge/ui': resolve(__dirname, '../../packages/ui/src/index.ts'),
 };
 

@@ -1,12 +1,16 @@
 import type { SerializedAppError } from '@cloudforge/shared';
 import type {
   AppSettings,
+  AvailabilityDomain,
+  ConnectionTestResult,
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
   ProjectDto,
+  Region,
   RevealedCredentialDto,
   SettingsPatch,
+  Shape,
   UpdateProjectInput,
 } from '@cloudforge/core';
 
@@ -40,6 +44,14 @@ export interface IpcContract {
   'settings:update': { request: SettingsPatch; response: AppSettings };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
+
+  'providers:test': { request: { credentialId: string }; response: ConnectionTestResult };
+  'providers:listRegions': { request: { credentialId: string }; response: Region[] };
+  'providers:listShapes': { request: { credentialId: string }; response: Shape[] };
+  'providers:listAvailabilityDomains': {
+    request: { credentialId: string };
+    response: AvailabilityDomain[];
+  };
 }
 
 /** Union of all valid IPC channel names. */
@@ -90,4 +102,8 @@ export const IPC_CHANNELS = [
   'settings:get',
   'settings:update',
   'security:status',
+  'providers:test',
+  'providers:listRegions',
+  'providers:listShapes',
+  'providers:listAvailabilityDomains',
 ] as const satisfies readonly IpcChannel[];

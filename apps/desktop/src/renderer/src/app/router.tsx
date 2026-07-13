@@ -1,7 +1,6 @@
 import { createHashRouter } from 'react-router-dom';
 import {
   Blocks,
-  Cloud,
   Container,
   FileCode2,
   KeyRound,
@@ -14,6 +13,7 @@ import { AppShell } from './layout/AppShell.js';
 import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
+import { ProvidersPage } from '../features/providers/ProvidersPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
@@ -63,17 +63,7 @@ export const router = createHashRouter([
           />
         ),
       },
-      {
-        path: 'providers',
-        element: (
-          <PlaceholderPage
-            title="Cloud Providers"
-            description="Connect and manage provider credentials."
-            icon={Cloud}
-            phase="Phase 5"
-          />
-        ),
-      },
+      { path: 'providers', element: <ProvidersPage /> },
       {
         path: 'templates',
         element: (

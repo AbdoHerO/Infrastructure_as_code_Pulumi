@@ -3,6 +3,29 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Phase 5] — Cloud Providers & Oracle Cloud
+
+### Added
+
+- **Provider contract** in `@cloudforge/core`: the provider-independent
+  `CloudProvider` interface (test connection, account info, list
+  regions/shapes/availability-domains), provider kinds + labels, a
+  `ProviderFactory` port, and the `ProviderConnectionService` that decrypts a
+  stored credential and runs a capability against the right provider.
+- **`@cloudforge/providers`** — the plugin package:
+  - Oracle Cloud provider implemented against the OCI REST APIs using the OCI
+    request-signing scheme (`node:crypto`), no heavyweight SDK. Signing logic is
+    unit-tested end-to-end (sign → verify with a generated keypair).
+  - `DefaultProviderFactory` — registering a provider is one `case` + an
+    implementation of the interface.
+- **Provider IPC** channels/handlers and the renderer **Cloud Providers** module:
+  per-credential connection testing with account info, and on-demand region/shape
+  discovery.
+
+### Verified
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (38) and `pnpm build` all green.
+
 ## [Phase 4] — Credential Manager & Settings
 
 ### Added

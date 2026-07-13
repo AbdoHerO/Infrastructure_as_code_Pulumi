@@ -20,6 +20,7 @@
   "dependencies": {
     "@cloudforge/core": "workspace:*",
     "@cloudforge/database": "workspace:*",
+    "@cloudforge/providers": "workspace:*",
     "@cloudforge/shared": "workspace:*",
     "@cloudforge/ui": "workspace:*",
     "@electron-toolkit/preload": "^3.0.1",

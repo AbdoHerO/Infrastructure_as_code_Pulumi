@@ -1,7 +1,13 @@
 import { join } from 'node:path';
 import { app } from 'electron';
 import { unwrap } from '@cloudforge/shared';
-import { CredentialService, ProjectService, SettingsService } from '@cloudforge/core';
+import {
+  CredentialService,
+  ProjectService,
+  ProviderConnectionService,
+  SettingsService,
+} from '@cloudforge/core';
+import { DefaultProviderFactory } from '@cloudforge/providers';
 import {
   createPrismaClient,
   type Db,
@@ -21,6 +27,7 @@ export interface AppContainer {
   readonly projectService: ProjectService;
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
+  readonly providerService: ProviderConnectionService;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -47,11 +54,16 @@ export async function initContainer(): Promise<AppContainer> {
   const projectService = new ProjectService(new PrismaProjectRepository(db));
   const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
   const settingsService = new SettingsService(new PrismaSettingsRepository(db));
+  const providerService = new ProviderConnectionService(
+    credentialService,
+    new DefaultProviderFactory(),
+  );
 
   container = {
     projectService,
     credentialService,
     settingsService,
+    providerService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();
