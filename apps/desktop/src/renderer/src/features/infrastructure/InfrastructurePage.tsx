@@ -22,15 +22,17 @@ import {
 import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
-import { ResourceEditor } from './ResourceEditor.js';
+import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { ADDABLE_KINDS, createResource, uniqueName } from './resource-templates.js';
 import {
   useApply,
+  useAvailabilityDomains,
   useDestroy,
   useEngineLogs,
   usePlan,
   usePreview,
   useSavePlan,
+  useShapes,
 } from './useInfrastructure.js';
 
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
@@ -40,6 +42,10 @@ export function InfrastructurePage(): JSX.Element {
   const [resources, setResources] = useState<ResourceSpec[]>([]);
   const [config, setConfig] = useState<Record<string, string>>({});
   const [streamId] = useState(() => crypto.randomUUID());
+
+  const credentialId = projects?.find((p) => p.id === projectId)?.providerId ?? null;
+  const shapes = useShapes(credentialId);
+  const availabilityDomains = useAvailabilityDomains(credentialId);
 
   const { data: plan } = usePlan(projectId);
   const savePlan = useSavePlan();
@@ -68,6 +74,18 @@ export function InfrastructurePage(): JSX.Element {
   );
   const issues = useMemo(() => validatePlan(currentPlan), [currentPlan]);
   const busy = preview.isPending || apply.isPending || destroy.isPending || savePlan.isPending;
+
+  const editorContext: EditorContext = useMemo(
+    () => ({
+      networks: resources.filter((r) => r.kind === 'network').map((r) => r.name),
+      subnets: resources.filter((r) => r.kind === 'subnet').map((r) => r.name),
+      instances: resources.filter((r) => r.kind === 'compute').map((r) => r.name),
+      shapes: shapes.data ?? [],
+      availabilityDomains: availabilityDomains.data ?? [],
+      liveLoading: shapes.isFetching || availabilityDomains.isFetching,
+    }),
+    [resources, shapes.data, shapes.isFetching, availabilityDomains.data, availabilityDomains.isFetching],
+  );
 
   if (projects?.length === 0) {
     return (
@@ -204,6 +222,7 @@ export function InfrastructurePage(): JSX.Element {
               <ResourceEditor
                 key={`${resource.kind}-${index}`}
                 resource={resource}
+                context={editorContext}
                 onChange={(updated) =>
                   setResources((prev) => prev.map((r, i) => (i === index ? updated : r)))
                 }

@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query';
-import type { ApplyResult, InfrastructurePlan, PreviewResult } from '@cloudforge/core';
+import type {
+  ApplyResult,
+  AvailabilityDomain,
+  InfrastructurePlan,
+  PreviewResult,
+  Shape,
+} from '@cloudforge/core';
 import { invoke, subscribe } from '../../lib/ipc.js';
 
 /** Load the persisted infrastructure plan for a project (null if none). */
@@ -49,6 +55,34 @@ export function useDestroy(): ReturnType<
   return useMutation({
     mutationFn: ({ projectId, streamId }: { projectId: string; streamId: string }) =>
       invoke('infra:destroy', { projectId, streamId }),
+  });
+}
+
+/**
+ * Live compute shapes available in the linked provider account. Disabled until a
+ * credential is known; failures are swallowed so the editor falls back to a
+ * built-in list rather than blocking plan editing.
+ */
+export function useShapes(credentialId: string | null): UseQueryResult<Shape[]> {
+  return useQuery({
+    queryKey: ['providers', 'shapes', credentialId],
+    queryFn: () => invoke('providers:listShapes', { credentialId: credentialId ?? '' }),
+    enabled: credentialId !== null && credentialId !== '',
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+/** Live availability domains in the linked provider account (see {@link useShapes}). */
+export function useAvailabilityDomains(
+  credentialId: string | null,
+): UseQueryResult<AvailabilityDomain[]> {
+  return useQuery({
+    queryKey: ['providers', 'availabilityDomains', credentialId],
+    queryFn: () => invoke('providers:listAvailabilityDomains', { credentialId: credentialId ?? '' }),
+    enabled: credentialId !== null && credentialId !== '',
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 }
 

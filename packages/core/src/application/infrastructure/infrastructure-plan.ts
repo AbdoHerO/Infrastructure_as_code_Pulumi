@@ -60,13 +60,13 @@ export interface ComputeResource extends BaseResource {
   readonly sshPublicKey: string;
   readonly assignPublicIp: boolean;
   /** vCPUs for flexible shapes (ignored by fixed shapes). Defaults to 1. */
-  readonly ocpus?: number;
+  readonly ocpus?: number | undefined;
   /** Memory in GB for flexible shapes (ignored by fixed shapes). Defaults to 6. */
-  readonly memoryGb?: number;
+  readonly memoryGb?: number | undefined;
   /** Boot volume size in GB. Omit to use the image default (~47 GB). */
-  readonly bootVolumeGb?: number;
+  readonly bootVolumeGb?: number | undefined;
   /** Availability domain name. Omit to use the compartment's first AD. */
-  readonly availabilityDomain?: string;
+  readonly availabilityDomain?: string | undefined;
 }
 
 export interface VolumeResource extends BaseResource {
