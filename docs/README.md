@@ -42,7 +42,7 @@ Project-level entry points: the top-level [README](../README.md) and the
 | **Configuration engine**   | SSH (`ssh2`) executing idempotent deployment steps                         |
 | **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)              |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app  |
-| **Tests**                  | 47 unit tests (Vitest); `pnpm test:coverage` for a V8 report               |
+| **Tests**                  | 49 unit tests (Vitest); `pnpm test:coverage` for a V8 report               |
 | **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`           |
 
 ## Reading order

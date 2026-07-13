@@ -10,6 +10,7 @@ import type {
   ApplyResult,
   AvailabilityDomain,
   CustomTemplateSummary,
+  EngineProgress,
   InfrastructurePlan,
   ManagedStackSummary,
   PreviewResult,
@@ -190,17 +191,74 @@ export function useApplyCustomTemplate(): UseMutationResult<
 /** Subscribe to streamed engine output for a given stream id. */
 export function useEngineLogs(streamId: string): {
   lines: string[];
+  progress: InfrastructureProgressState | null;
+  resources: InfrastructureResourceProgress[];
   clear: () => void;
 } {
   const [lines, setLines] = useState<string[]>([]);
+  const [progress, setProgress] = useState<InfrastructureProgressState | null>(null);
+  const [resources, setResources] = useState<Record<string, InfrastructureResourceProgress>>({});
 
   useEffect(() => {
     const unsubscribe = subscribe('engine:log', (payload) => {
       if (payload.streamId !== streamId) return;
-      setLines((prev) => [...prev, payload.event.message]);
+      const eventProgress = payload.event.progress;
+      if (!eventProgress) {
+        setLines((prev) => [...prev, payload.event.message]);
+        return;
+      }
+
+      if (eventProgress.scope === 'operation') {
+        setProgress({ status: eventProgress.status, label: eventProgress.label });
+        return;
+      }
+
+      const resource = eventProgress.resource;
+      if (!resource) return;
+      const key = `${resource.type}:${resource.name}`;
+      setResources((previous) => ({
+        ...previous,
+        [key]: {
+          ...resource,
+          status: eventProgress.status,
+          label: eventProgress.label,
+          operation: eventProgress.operation ?? 'process',
+        },
+      }));
+      setProgress((previous) => ({
+        status:
+          eventProgress.status === 'failed'
+            ? 'failed'
+            : previous?.status === 'ready'
+              ? 'ready'
+              : 'in-progress',
+        label: eventProgress.label,
+      }));
     });
     return unsubscribe;
   }, [streamId]);
 
-  return { lines, clear: () => setLines([]) };
+  return {
+    lines,
+    progress,
+    resources: Object.values(resources),
+    clear: () => {
+      setLines([]);
+      setProgress(null);
+      setResources({});
+    },
+  };
+}
+
+export interface InfrastructureProgressState {
+  readonly status: EngineProgress['status'];
+  readonly label: string;
+}
+
+export interface InfrastructureResourceProgress {
+  readonly name: string;
+  readonly type: string;
+  readonly status: EngineProgress['status'];
+  readonly operation: string;
+  readonly label: string;
 }

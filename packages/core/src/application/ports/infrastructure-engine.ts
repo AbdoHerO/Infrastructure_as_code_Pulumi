@@ -12,6 +12,19 @@ export interface StackReference {
 export interface EngineEvent {
   readonly stream: 'stdout' | 'stderr';
   readonly message: string;
+  readonly progress?: EngineProgress;
+}
+
+/** Structured progress derived from the IaC engine's real resource events. */
+export interface EngineProgress {
+  readonly scope: 'operation' | 'resource';
+  readonly status: 'preparing' | 'in-progress' | 'ready' | 'failed';
+  readonly label: string;
+  readonly operation?: string;
+  readonly resource?: {
+    readonly name: string;
+    readonly type: string;
+  };
 }
 
 /** Callback receiving streamed engine output line by line. */

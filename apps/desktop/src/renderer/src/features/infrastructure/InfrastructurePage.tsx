@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookmarkPlus, Eye, Hammer, Loader2, Plus, Save, ServerCog, Trash } from 'lucide-react';
+import {
+  BookmarkPlus,
+  CheckCircle2,
+  Eye,
+  Hammer,
+  Loader2,
+  Plus,
+  Save,
+  ServerCog,
+  Trash,
+  XCircle,
+} from 'lucide-react';
 import {
   Badge,
   Button,
@@ -40,6 +51,8 @@ import {
   usePreview,
   useSavePlan,
   useShapes,
+  type InfrastructureProgressState,
+  type InfrastructureResourceProgress,
 } from './useInfrastructure.js';
 
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
@@ -70,7 +83,7 @@ export function InfrastructurePage(): JSX.Element {
       ({ ref }) => ref.project === currentRef.project && ref.stack === currentRef.stack,
     );
   const outputs = useOutputs(projectId, currentStackExists);
-  const { lines, clear } = useEngineLogs(streamId);
+  const { lines, progress, resources: resourceProgress, clear } = useEngineLogs(streamId);
 
   // Default to the first project and hydrate local state from its stored plan.
   useEffect(() => {
@@ -292,6 +305,7 @@ export function InfrastructurePage(): JSX.Element {
         </div>
 
         <div className="space-y-2">
+          <InfrastructureProgress progress={progress} resources={resourceProgress} />
           <p className="text-sm font-medium">Engine output</p>
           <LogTerminal lines={lines} emptyMessage="Run a preview or apply to see engine output." />
           {outputs.data ? (
@@ -336,6 +350,92 @@ export function InfrastructurePage(): JSX.Element {
         plan={currentPlan}
       />
     </>
+  );
+}
+
+function InfrastructureProgress({
+  progress,
+  resources,
+}: {
+  progress: InfrastructureProgressState | null;
+  resources: readonly InfrastructureResourceProgress[];
+}): JSX.Element | null {
+  if (!progress) return null;
+  const running = progress.status === 'preparing' || progress.status === 'in-progress';
+  const ready = progress.status === 'ready';
+  const failed = progress.status === 'failed';
+
+  return (
+    <Card
+      className={
+        failed ? 'border-destructive/40' : ready ? 'border-success/40' : 'border-primary/40'
+      }
+      aria-live="polite"
+    >
+      <CardContent className="space-y-3 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2">
+            {failed ? (
+              <XCircle className="text-destructive mt-0.5 size-4 shrink-0" />
+            ) : ready ? (
+              <CheckCircle2 className="text-success mt-0.5 size-4 shrink-0" />
+            ) : (
+              <Loader2 className="text-primary mt-0.5 size-4 shrink-0 animate-spin" />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {failed ? 'Failed' : ready ? 'Ready' : 'Oracle operation in progress'}
+              </p>
+              <p className="text-muted-foreground truncate text-xs">{progress.label}</p>
+            </div>
+          </div>
+          <Badge variant={failed ? 'destructive' : ready ? 'success' : 'default'}>
+            {failed ? 'Failed' : ready ? 'Ready' : 'In progress'}
+          </Badge>
+        </div>
+
+        <div className="bg-secondary h-1.5 overflow-hidden rounded-full" role="progressbar">
+          {running ? (
+            <div className="progress-indeterminate bg-primary h-full w-1/3 rounded-full" />
+          ) : (
+            <div
+              className={`h-full w-full rounded-full ${failed ? 'bg-destructive' : 'bg-success'}`}
+            />
+          )}
+        </div>
+
+        {resources.length > 0 ? (
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {resources.map((resource) => (
+              <div
+                key={`${resource.type}:${resource.name}`}
+                className="bg-secondary/50 flex items-center gap-2 rounded-md px-2.5 py-2 text-xs"
+              >
+                {resource.status === 'failed' ? (
+                  <XCircle className="text-destructive size-3.5 shrink-0" />
+                ) : resource.status === 'ready' ? (
+                  <CheckCircle2 className="text-success size-3.5 shrink-0" />
+                ) : (
+                  <Loader2 className="text-primary size-3.5 shrink-0 animate-spin" />
+                )}
+                <span className="truncate">
+                  {resource.type} · {resource.name}
+                </span>
+                <span className="text-muted-foreground ml-auto capitalize">
+                  {resource.status === 'ready' ? 'Ready' : resource.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {running ? (
+          <p className="text-muted-foreground text-xs">
+            Waiting for Oracle Cloud and Pulumi. Keep CloudForge open.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

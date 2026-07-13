@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   type ConfigMap,
+  type EngineEvent as PulumiEngineEvent,
   LocalWorkspace,
   type LocalWorkspaceOptions,
   type OutputMap,
@@ -11,6 +12,7 @@ import {
 import { err, InfrastructureError, ok, type Result } from '@cloudforge/shared';
 import type {
   ApplyResult,
+  EngineEvent,
   EngineEventSink,
   InfrastructureEngine,
   InfrastructurePlan,
@@ -91,7 +93,7 @@ export class PulumiEngine implements InfrastructureEngine {
     onEvent?: EngineEventSink,
   ): Promise<Result<PreviewResult, InfrastructureError>> {
     return this.withStack(ref, plan, credentials, true, onEvent, async (stack) => {
-      const result = await stack.preview(outputOpts(onEvent));
+      const result = await stack.preview(outputOpts(onEvent, 'preview'));
       const changes: Record<string, number> = {};
       for (const [op, count] of Object.entries(result.changeSummary)) {
         if (typeof count === 'number') changes[op] = count;
@@ -107,7 +109,7 @@ export class PulumiEngine implements InfrastructureEngine {
     onEvent?: EngineEventSink,
   ): Promise<Result<ApplyResult, InfrastructureError>> {
     return this.withStack(ref, plan, credentials, true, onEvent, async (stack) => {
-      const result = await stack.up(outputOpts(onEvent));
+      const result = await stack.up(outputOpts(onEvent, 'apply'));
       return { outputs: mapOutputs(result.outputs), summary: result.summary.result };
     });
   }
@@ -119,7 +121,7 @@ export class PulumiEngine implements InfrastructureEngine {
     // Refresh/destroy operate on stored state; the provider (including its
     // credentials) is reconstituted from the stack state, so none are supplied.
     return this.withStack(ref, emptyPlan(), undefined, false, onEvent, async (stack) => {
-      await stack.refresh(outputOpts(onEvent));
+      await stack.refresh(outputOpts(onEvent, 'refresh'));
     });
   }
 
@@ -128,7 +130,7 @@ export class PulumiEngine implements InfrastructureEngine {
     onEvent?: EngineEventSink,
   ): Promise<Result<void, InfrastructureError>> {
     return this.withStack(ref, emptyPlan(), undefined, false, onEvent, async (stack) => {
-      await stack.destroy(outputOpts(onEvent));
+      await stack.destroy(outputOpts(onEvent, 'destroy'));
     });
   }
 
@@ -150,6 +152,15 @@ export class PulumiEngine implements InfrastructureEngine {
     operation: (stack: Stack) => Promise<T>,
   ): Promise<Result<T, InfrastructureError>> {
     try {
+      onEvent?.({
+        stream: 'stdout',
+        message: 'Preparing infrastructure engine',
+        progress: {
+          scope: 'operation',
+          status: 'preparing',
+          label: 'Preparing infrastructure engine',
+        },
+      });
       const workspaceOptions: LocalWorkspaceOptions = {
         pulumiHome: this.options.home,
         envVars: {
@@ -185,6 +196,15 @@ export class PulumiEngine implements InfrastructureEngine {
       // Surface the real Pulumi/CLI error to the live log and the error message,
       // so failures are diagnosable instead of a bare "operation failed".
       const detail = cause instanceof Error ? cause.message : String(cause);
+      onEvent?.({
+        stream: 'stderr',
+        message: detail,
+        progress: {
+          scope: 'operation',
+          status: 'failed',
+          label: 'Infrastructure operation failed',
+        },
+      });
       onEvent?.({ stream: 'stderr', message: detail });
       return err(
         new InfrastructureError(`Pulumi operation failed: ${firstLine(detail)}`, {
@@ -252,8 +272,166 @@ function isMissingPath(cause: unknown): boolean {
 }
 
 /** Build the `{ onOutput }` options object, omitting the key when no sink is given. */
-function outputOpts(onEvent?: EngineEventSink): { onOutput?: (out: string) => void } {
-  return onEvent ? { onOutput: (out: string) => onEvent({ stream: 'stdout', message: out }) } : {};
+type InfrastructureOperation = 'preview' | 'apply' | 'refresh' | 'destroy';
+
+function outputOpts(
+  onEvent: EngineEventSink | undefined,
+  operation: InfrastructureOperation,
+): {
+  onOutput?: (out: string) => void;
+  onEvent?: (event: PulumiEngineEvent) => void;
+} {
+  if (!onEvent) return {};
+  let failed = false;
+  return {
+    onOutput: (out: string) => onEvent({ stream: 'stdout', message: out }),
+    onEvent: (event: PulumiEngineEvent) => {
+      const mapped = toProgressEvent(event, failed, operation);
+      if (!mapped) return;
+      if (mapped.progress?.status === 'failed') failed = true;
+      onEvent(mapped);
+    },
+  };
+}
+
+/** Translate Pulumi's structured events into provider-independent UI progress. */
+export function toProgressEvent(
+  event: PulumiEngineEvent,
+  operationFailed = false,
+  operation: InfrastructureOperation = 'apply',
+): EngineEvent | null {
+  if (event.preludeEvent) {
+    return progressEvent('operation', 'preparing', 'Calculating infrastructure changes');
+  }
+
+  if (event.resourcePreEvent) {
+    const { metadata, planning } = event.resourcePreEvent;
+    if (metadata.op === 'same' || metadata.type === 'pulumi:pulumi:Stack') return null;
+    const resource = resourceFromMetadata(metadata);
+    const action = planning
+      ? `Planning ${operationLabel(metadata.op)}`
+      : operationLabel(metadata.op);
+    return progressEvent(
+      'resource',
+      'in-progress',
+      `${action} ${resource.type} “${resource.name}”`,
+      metadata.op,
+      resource,
+    );
+  }
+
+  if (event.resOpFailedEvent) {
+    const { metadata } = event.resOpFailedEvent;
+    const resource = resourceFromMetadata(metadata);
+    return progressEvent(
+      'resource',
+      'failed',
+      `${resource.type} “${resource.name}” failed`,
+      metadata.op,
+      resource,
+    );
+  }
+
+  if (event.resOutputsEvent) {
+    const { metadata, planning } = event.resOutputsEvent;
+    if (metadata.op === 'same' || metadata.type === 'pulumi:pulumi:Stack') return null;
+    const resource = resourceFromMetadata(metadata);
+    return progressEvent(
+      'resource',
+      'ready',
+      `${resource.type} “${resource.name}” ${planning ? 'planned' : completionLabel(metadata.op)}`,
+      metadata.op,
+      resource,
+    );
+  }
+
+  if (event.summaryEvent) {
+    const status = operationFailed || event.summaryEvent.maybeCorrupt ? 'failed' : 'ready';
+    return progressEvent(
+      'operation',
+      status,
+      status === 'ready'
+        ? `${operationCompleteLabel(operation)} in ${formatDuration(event.summaryEvent.durationSeconds)}`
+        : 'Infrastructure operation finished with errors',
+    );
+  }
+
+  if (event.cancelEvent) {
+    return progressEvent('operation', 'failed', 'Infrastructure operation cancelled');
+  }
+
+  return null;
+}
+
+function operationCompleteLabel(operation: InfrastructureOperation): string {
+  switch (operation) {
+    case 'preview':
+      return 'Preview ready';
+    case 'refresh':
+      return 'Cloud state refreshed';
+    case 'destroy':
+      return 'Infrastructure destroyed';
+    default:
+      return 'Infrastructure ready';
+  }
+}
+
+function progressEvent(
+  scope: 'operation' | 'resource',
+  status: 'preparing' | 'in-progress' | 'ready' | 'failed',
+  label: string,
+  operation?: string,
+  resource?: { name: string; type: string },
+): EngineEvent {
+  return {
+    stream: status === 'failed' ? 'stderr' : 'stdout',
+    message: label,
+    progress: {
+      scope,
+      status,
+      label,
+      ...(operation ? { operation } : {}),
+      ...(resource ? { resource } : {}),
+    },
+  };
+}
+
+function resourceFromMetadata(metadata: { urn: string; type: string }): {
+  name: string;
+  type: string;
+} {
+  return {
+    name: metadata.urn.split('::').at(-1) ?? 'unknown',
+    type: friendlyResourceType(metadata.type),
+  };
+}
+
+function operationLabel(operation: string): string {
+  switch (operation) {
+    case 'create':
+    case 'create-replacement':
+      return 'Creating';
+    case 'update':
+      return 'Updating';
+    case 'delete':
+    case 'delete-replaced':
+      return 'Deleting';
+    case 'replace':
+      return 'Replacing';
+    case 'refresh':
+      return 'Refreshing';
+    default:
+      return 'Processing';
+  }
+}
+
+function completionLabel(operation: string): string {
+  return operation.startsWith('delete') ? 'deleted' : 'ready';
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function mapOutputs(outputs: OutputMap): Record<string, unknown> {
