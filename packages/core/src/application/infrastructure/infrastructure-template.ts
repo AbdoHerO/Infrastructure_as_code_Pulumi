@@ -63,6 +63,34 @@ function firewall(ports: readonly number[]): ResourceSpec {
 /** The built-in infrastructure templates. */
 export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
+    id: 'oci-always-free-arm',
+    name: 'OCI Always Free ARM VPS',
+    description:
+      'Ubuntu 24.04 ARM64: A1 Flex, 4 OCPUs, 24 GB RAM and a 200 GB boot disk. Uses the full commonly documented free storage allowance; verify tenancy limits.',
+    category: 'compute',
+    build: (ctx) => ({
+      providerKind: 'oracle',
+      ...base(ctx),
+      resources: [
+        network(),
+        subnet(true),
+        firewall([22, 80, 443]),
+        {
+          kind: 'compute',
+          name: 'always-free-arm',
+          shape: 'VM.Standard.A1.Flex',
+          image: 'ubuntu-24.04',
+          subnetName: 'subnet',
+          sshPublicKey: ctx.sshPublicKey ?? '',
+          assignPublicIp: true,
+          ocpus: 4,
+          memoryGb: 24,
+          bootVolumeGb: 200,
+        },
+      ],
+    }),
+  },
+  {
     id: 'web-server',
     name: 'Web Server',
     description: 'A public VM with HTTP/HTTPS open — ideal for a Docker host.',

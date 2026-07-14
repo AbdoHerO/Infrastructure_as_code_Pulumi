@@ -30,7 +30,7 @@ pnpm --filter @cloudforge/database prisma:generate       # regenerate the client
 pnpm --filter @cloudforge/database db:bootstrap-sql       # regenerate bootstrap.sql
 ```
 
-## Tables (11)
+## Tables (12)
 
 ### Project
 
@@ -164,6 +164,22 @@ Generic encrypted key/value secrets, scoped globally or per project.
 
 Unique: `(scope, name)`.
 
+### VpsTarget
+
+A reusable verified SSH destination for Ansible. Authentication material stays
+in the related encrypted `Credential`.
+
+| Column                     | Type       | Notes                          |
+| -------------------------- | ---------- | ------------------------------ |
+| `id`                       | String @id | UUID                           |
+| `name`, `host`, `username` | String     | Identity and connection fields |
+| `port`                     | Int        | SSH port                       |
+| `sshCredentialId`          | String?    | FK → Credential (SetNull)      |
+| `hostKeySha256`            | String     | Pinned server identity         |
+| `lastPreflight`            | String     | JSON readiness snapshot        |
+| `lastPreflightAt`          | DateTime?  | Last real remote check         |
+| `createdAt` / `updatedAt`  | DateTime   | indexed on `updatedAt`         |
+
 ### Setting
 
 Simple key/value store. Backs `AppSettings` (`key = app.settings`) and per-project
@@ -210,5 +226,6 @@ The audit / activity feed powering the Logs module and dashboard timeline.
 | Pulumi state                      | local file backend under `userData/pulumi/state` (not in SQLite)           |
 | Deployment history                | `Deployment`                                                               |
 | Activity/audit                    | `Activity`                                                                 |
+| Saved Ansible VPS targets         | `VpsTarget`                                                                |
 | Installed plugins                 | `Plugin`                                                                   |
 | Application log file              | `userData/logs/cloudforge.log` (not in SQLite — see [Modules](MODULES.md)) |

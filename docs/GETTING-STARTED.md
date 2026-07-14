@@ -204,7 +204,8 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
   keys/fingerprints, explicitly reveal private material, and delete credentials.
 - **Containers** — use verified SSH transport to list/control containers, read
   logs/stats, and deploy Compose projects without exposing the Docker TCP socket.
-- **Ansible** — verify any Linux VPS, bootstrap its isolated runtime, run generic
+- **Ansible** — save and verify any Linux VPS, inspect real readiness, confirm
+  prerequisite repair, bootstrap its isolated runtime, run generic
   service profiles, and manage validated Nginx domain-to-port routes. See the
   [Ansible guide](ANSIBLE.md).
 

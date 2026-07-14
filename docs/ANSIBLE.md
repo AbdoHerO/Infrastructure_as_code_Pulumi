@@ -28,19 +28,39 @@ renderer.
 1. Open **Secrets → Add credential** and choose **SSH Key** (recommended) or
    **SSH Password**.
 2. Open **Ansible** in the **Manage** navigation group.
-3. Enter the host/IP, SSH port, and login user (`opc`, `ubuntu`, or your user).
+3. Choose **New target**, give it a reusable name, and enter the host/IP, SSH
+   port, and login user (`opc`, `ubuntu`, or your user).
 4. Select the credential and click **Inspect host**.
 5. Compare the displayed `SHA256:…` fingerprint with a trusted value from the
    provider console or server. Continue only when it matches.
+6. Click **Save target**. Targets persist locally with their credential
+   reference and pinned host identity; secrets remain encrypted. Deleting a
+   saved target never deletes or changes the VPS.
 
 Changing the host or port clears the trusted fingerprint.
 
-## Check and install the runtime
+## Readiness preflight and preparation
 
-Click **Check runtime**. **Install Ansible** creates an isolated runtime when it
-is absent; running any profile performs the same bootstrap automatically. The
-live terminal reports actual remote stages and output instead of inventing a
-percentage, and a running operation can be cancelled.
+Select a profile and click **Check readiness**. The read-only preflight reports
+the real OS, architecture, package manager, init system, privilege, Python,
+managed Ansible version, memory, disk, DNS/HTTPS, clock, package locks,
+firewall/SELinux notes, service-port ownership, and profile-specific conflicts.
+
+Each check is **ready**, **warning**, **repairable**, or **blocked**. A playbook
+cannot run until its current profile report is Ready. Changing its target,
+credential, profile, or variables invalidates that report.
+
+For repairable prerequisites, **Prepare VPS** displays the exact package plan
+and asks for confirmation. It installs CA certificates, curl, a supported
+Python/pip/venv stack, the `ss` networking utility, and isolated `ansible-core` at
+`/opt/cloudforge/ansible`, then repeats the preflight. Blockers such as missing
+passwordless sudo, an unsupported OS, package-manager lock, unreachable HTTPS,
+or an unreachable profile package repository/conflicting port require an explicit fix. CloudForge does not silently
+remove conflicting packages or weaken security policy.
+
+Before a run, CloudForge executes `ansible-playbook --syntax-check`. After the
+run it verifies the expected Docker/container/systemd/Nginx state. The live
+terminal shows actual remote stages and output, and an operation can be cancelled.
 
 ## Generic profiles
 
@@ -64,6 +84,8 @@ and host firewall. Then open **Ansible → Nginx domains**:
 2. Enter an upstream host (normally `127.0.0.1`) and application port.
 3. Enable **WebSocket headers** when the application needs upgrades.
 4. Click **Validate and apply**.
+
+The action is gated by its own **Check Nginx readiness** result.
 
 CloudForge ensures Nginx is installed, writes only
 `/etc/nginx/conf.d/cloudforge-<domain>.conf`, runs `nginx -t`, restores the old

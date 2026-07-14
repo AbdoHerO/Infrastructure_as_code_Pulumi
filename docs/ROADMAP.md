@@ -19,7 +19,7 @@ the source, routes, typed IPC contract, tests and packaging configuration as of
 ### Phase 13 — Regression foundation
 
 - Coverage excludes generated output, release artifacts, declarations and tests.
-- The suite now covers 62 cases across domain/services, Pulumi event parsing,
+- The suite now covers 82 cases across domain/services, Pulumi event parsing,
   credential encryption boundaries, OCI signing, deployment validation, settings,
   trusted extensions and real Ed25519/RSA generation/import/passphrases.
 - CI runs formatting, lint, strict type checking, tests, build, production audit
@@ -78,16 +78,22 @@ theme tokens), while arbitrary downloaded JavaScript is never executed.
 ### Phase 20 — Generic VPS configuration
 
 The Ansible route supports key or password SSH credentials, pinned host
-fingerprints, isolated remote-runtime bootstrap, streamed progress and
-cancellation. Its trusted catalog contains parameterized Docker, Dockhand,
+fingerprints, persisted reusable VPS targets, fact-based profile readiness,
+confirmed prerequisite repair, isolated remote-runtime bootstrap, syntax
+validation, post-run service checks, streamed progress and cancellation. Its
+trusted catalog contains parameterized Docker, Dockhand,
 Portainer, Jenkins and Nginx profiles. The Nginx domain manager owns only its
 namespaced files, runs `nginx -t`, rolls back failures, and reloads only
 known-good configuration.
 
+The built-in OCI Always Free ARM plan seeds Ubuntu 24.04 on A1 Flex with the
+requested 4 OCPUs, 24 GB RAM and 200 GB boot volume. Template application
+requires an SSH public key, and OCI stack outputs state the default SSH user.
+
 ## Verification snapshot
 
 - Strict TypeScript: all eight workspace projects pass.
-- Unit tests: 70/70 pass across 16 test files.
+- Unit tests: 82/82 pass across 18 test files.
 - Production Electron build: main, preload and renderer bundles succeed.
 - Security model: Electron sandbox enabled; SSH host fingerprints required;
   secrets stay in the encrypted main-process credential boundary.

@@ -40,6 +40,8 @@ import type {
   SshKeyAlgorithm,
   SshKeySummary,
   UpdateProjectInput,
+  VpsPreflightReport,
+  VpsTargetDto,
 } from '@cloudforge/core';
 
 /**
@@ -166,11 +168,30 @@ export interface IpcContract {
   };
 
   'ansible:profiles': { request: void; response: AnsibleProfile[] };
+  'ansible:targets': { request: void; response: VpsTargetDto[] };
+  'ansible:createTarget': { request: SaveVpsTargetRequest; response: VpsTargetDto };
+  'ansible:updateTarget': {
+    request: SaveVpsTargetRequest & { id: string };
+    response: VpsTargetDto;
+  };
+  'ansible:deleteTarget': { request: { id: string }; response: void };
   'ansible:inspectHostKey': {
     request: { host: string; port: number };
     response: { fingerprint: string };
   };
   'ansible:status': { request: SshTargetRequest; response: AnsibleStatus };
+  'ansible:preflight': {
+    request: SshTargetRequest & {
+      targetId?: string;
+      profileId?: AnsibleProfileId;
+      variables?: Record<string, unknown>;
+    };
+    response: VpsPreflightReport;
+  };
+  'ansible:repair': {
+    request: SshTargetRequest & { targetId?: string; streamId: string };
+    response: VpsPreflightReport;
+  };
   'ansible:bootstrap': {
     request: SshTargetRequest & { streamId: string };
     response: AnsibleStatus;
@@ -284,6 +305,10 @@ export interface SshTargetRequest {
   readonly hostKeySha256: string;
 }
 
+export interface SaveVpsTargetRequest extends SshTargetRequest {
+  readonly name: string;
+}
+
 export type ContainerTargetRequest = SshTargetRequest;
 
 export type UpdateStatus =
@@ -366,8 +391,14 @@ export const IPC_CHANNELS = [
   'containers:stats',
   'containers:deployCompose',
   'ansible:profiles',
+  'ansible:targets',
+  'ansible:createTarget',
+  'ansible:updateTarget',
+  'ansible:deleteTarget',
   'ansible:inspectHostKey',
   'ansible:status',
+  'ansible:preflight',
+  'ansible:repair',
   'ansible:bootstrap',
   'ansible:run',
   'ansible:cancel',

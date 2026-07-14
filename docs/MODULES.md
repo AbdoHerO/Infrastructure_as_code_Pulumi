@@ -94,7 +94,10 @@ unauthenticated TCP socket. Channels: `containers:*`.
 Configure any reachable Linux VPS with an SSH key or password and a pinned host
 fingerprint. The module bootstraps an isolated remote Ansible runtime, runs
 generic Docker, Dockhand, Portainer, Jenkins and Nginx profiles, streams real
-output, and supports cancellation. Its Nginx tab manages CloudForge-owned
+output, and supports cancellation. Saved targets retain their credential
+reference and pinned server identity. A fact-based preflight gates every
+profile; confirmed preparation repairs safe prerequisites while conflicts stay
+blocked for an explicit decision. Its Nginx tab manages CloudForge-owned
 domain-to-port proxies with `nginx -t`, rollback, reload, and safe removal.
 Channels: `ansible:*`; event `ansible:log`. See [the Ansible guide](ANSIBLE.md).
 

@@ -11,8 +11,17 @@ import type {
   AnsibleStatus,
   DeploymentTarget,
   NginxSite,
+  VpsPreflightReport,
 } from '@cloudforge/core';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
+import {
+  buildPreflightReport,
+  ownedService,
+  parsePreflightOutput,
+  preflightCommand,
+  profilePort,
+  profileRepositoryHost,
+} from './vps-preflight.js';
 
 const CONNECT_TIMEOUT_MS = 20_000;
 const COMMAND_TIMEOUT_MS = 30 * 60_000;
@@ -33,7 +42,7 @@ export class SshAnsibleManager implements AnsibleManager {
     const result = await withConnection(target, undefined, (client) =>
       execute(
         client,
-        'if command -v ansible-playbook >/dev/null 2>&1; then ansible-playbook --version | head -n 1; elif [ -x /opt/cloudforge/ansible/bin/ansible-playbook ]; then /opt/cloudforge/ansible/bin/ansible-playbook --version | head -n 1; else exit 3; fi',
+        'if [ -x /opt/cloudforge/ansible/bin/ansible-playbook ]; then /opt/cloudforge/ansible/bin/ansible-playbook --version | head -n 1; else exit 3; fi',
       ),
     );
     if (!result.ok) {
@@ -43,33 +52,72 @@ export class SshAnsibleManager implements AnsibleManager {
     return ok({ installed: true, version: result.value.stdout.trim() || 'ansible-playbook' });
   }
 
+  async preflight(
+    target: DeploymentTarget,
+    profileId?: AnsibleProfileId,
+    variables: Readonly<Record<string, unknown>> = {},
+  ): Promise<Result<VpsPreflightReport, DeploymentError>> {
+    const port = profilePort(profileId, variables);
+    const result = await withConnection(target, undefined, (client) =>
+      execute(
+        client,
+        preflightCommand(port, ownedService(profileId), profileRepositoryHost(profileId)),
+      ),
+    );
+    if (!result.ok) return result;
+    return ok(buildPreflightReport(parsePreflightOutput(result.value.stdout), profileId, port));
+  }
+
+  async repair(
+    target: DeploymentTarget,
+    onEvent?: AnsibleEventSink,
+    options: AnsibleRunOptions = {},
+  ): Promise<Result<VpsPreflightReport, DeploymentError>> {
+    const before = await this.preflight(target);
+    if (!before.ok) return before;
+    if (before.value.status === 'blocked')
+      return err(new DeploymentError('Resolve blocked preflight checks before repairing this VPS'));
+    const installed = await this.bootstrap(target, onEvent, options);
+    if (!installed.ok) return installed;
+    const after = await this.preflight(target);
+    if (after.ok) onEvent?.({ stream: 'step', message: 'Target prerequisite repair completed.' });
+    return after;
+  }
+
   async bootstrap(
     target: DeploymentTarget,
     onEvent?: AnsibleEventSink,
     options: AnsibleRunOptions = {},
   ): Promise<Result<AnsibleStatus, DeploymentError>> {
     const current = await this.status(target);
-    if (!current.ok || current.value.installed) return current;
-    onEvent?.({ stream: 'step', message: 'Installing the isolated Ansible runtime…' });
+    if (!current.ok) return current;
+    onEvent?.({
+      stream: 'step',
+      message: current.value.installed
+        ? 'Verifying and updating target prerequisites…'
+        : 'Installing target prerequisites and isolated Ansible runtime…',
+    });
     const command = `set -eu
 if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo -n'; fi
 PYTHON=''
+WAITED=0
 if command -v apt-get >/dev/null 2>&1; then
+  while pgrep -x 'apt|apt-get|dpkg' >/dev/null 2>&1; do [ "$WAITED" -ge 120 ] && { echo 'Package manager remained busy for 120 seconds' >&2; exit 4; }; sleep 2; WAITED=$((WAITED+2)); done
   $SUDO apt-get update
-  $SUDO apt-get install -y python3 python3-venv python3-pip
+  $SUDO apt-get install -y ca-certificates curl iproute2 python3 python3-venv python3-pip
   PYTHON="$(command -v python3)"
 elif command -v dnf >/dev/null 2>&1; then
-  $SUDO dnf install -y python3.11 python3.11-pip || $SUDO dnf install -y python3 python3-pip
+  $SUDO dnf install -y ca-certificates curl iproute python3.11 python3.11-pip || $SUDO dnf install -y ca-certificates curl iproute python3 python3-pip
   PYTHON="$(command -v python3.11 || command -v python3)"
 elif command -v yum >/dev/null 2>&1; then
-  $SUDO yum install -y python3.11 python3.11-pip || $SUDO yum install -y python3 python3-pip
+  $SUDO yum install -y ca-certificates curl iproute python3.11 python3.11-pip || $SUDO yum install -y ca-certificates curl iproute python3 python3-pip
   PYTHON="$(command -v python3.11 || command -v python3)"
 else
   echo 'Unsupported package manager (apt, dnf, or yum required)' >&2; exit 2
 fi
 $SUDO mkdir -p /opt/cloudforge
 $SUDO "$PYTHON" -m venv /opt/cloudforge/ansible
-$SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check 'ansible-core>=2.16,<2.22'
+$SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgrade 'ansible-core>=2.16,<2.22'
 /opt/cloudforge/ansible/bin/ansible-playbook --version | head -n 1`;
     const result = await withConnection(target, options.signal, (client) =>
       execute(client, command, onEvent, options.signal),
@@ -90,8 +138,12 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check 'ansib
     if (!profile) return err(new DeploymentError(`Unknown Ansible profile: ${profileId}`));
     const validated = validateVariables(profile, variables);
     if (!validated.ok) return validated;
-    const ready = await this.bootstrap(target, onEvent, options);
-    if (!ready.ok) return ready;
+    const readiness = await this.preflight(target, profileId, validated.value);
+    if (!readiness.ok) return readiness;
+    if (readiness.value.status !== 'ready')
+      return err(
+        new DeploymentError('Run Preflight and Prepare target before executing this profile'),
+      );
     if (profileId === 'dockhand' || profileId === 'portainer') {
       onEvent?.({ stream: 'step', message: 'Ensuring the Docker dependency is ready…' });
       const docker = await this.run(target, 'docker', { docker_users: '' }, onEvent, options);
@@ -105,13 +157,22 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check 'ansib
       try {
         await upload(client, `${job}/playbook.yml`, getPlaybook(profileId));
         await upload(client, `${job}/vars.json`, JSON.stringify(validated.value));
-        const command = `set -eu; if command -v ansible-playbook >/dev/null 2>&1; then A=ansible-playbook; else A=/opt/cloudforge/ansible/bin/ansible-playbook; fi; cd ${job}; ANSIBLE_NOCOLOR=1 $A -i localhost, -c local playbook.yml --extra-vars @vars.json`;
+        onEvent?.({ stream: 'step', message: 'Validating playbook syntax…' });
+        await execute(
+          client,
+          `cd ${job}; ANSIBLE_NOCOLOR=1 /opt/cloudforge/ansible/bin/ansible-playbook -i localhost, -c local playbook.yml --extra-vars @vars.json --syntax-check`,
+          onEvent,
+          options.signal,
+        );
+        const command = `set -eu; cd ${job}; ANSIBLE_NOCOLOR=1 /opt/cloudforge/ansible/bin/ansible-playbook -i localhost, -c local playbook.yml --extra-vars @vars.json`;
         return await execute(client, command, onEvent, options.signal);
       } finally {
         await execute(client, `rm -rf ${job}`).catch(() => undefined);
       }
     });
     if (!result.ok) return result;
+    const verified = await postCheck(target, profileId, validated.value, onEvent, options.signal);
+    if (!verified.ok) return verified;
     onEvent?.({ stream: 'step', message: `${profile.name} is ready.` });
     return ok({ success: true, summary: recap(result.value.stdout) });
   }
@@ -207,6 +268,30 @@ rm -f '${job}' "$backup"
       summary: 'Site removed, configuration validated, and Nginx reloaded.',
     });
   }
+}
+
+async function postCheck(
+  target: DeploymentTarget,
+  profileId: AnsibleProfileId,
+  variables: Readonly<Record<string, unknown>>,
+  onEvent?: AnsibleEventSink,
+  signal?: AbortSignal,
+): Promise<Result<void, DeploymentError>> {
+  onEvent?.({ stream: 'step', message: 'Verifying service health…' });
+  const privileged = `if [ "$(id -u)" -eq 0 ]; then S=''; else S='sudo -n'; fi;`;
+  const commands: Record<AnsibleProfileId, string> = {
+    docker: `${privileged} $S systemctl is-active docker; $S docker version --format '{{.Server.Version}}'; $S docker compose version`,
+    dockhand: `${privileged} $S docker inspect -f '{{.State.Status}}' dockhand | grep -qx running`,
+    portainer: `${privileged} $S docker inspect -f '{{.State.Status}}' portainer | grep -qx running`,
+    jenkins: `${privileged} $S systemctl is-active jenkins; command -v ss >/dev/null && ss -ltnH | awk '{print $4}' | grep -Eq '(^|:)${profilePort(profileId, variables) ?? 8080}$'`,
+    nginx: `${privileged} $S nginx -t; $S systemctl is-active nginx`,
+  };
+  const result = await withConnection(target, signal, (client) =>
+    execute(client, commands[profileId], onEvent, signal),
+  );
+  if (!result.ok) return result;
+  onEvent?.({ stream: 'step', message: 'Post-deployment health check passed.' });
+  return ok(undefined);
 }
 
 function validateVariables(

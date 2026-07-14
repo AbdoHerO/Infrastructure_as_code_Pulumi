@@ -24,7 +24,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Packages](PACKAGES.md)                         | Every workspace package: purpose, public exports, key files                                                       |
 | [Modules](MODULES.md)                           | Every UI module: behaviour and data flow                                                                          |
 | [IPC Reference](IPC.md)                         | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
-| [Data Model](DATA-MODEL.md)                     | The Prisma/SQLite schema — all 11 tables and conventions                                                          |
+| [Data Model](DATA-MODEL.md)                     | The Prisma/SQLite schema — all 12 tables and conventions                                                          |
 | [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
 | [Development](DEVELOPMENT.md)                   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
 | [Packaging](PACKAGING.md)                       | Building distributables and runtime prerequisites                                                                 |
@@ -35,18 +35,18 @@ Project-level entry points: the top-level [README](../README.md) and the
 
 ## At a glance
 
-|                            |                                                                            |
-| -------------------------- | -------------------------------------------------------------------------- |
-| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                       |
-| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)               |
-| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand |
-| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                |
-| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)            |
-| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                              |
-| **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)              |
-| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app  |
-| **Tests**                  | 70 unit tests (Vitest), including SSH, Ansible YAML, and safety paths      |
-| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`           |
+|                            |                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                                 |
+| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)                         |
+| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand           |
+| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                          |
+| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                      |
+| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                        |
+| **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)                        |
+| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app            |
+| **Tests**                  | 82 unit tests (Vitest), including SSH, VPS preflight, Ansible YAML, and safety paths |
+| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                     |
 
 ## Reading order
 

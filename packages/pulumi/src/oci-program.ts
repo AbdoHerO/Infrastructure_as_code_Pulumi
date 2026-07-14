@@ -232,6 +232,7 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
       instances.set(spec.name, instance);
       outputs[`${spec.name}PublicIp`] = instance.publicIp;
       outputs[`${spec.name}PrivateIp`] = instance.privateIp;
+      outputs[`${spec.name}SshUser`] = defaultSshUser(spec.image);
     }
 
     // 5. Volumes → block volume + optional attachment to an instance.
@@ -261,6 +262,13 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
 
     return Promise.resolve(outputs);
   };
+}
+
+function defaultSshUser(image: string): string {
+  const normalized = image.toLowerCase();
+  if (normalized.includes('ubuntu')) return 'ubuntu';
+  if (normalized.includes('oracle') || normalized.includes('ol-')) return 'opc';
+  return 'Consult the image documentation';
 }
 
 /** Build an OCI ingress security rule from a plan firewall rule. */

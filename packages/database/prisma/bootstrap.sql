@@ -41,6 +41,22 @@ CREATE TABLE "Credential" (
 );
 
 -- CreateTable
+CREATE TABLE "VpsTarget" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "host" TEXT NOT NULL,
+    "port" INTEGER NOT NULL DEFAULT 22,
+    "username" TEXT NOT NULL,
+    "sshCredentialId" TEXT,
+    "hostKeySha256" TEXT NOT NULL,
+    "lastPreflight" TEXT NOT NULL DEFAULT '',
+    "lastPreflightAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "VpsTarget_sshCredentialId_fkey" FOREIGN KEY ("sshCredentialId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
 CREATE TABLE "Template" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "kind" TEXT NOT NULL,
@@ -134,6 +150,12 @@ CREATE TABLE "Activity" (
 
 -- CreateIndex
 CREATE INDEX "Project_updatedAt_idx" ON "Project"("updatedAt");
+
+-- CreateIndex
+CREATE INDEX "VpsTarget_updatedAt_idx" ON "VpsTarget"("updatedAt");
+
+-- CreateIndex
+CREATE INDEX "VpsTarget_sshCredentialId_idx" ON "VpsTarget"("sshCredentialId");
 
 -- CreateIndex
 CREATE INDEX "Deployment_projectId_idx" ON "Deployment"("projectId");

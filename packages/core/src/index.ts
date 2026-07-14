@@ -33,6 +33,7 @@ export * from './application/ports/plugin-repository.js';
 export * from './application/ports/ssh-key-generator.js';
 export * from './application/ports/container-manager.js';
 export * from './application/ports/ansible-manager.js';
+export * from './application/ports/vps-target-repository.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -55,3 +56,4 @@ export * from './application/activity/activity-service.js';
 export * from './application/plugins/plugin-catalog.js';
 export * from './application/plugins/plugin-service.js';
 export * from './application/ssh-keys/ssh-key-service.js';
+export * from './application/vps-targets/vps-target-service.js';

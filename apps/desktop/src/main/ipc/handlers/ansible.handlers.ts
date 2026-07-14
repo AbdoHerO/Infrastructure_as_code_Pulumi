@@ -8,11 +8,55 @@ const activeOperations = new Map<string, AbortController>();
 
 export function registerAnsibleHandlers(): void {
   registerHandler('ansible:profiles', () => [...getContainer().ansibleManager.profiles()]);
+  registerHandler('ansible:targets', async () =>
+    orThrow(await getContainer().vpsTargetService.list()),
+  );
+  registerHandler('ansible:createTarget', async (request) => {
+    await validateSshCredential(request.sshCredentialId);
+    return orThrow(await getContainer().vpsTargetService.create(request));
+  });
+  registerHandler('ansible:updateTarget', async ({ id, ...request }) => {
+    await validateSshCredential(request.sshCredentialId);
+    return orThrow(await getContainer().vpsTargetService.update(id, request));
+  });
+  registerHandler('ansible:deleteTarget', async ({ id }) =>
+    orThrow(await getContainer().vpsTargetService.remove(id)),
+  );
   registerHandler('ansible:inspectHostKey', async ({ host, port }) => ({
     fingerprint: orThrow(await getContainer().ansibleManager.inspectHostKey(host, port)),
   }));
   registerHandler('ansible:status', async (request) =>
     orThrow(await getContainer().ansibleManager.status(await resolveSshTarget(request))),
+  );
+  registerHandler('ansible:preflight', async (request) => {
+    const report = orThrow(
+      await getContainer().ansibleManager.preflight(
+        await resolveSshTarget(request),
+        request.profileId,
+        request.variables,
+      ),
+    );
+    if (request.targetId)
+      orThrow(await getContainer().vpsTargetService.recordPreflight(request.targetId, report));
+    return report;
+  });
+  registerHandler('ansible:repair', (request) =>
+    operation(request.streamId, async (signal) => {
+      const report = orThrow(
+        await getContainer().ansibleManager.repair(
+          await resolveSshTarget(request),
+          (event) => emitEvent('ansible:log', { streamId: request.streamId, event }),
+          { signal },
+        ),
+      );
+      if (request.targetId)
+        orThrow(await getContainer().vpsTargetService.recordPreflight(request.targetId, report));
+      getContainer().activityService.recordSafe({
+        type: 'ansible.target.prepared',
+        message: `Prepared Ansible prerequisites on ${request.host}`,
+      });
+      return report;
+    }),
   );
   registerHandler('ansible:bootstrap', (request) =>
     operation(request.streamId, async (signal) =>
@@ -81,6 +125,12 @@ export function registerAnsibleHandlers(): void {
       return outcome;
     }),
   );
+}
+
+async function validateSshCredential(id: string): Promise<void> {
+  const revealed = orThrow(await getContainer().credentialService.reveal(id));
+  if (revealed.kind !== 'ssh' && revealed.kind !== 'ssh-password')
+    throw new Error('The selected credential is not an SSH credential');
 }
 
 async function operation<T>(

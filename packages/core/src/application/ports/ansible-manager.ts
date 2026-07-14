@@ -26,6 +26,42 @@ export interface AnsibleStatus {
   readonly version: string | null;
 }
 
+export type VpsCheckStatus = 'ready' | 'warning' | 'repairable' | 'blocked';
+
+export interface VpsPreflightCheck {
+  readonly id: string;
+  readonly category: 'connection' | 'system' | 'runtime' | 'network' | 'resources' | 'profile';
+  readonly label: string;
+  readonly status: VpsCheckStatus;
+  readonly message: string;
+}
+
+export interface VpsFacts {
+  readonly hostname: string;
+  readonly osId: string;
+  readonly osName: string;
+  readonly osVersion: string;
+  readonly architecture: string;
+  readonly kernel: string;
+  readonly packageManager: string;
+  readonly initSystem: string;
+  readonly pythonVersion: string | null;
+  readonly ansibleVersion: string | null;
+  readonly memoryMb: number;
+  readonly diskFreeMb: number;
+  readonly firewall: string;
+  readonly selinux: string;
+}
+
+export interface VpsPreflightReport {
+  readonly status: 'ready' | 'needs-repair' | 'blocked';
+  readonly checkedAt: string;
+  readonly profileId: AnsibleProfileId | null;
+  readonly facts: VpsFacts;
+  readonly checks: readonly VpsPreflightCheck[];
+  readonly repairPackages: readonly string[];
+}
+
 export interface AnsibleEvent {
   readonly stream: 'stdout' | 'stderr' | 'step' | 'error';
   readonly message: string;
@@ -53,6 +89,16 @@ export interface AnsibleManager {
   profiles(): readonly AnsibleProfile[];
   inspectHostKey(host: string, port: number): Promise<Result<string, DeploymentError>>;
   status(target: DeploymentTarget): Promise<Result<AnsibleStatus, DeploymentError>>;
+  preflight(
+    target: DeploymentTarget,
+    profileId?: AnsibleProfileId,
+    variables?: Readonly<Record<string, unknown>>,
+  ): Promise<Result<VpsPreflightReport, DeploymentError>>;
+  repair(
+    target: DeploymentTarget,
+    onEvent?: AnsibleEventSink,
+    options?: AnsibleRunOptions,
+  ): Promise<Result<VpsPreflightReport, DeploymentError>>;
   bootstrap(
     target: DeploymentTarget,
     onEvent?: AnsibleEventSink,

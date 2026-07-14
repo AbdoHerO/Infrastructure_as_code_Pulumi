@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type InfrastructurePlan, validatePlan } from './infrastructure-plan.js';
+import { findInfrastructureTemplate } from './infrastructure-template.js';
 
 const base: Omit<InfrastructurePlan, 'resources'> = { providerKind: 'oracle', config: {} };
 
@@ -52,5 +53,25 @@ describe('validatePlan', () => {
     expect(issues).toContainEqual({ resource: 'vcn', message: 'Duplicate resource name' });
     expect(issues).toContainEqual({ resource: 'sub', message: 'Unknown network "missing"' });
     expect(issues).toContainEqual({ resource: 'web', message: 'Unknown subnet "nope"' });
+  });
+});
+
+describe('OCI Always Free ARM template', () => {
+  it('builds the requested customizable Ubuntu ARM plan with SSH access', () => {
+    const template = findInfrastructureTemplate('oci-always-free-arm');
+    const plan = template!.build({ region: 'eu-frankfurt-1', sshPublicKey: 'ssh-ed25519 AAA' });
+    const compute = plan.resources.find((resource) => resource.kind === 'compute');
+    expect(compute).toMatchObject({
+      kind: 'compute',
+      shape: 'VM.Standard.A1.Flex',
+      image: 'ubuntu-24.04',
+      ocpus: 4,
+      memoryGb: 24,
+      bootVolumeGb: 200,
+      sshPublicKey: 'ssh-ed25519 AAA',
+      assignPublicIp: true,
+    });
+    expect(plan.config).toEqual({ region: 'eu-frankfurt-1' });
+    expect(validatePlan(plan)).toEqual([]);
   });
 });

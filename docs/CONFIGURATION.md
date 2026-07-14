@@ -213,6 +213,11 @@ accept either kind, though a key remains recommended for production. Remote
 Ansible installation requires `root` or passwordless sudo. See the
 [Ansible and Nginx guide](ANSIBLE.md).
 
+The Ansible page can persist the verified destination as a **VPS target**. Its
+preflight is read-only; **Prepare VPS** lists and confirms prerequisite packages
+before installing the isolated runtime. A current Ready result is required for
+each selected profile.
+
 ---
 
 ## Other providers & services

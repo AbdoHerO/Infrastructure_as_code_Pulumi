@@ -39,13 +39,13 @@ model Project {
 }
 
 model Provider {
-  id          String   @id
-  kind        String // 'oracle' | 'aws' | 'azure' | ...
-  name        String
-  status      String   @default("disconnected")
-  metadata    String   @default("{}")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id
+  kind      String // 'oracle' | 'aws' | 'azure' | ...
+  name      String
+  status    String   @default("disconnected")
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   credentials Credential[]
 }
@@ -60,8 +60,28 @@ model Credential {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  provider   Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  provider   Provider?   @relation(fields: [providerId], references: [id], onDelete: SetNull)
   projects   Project[]
+  vpsTargets VpsTarget[]
+}
+
+model VpsTarget {
+  id              String    @id
+  name            String
+  host            String
+  port            Int       @default(22)
+  username        String
+  sshCredentialId String?
+  hostKeySha256   String
+  lastPreflight   String    @default("")
+  lastPreflightAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sshCredential Credential? @relation(fields: [sshCredentialId], references: [id], onDelete: SetNull)
+
+  @@index([updatedAt])
+  @@index([sshCredentialId])
 }
 
 model Template {
@@ -76,18 +96,18 @@ model Template {
 }
 
 model Deployment {
-  id          String    @id
-  projectId   String
-  status      String    @default("pending")
-  strategy    String    @default("")
-  outputs     String    @default("{}")
-  startedAt   DateTime?
-  finishedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id
+  projectId  String
+  status     String    @default("pending")
+  strategy   String    @default("")
+  outputs    String    @default("{}")
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  logs        LogEntry[]
+  project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs    LogEntry[]
 
   @@index([projectId])
 }
@@ -102,7 +122,7 @@ model LogEntry {
   metadata     String   @default("{}")
   createdAt    DateTime @default(now())
 
-  deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  deployment Deployment? @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 
   @@index([deploymentId])
   @@index([createdAt])
@@ -118,7 +138,7 @@ model SshKey {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 }
 
 model Secret {
@@ -157,7 +177,7 @@ model Activity {
   metadata  String   @default("{}")
   createdAt DateTime @default(now())
 
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
 }

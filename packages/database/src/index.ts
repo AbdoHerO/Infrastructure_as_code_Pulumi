@@ -15,4 +15,5 @@ export { PrismaTemplateStore } from './repositories/prisma-template-store.js';
 export { PrismaDeploymentRepository } from './repositories/prisma-deployment-repository.js';
 export { PrismaActivityRepository } from './repositories/prisma-activity-repository.js';
 export { PrismaPluginRepository } from './repositories/prisma-plugin-repository.js';
+export { PrismaVpsTargetRepository } from './repositories/prisma-vps-target-repository.js';
 export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

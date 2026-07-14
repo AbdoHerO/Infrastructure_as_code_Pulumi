@@ -60,11 +60,39 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
   );
   if (tables.length === 0) return false; // Fresh DB — ensureSchema built it correctly.
 
+  const targetTables = await db.$queryRawUnsafe<TableRow[]>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='VpsTarget'",
+  );
+  let migrated = false;
+  if (targetTables.length === 0) {
+    await db.$executeRawUnsafe(`CREATE TABLE "VpsTarget" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "host" TEXT NOT NULL,
+      "port" INTEGER NOT NULL DEFAULT 22,
+      "username" TEXT NOT NULL,
+      "sshCredentialId" TEXT,
+      "hostKeySha256" TEXT NOT NULL,
+      "lastPreflight" TEXT NOT NULL DEFAULT '',
+      "lastPreflightAt" DATETIME,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "VpsTarget_sshCredentialId_fkey" FOREIGN KEY ("sshCredentialId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    )`);
+    await db.$executeRawUnsafe(
+      'CREATE INDEX "VpsTarget_updatedAt_idx" ON "VpsTarget"("updatedAt")',
+    );
+    await db.$executeRawUnsafe(
+      'CREATE INDEX "VpsTarget_sshCredentialId_idx" ON "VpsTarget"("sshCredentialId")',
+    );
+    migrated = true;
+  }
+
   const foreignKeys = await db.$queryRawUnsafe<ForeignKeyRow[]>(
     'PRAGMA foreign_key_list("Project")',
   );
   const providerFk = foreignKeys.find((fk) => fk.from === 'providerId');
-  if (providerFk?.table !== 'Provider') return false; // Already correct (or no FK).
+  if (providerFk?.table !== 'Provider') return migrated; // Already correct (or no FK).
 
   await hooks.onBeforeProjectRebuild?.();
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Boxes, Bookmark, Cpu, Database, Network, Rocket, Trash2 } from 'lucide-react';
+import { Boxes, Bookmark, Cpu, Database, KeyRound, Network, Rocket, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Select, toast } from '@cloudforge/ui';
 import type { CustomTemplateSummary, InfrastructureTemplateSummary } from '@cloudforge/core';
 import { invoke, IpcCallError } from '../../lib/ipc.js';
@@ -12,6 +12,7 @@ import {
   useCustomTemplates,
   useDeleteTemplate,
 } from '../infrastructure/useInfrastructure.js';
+import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 
 const CATEGORY_ICON = {
   compute: Cpu,
@@ -24,7 +25,9 @@ const CATEGORY_ICON = {
 export function TemplatesPage(): JSX.Element {
   const navigate = useNavigate();
   const { data: projects } = useProjects();
+  const sshKeys = useSshKeys();
   const [projectId, setProjectId] = useState('');
+  const [sshKeyId, setSshKeyId] = useState('');
 
   const infraTemplates = useQuery({
     queryKey: ['infra', 'templates'],
@@ -37,7 +40,7 @@ export function TemplatesPage(): JSX.Element {
     staleTime: Infinity,
   });
   const applyTemplate = useMutation({
-    mutationFn: (args: { projectId: string; templateId: string }) =>
+    mutationFn: (args: { projectId: string; templateId: string; sshPublicKey: string }) =>
       invoke('infra:applyTemplate', args),
   });
   const customTemplates = useCustomTemplates();
@@ -47,14 +50,22 @@ export function TemplatesPage(): JSX.Element {
   useEffect(() => {
     if (!projectId && projects && projects.length > 0) setProjectId(projects[0]!.id);
   }, [projects, projectId]);
+  useEffect(() => {
+    if (!sshKeyId && sshKeys.data?.length) setSshKeyId(sshKeys.data[0]!.id);
+  }, [sshKeys.data, sshKeyId]);
 
   const apply = (template: InfrastructureTemplateSummary): void => {
     if (!projectId) {
       toast.error('Create a project first');
       return;
     }
+    const sshKey = sshKeys.data?.find((key) => key.id === sshKeyId);
+    if (!sshKey) {
+      toast.error('Select an SSH key before applying a VPS template');
+      return;
+    }
     applyTemplate.mutate(
-      { projectId, templateId: template.id },
+      { projectId, templateId: template.id, sshPublicKey: sshKey.publicKey },
       {
         onSuccess: () => {
           toast.success(`Applied "${template.name}" to the project`);
@@ -114,6 +125,34 @@ export function TemplatesPage(): JSX.Element {
       />
 
       <h2 className="text-muted-foreground mb-3 text-sm font-semibold">Infrastructure</h2>
+      <Card className="mb-4">
+        <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center">
+          <div className="flex flex-1 items-center gap-3">
+            <KeyRound className="text-muted-foreground size-5" />
+            <div>
+              <p className="text-sm font-medium">SSH access key</p>
+              <p className="text-muted-foreground text-xs">
+                Its public key enters the instance; the encrypted private key remains in CloudForge.
+              </p>
+            </div>
+          </div>
+          <Select
+            className="sm:w-72"
+            value={sshKeyId}
+            onChange={(event) => setSshKeyId(event.target.value)}
+          >
+            <option value="">Select an SSH key…</option>
+            {(sshKeys.data ?? []).map((key) => (
+              <option key={key.id} value={key.id}>
+                {key.name} · {key.algorithm}
+              </option>
+            ))}
+          </Select>
+          <Button variant="ghost" onClick={() => navigate('/ssh-keys')}>
+            Manage keys
+          </Button>
+        </CardContent>
+      </Card>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {infraTemplates.data?.map((template) => {
           const Icon = CATEGORY_ICON[template.category];

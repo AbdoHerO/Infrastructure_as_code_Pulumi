@@ -16,6 +16,7 @@ import {
   ProviderConnectionService,
   SettingsService,
   SshKeyService,
+  VpsTargetService,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
 import {
@@ -37,6 +38,7 @@ import {
   PrismaProjectRepository,
   PrismaSettingsRepository,
   PrismaTemplateStore,
+  PrismaVpsTargetRepository,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
@@ -59,6 +61,7 @@ export interface AppContainer {
   readonly sshKeyService: SshKeyService;
   readonly containerManager: ContainerManager;
   readonly ansibleManager: AnsibleManager;
+  readonly vpsTargetService: VpsTargetService;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -78,8 +81,8 @@ export async function initContainer(): Promise<AppContainer> {
   const db: Db = createPrismaClient(toSqliteUrl(dbPath));
   await db.$connect();
   await ensureSchema(db);
-  // Repair older databases whose Project.providerId FK targeted the unused
-  // Provider table. Backs the file up before the (rare, one-time) table rebuild.
+  // Apply additive schema upgrades and repair the legacy Project provider FK.
+  // The only table rebuild is backed up before it begins.
   const migrated = await migrateSchema(db, {
     onBeforeProjectRebuild: async () => {
       const backup = `${dbPath}.bak-${Date.now()}`;
@@ -88,10 +91,7 @@ export async function initContainer(): Promise<AppContainer> {
     },
   });
   if (migrated) {
-    log().info(
-      { event: 'schema.migrated' },
-      'Migrated Project.providerId foreign key to reference Credential',
-    );
+    log().info({ event: 'schema.migrated' }, 'Applied database schema migrations');
   }
   log().info({ event: 'db.ready', dbPath }, 'Database connected and schema ensured');
 
@@ -163,6 +163,7 @@ export async function initContainer(): Promise<AppContainer> {
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
   const ansibleManager = new SshAnsibleManager();
+  const vpsTargetService = new VpsTargetService(new PrismaVpsTargetRepository(db));
 
   container = {
     projectService,
@@ -176,6 +177,7 @@ export async function initContainer(): Promise<AppContainer> {
     sshKeyService,
     containerManager,
     ansibleManager,
+    vpsTargetService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

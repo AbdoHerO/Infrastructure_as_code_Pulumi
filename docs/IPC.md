@@ -159,16 +159,18 @@ same stream.
 
 ### SSH keys, containers and backup
 
-| Channel                    | Purpose                                                |
-| -------------------------- | ------------------------------------------------------ |
-| `sshKeys:*`                | List, generate, import, reveal and delete SSH keys     |
-| `containers:list/action`   | Inventory and lifecycle over verified SSH              |
-| `containers:logs/stats`    | Remote logs and resource usage                         |
-| `containers:deployCompose` | Validate and deploy a Compose project                  |
-| `ansible:profiles/status`  | Catalog and remote Ansible runtime state               |
-| `ansible:bootstrap/run`    | Install runtime and run a streamed generic profile     |
-| `ansible:nginx*`           | Manage validated CloudForge-owned Nginx sites          |
-| `backup:create/restore`    | Export or safely restore database, key and Pulumi data |
+| Channel                    | Purpose                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `sshKeys:*`                | List, generate, import, reveal and delete SSH keys          |
+| `containers:list/action`   | Inventory and lifecycle over verified SSH                   |
+| `containers:logs/stats`    | Remote logs and resource usage                              |
+| `containers:deployCompose` | Validate and deploy a Compose project                       |
+| `ansible:targets`          | Persist reusable fingerprint-pinned VPS destinations        |
+| `ansible:profiles/status`  | Catalog and managed remote Ansible runtime state            |
+| `ansible:preflight/repair` | Readiness facts, blockers and confirmed prerequisite repair |
+| `ansible:bootstrap/run`    | Install runtime and run a gated, streamed generic profile   |
+| `ansible:nginx*`           | Manage validated CloudForge-owned Nginx sites               |
+| `backup:create/restore`    | Export or safely restore database, key and Pulumi data      |
 
 ### Logs (application log file)
 
