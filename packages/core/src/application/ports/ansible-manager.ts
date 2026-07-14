@@ -74,6 +74,15 @@ export interface AnsibleOutcome {
   readonly summary: string;
 }
 
+/** Sensitive, short-lived access information read from a managed service. */
+export interface AnsibleAccessDetails {
+  readonly profileId: AnsibleProfileId;
+  readonly url: string;
+  readonly secretLabel: string;
+  readonly secret: string | null;
+  readonly instructions: string;
+}
+
 export interface NginxSite {
   readonly domain: string;
   readonly upstreamHost: string;
@@ -111,6 +120,11 @@ export interface AnsibleManager {
     onEvent?: AnsibleEventSink,
     options?: AnsibleRunOptions,
   ): Promise<Result<AnsibleOutcome, DeploymentError>>;
+  access(
+    target: DeploymentTarget,
+    profileId: AnsibleProfileId,
+    variables: Readonly<Record<string, unknown>>,
+  ): Promise<Result<AnsibleAccessDetails | null, DeploymentError>>;
   listNginxSites(target: DeploymentTarget): Promise<Result<NginxSite[], DeploymentError>>;
   upsertNginxSite(
     target: DeploymentTarget,

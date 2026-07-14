@@ -3,6 +3,7 @@ import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
   AnsibleEventSink,
+  AnsibleAccessDetails,
   AnsibleManager,
   AnsibleOutcome,
   AnsibleProfile,
@@ -173,8 +174,52 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
     if (!result.ok) return result;
     const verified = await postCheck(target, profileId, validated.value, onEvent, options.signal);
     if (!verified.ok) return verified;
+    if (profileId === 'jenkins') {
+      const port = profilePort(profileId, validated.value) ?? 8080;
+      const urlHost =
+        target.host.includes(':') && !target.host.startsWith('[')
+          ? `[${target.host}]`
+          : target.host;
+      onEvent?.({ stream: 'step', message: `Jenkins web UI: http://${urlHost}:${port}` });
+      onEvent?.({
+        stream: 'step',
+        message: 'Initial unlock password: sudo cat /var/lib/jenkins/secrets/initialAdminPassword',
+      });
+    }
     onEvent?.({ stream: 'step', message: `${profile.name} is ready.` });
     return ok({ success: true, summary: recap(result.value.stdout) });
+  }
+
+  async access(
+    target: DeploymentTarget,
+    profileId: AnsibleProfileId,
+    variables: Readonly<Record<string, unknown>>,
+  ): Promise<Result<AnsibleAccessDetails | null, DeploymentError>> {
+    if (profileId !== 'jenkins') return ok(null);
+    const profile = ANSIBLE_PROFILES.find((item) => item.id === profileId);
+    if (!profile) return err(new DeploymentError(`Unknown Ansible profile: ${profileId}`));
+    const validated = validateVariables(profile, variables);
+    if (!validated.ok) return validated;
+    const port = profilePort(profileId, validated.value) ?? 8080;
+    const result = await withConnection(target, undefined, (client) =>
+      execute(
+        client,
+        `if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo -n'; fi; if $SUDO test -r /var/lib/jenkins/secrets/initialAdminPassword; then $SUDO cat /var/lib/jenkins/secrets/initialAdminPassword; fi`,
+      ),
+    );
+    if (!result.ok) return result;
+    const urlHost =
+      target.host.includes(':') && !target.host.startsWith('[') ? `[${target.host}]` : target.host;
+    const secret = result.value.stdout.trim() || null;
+    return ok({
+      profileId,
+      url: `http://${urlHost}:${port}`,
+      secretLabel: 'Initial unlock password',
+      secret,
+      instructions: secret
+        ? 'Use this one-time password to unlock Jenkins, then create the first administrator account.'
+        : 'The initial password is unavailable. Jenkins may already have completed its setup wizard.',
+    });
   }
 
   async listNginxSites(target: DeploymentTarget): Promise<Result<NginxSite[], DeploymentError>> {

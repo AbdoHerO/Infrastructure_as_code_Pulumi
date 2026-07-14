@@ -72,13 +72,13 @@ terminal shows actual remote stages and output, and an operation can be cancelle
 
 ## Generic profiles
 
-| Profile       | Purpose                                                       | Result                                                                  |
-| ------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Docker Engine | Installs official Docker Engine, Buildx, and Compose packages | Docker is enabled; selected users can join the `docker` group           |
-| Dockhand      | Creates a persistent Compose deployment                       | UI uses the chosen host port; Docker is ensured first                   |
-| Portainer CE  | Creates the official persistent Portainer deployment          | HTTPS UI uses the chosen port (default `9443`); Docker is ensured first |
-| Jenkins       | Installs Java 21 and Jenkins LTS from the official repository | Jenkins is enabled on the chosen HTTP port                              |
-| Nginx         | Installs, validates, starts, and enables native Nginx         | No project domain is embedded in the base profile                       |
+| Profile       | Purpose                                                       | Result                                                                                             |
+| ------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Docker Engine | Installs official Docker Engine, Buildx, and Compose packages | Docker is enabled; selected users can join the `docker` group                                      |
+| Dockhand      | Creates a persistent Compose deployment                       | UI uses the chosen host port; Docker is ensured first                                              |
+| Portainer CE  | Creates the official persistent Portainer deployment          | HTTPS UI uses the chosen port (default `9443`); Docker is ensured first                            |
+| Jenkins       | Installs Java 21 and Jenkins LTS from the official repository | Jenkins is enabled on the chosen HTTP port; CloudForge prints the URL and initial-password command |
+| Nginx         | Installs, validates, starts, and enables native Nginx         | No project domain is embedded in the base profile                                                  |
 
 Profiles are idempotent. Image and port values are variables; there are no
 HanoutPlus-specific domains, IPs, repositories, or credentials.

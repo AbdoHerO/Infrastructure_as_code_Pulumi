@@ -86,6 +86,8 @@ const HEADER = `---
   connection: local
   become: true
   gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
 `;
 
@@ -274,49 +276,63 @@ const PORTAINER = `${HEADER}
 const JENKINS = `${HEADER}
     - name: Install Java and prerequisites on Debian family
       ansible.builtin.apt:
-        name: [fontconfig, openjdk-21-jre, curl, gnupg]
+        name: [fontconfig, openjdk-21-jre, curl, gnupg, python3-debian]
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Create APT keyring directory for Jenkins
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Add Jenkins signing key on Debian family
       ansible.builtin.get_url:
         url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
         dest: /etc/apt/keyrings/jenkins-keyring.asc
         mode: '0644'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Remove legacy Jenkins repository definition
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/jenkins.list
+        state: absent
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Add Jenkins repository on Debian family
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
-        filename: jenkins
+      ansible.builtin.deb822_repository:
+        name: jenkins
+        types: [deb]
+        uris: https://pkg.jenkins.io/debian-stable
+        suites: [binary/]
+        signed_by: /etc/apt/keyrings/jenkins-keyring.asc
         state: present
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Install Jenkins on Debian family
       ansible.builtin.apt:
         name: jenkins
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Install Java on Red Hat family
       ansible.builtin.package:
         name: java-21-openjdk
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Add Jenkins repository on Red Hat family
       ansible.builtin.get_url:
         url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
         dest: /etc/yum.repos.d/jenkins.repo
         mode: '0644'
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Import Jenkins key on Red Hat family
       ansible.builtin.rpm_key:
         key: https://pkg.jenkins.io/redhat-stable/jenkins.io-2026.key
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Install Jenkins on Red Hat family
       ansible.builtin.package:
         name: jenkins
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Create Jenkins systemd override directory
       ansible.builtin.file:
         path: /etc/systemd/system/jenkins.service.d

@@ -2,6 +2,7 @@ import type { SerializedAppError } from '@cloudforge/shared';
 import type {
   ActivityDto,
   AnsibleEvent,
+  AnsibleAccessDetails,
   AnsibleOutcome,
   AnsibleProfile,
   AnsibleProfileId,
@@ -244,6 +245,13 @@ export interface IpcContract {
       streamId: string;
     };
     response: AnsibleOutcome;
+  };
+  'ansible:access': {
+    request: SshTargetRequest & {
+      profileId: AnsibleProfileId;
+      variables: Record<string, unknown>;
+    };
+    response: AnsibleAccessDetails | null;
   };
   'ansible:cancel': { request: { streamId: string }; response: void };
   'ansible:nginxSites': { request: SshTargetRequest; response: NginxSite[] };
@@ -527,6 +535,7 @@ export const IPC_CHANNELS = [
   'ansible:repair',
   'ansible:bootstrap',
   'ansible:run',
+  'ansible:access',
   'ansible:cancel',
   'ansible:nginxSites',
   'ansible:nginxUpsert',

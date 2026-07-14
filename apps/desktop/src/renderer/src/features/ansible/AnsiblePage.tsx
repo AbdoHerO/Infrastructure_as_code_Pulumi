@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
   Fingerprint,
   Loader2,
   Play,
@@ -40,6 +43,7 @@ import type {
 } from '@cloudforge/core';
 import type { SshTargetRequest } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { invoke } from '../../lib/ipc.js';
 import { useSshCredentials } from '../deployments/useDeployments.js';
 import {
   useAnsibleActions,
@@ -71,6 +75,7 @@ export function AnsiblePage(): JSX.Element {
   const [upstreamHost, setUpstreamHost] = useState('127.0.0.1');
   const [upstreamPort, setUpstreamPort] = useState(3000);
   const [websocket, setWebsocket] = useState(false);
+  const [showAccessSecret, setShowAccessSecret] = useState(false);
 
   const target: SshTargetRequest = { host, port, username, sshCredentialId, hostKeySha256 };
   const connected = Boolean(host && username && sshCredentialId && hostKeySha256);
@@ -78,6 +83,7 @@ export function AnsiblePage(): JSX.Element {
     actions.preflight.isPending ||
     actions.repair.isPending ||
     actions.run.isPending ||
+    actions.access.isPending ||
     actions.upsert.isPending ||
     actions.remove.isPending;
   const report = actions.preflight.data;
@@ -147,14 +153,37 @@ export function AnsiblePage(): JSX.Element {
     actions.run.mutate(
       { ...target, profileId: profile.id, variables: profileValues() },
       {
-        onSuccess: ({ summary }) => toast.success(summary),
+        onSuccess: ({ summary }) => {
+          toast.success(summary);
+          if (profile.id === 'jenkins') loadProfileAccess();
+        },
         onError: fail,
       },
     );
   };
+  const loadProfileAccess = (): void => {
+    if (!profile) return;
+    setShowAccessSecret(false);
+    actions.access.mutate(
+      { ...target, profileId: profile.id, variables: profileValues() },
+      {
+        onSuccess: (details) => {
+          if (!details) toast.info('This playbook does not expose generated access credentials');
+        },
+        onError: fail,
+      },
+    );
+  };
+  const copyText = (text: string, label: string): void => {
+    void invoke('app:copyText', { text })
+      .then(() => toast.success(`${label} copied`))
+      .catch(fail);
+  };
   const selectTarget = (id: string): void => {
     setSelectedTargetId(id);
     actions.preflight.reset();
+    actions.access.reset();
+    setShowAccessSecret(false);
     const saved = savedTargets.data?.find((item) => item.id === id);
     if (!saved) {
       setTargetName('');
@@ -410,6 +439,8 @@ export function AnsiblePage(): JSX.Element {
                         setProfileId(item.id);
                         setVariables({});
                         actions.preflight.reset();
+                        actions.access.reset();
+                        setShowAccessSecret(false);
                       }}
                       className={`rounded-lg border p-4 text-left transition-colors ${item.id === profileId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
                     >
@@ -464,6 +495,60 @@ export function AnsiblePage(): JSX.Element {
                     {profileReady ? 'Ready to run' : 'Readiness check required'}
                   </Badge>
                 </div>
+                {profile?.id === 'jenkins' ? (
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium">Jenkins access</p>
+                        <p className="text-muted-foreground text-xs">
+                          Read the initial unlock password securely from this VPS.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!connected || busy}
+                        onClick={loadProfileAccess}
+                      >
+                        {actions.access.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        {actions.access.data ? 'Refresh access' : 'Load access'}
+                      </Button>
+                    </div>
+                    {actions.access.data ? (
+                      <div className="space-y-3">
+                        <AccessValue
+                          label="Jenkins URL"
+                          value={actions.access.data.url}
+                          onCopy={() => copyText(actions.access.data!.url, 'Jenkins URL')}
+                        />
+                        <AccessValue
+                          label={actions.access.data.secretLabel}
+                          value={actions.access.data.secret ?? 'Not available'}
+                          secret={Boolean(actions.access.data.secret)}
+                          revealed={showAccessSecret}
+                          onToggle={() => setShowAccessSecret((current) => !current)}
+                          {...(actions.access.data.secret
+                            ? {
+                                onCopy: () =>
+                                  copyText(
+                                    actions.access.data!.secret!,
+                                    actions.access.data!.secretLabel,
+                                  ),
+                              }
+                            : {})}
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          {actions.access.data.instructions} This value is kept only in memory and
+                          is cleared when you change the target or profile.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
             <Output lines={logs.lines} busy={busy} cancel={() => actions.cancel.mutate()} />
@@ -582,6 +667,58 @@ function Field({ label, children }: { label: string; children: ReactNode }): JSX
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
+    </div>
+  );
+}
+
+function AccessValue({
+  label,
+  value,
+  secret = false,
+  revealed = true,
+  onToggle,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  secret?: boolean;
+  revealed?: boolean;
+  onToggle?: () => void;
+  onCopy?: () => void;
+}): JSX.Element {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          className="font-mono"
+          type={secret && !revealed ? 'password' : 'text'}
+          value={value}
+          readOnly
+        />
+        {secret && onToggle ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onToggle}
+            aria-label={revealed ? `Hide ${label}` : `Show ${label}`}
+          >
+            {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </Button>
+        ) : null}
+        {onCopy ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onCopy}
+            aria-label={`Copy ${label}`}
+          >
+            <Copy className="size-4" />
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

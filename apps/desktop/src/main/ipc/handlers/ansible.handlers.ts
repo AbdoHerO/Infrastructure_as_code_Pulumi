@@ -92,6 +92,15 @@ export function registerAnsibleHandlers(): void {
       return outcome;
     }),
   );
+  registerHandler('ansible:access', async (request) =>
+    orThrow(
+      await getContainer().ansibleManager.access(
+        await resolveSshTarget(request),
+        request.profileId,
+        request.variables,
+      ),
+    ),
+  );
   registerHandler('ansible:cancel', ({ streamId }) => activeOperations.get(streamId)?.abort());
   registerHandler('ansible:nginxSites', async (request) =>
     orThrow(await getContainer().ansibleManager.listNginxSites(await resolveSshTarget(request))),

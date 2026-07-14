@@ -23,6 +23,9 @@ describe('generic Ansible catalog', () => {
     expect(getPlaybook('dockhand')).toContain('image: "{{ image }}"');
     expect(getPlaybook('portainer')).toContain('"{{ service_port }}:9443"');
     expect(getPlaybook('jenkins')).toContain('JENKINS_PORT={{ service_port }}');
+    expect(getPlaybook('jenkins')).toContain('ansible.builtin.deb822_repository');
+    expect(getPlaybook('jenkins')).not.toContain('ansible.builtin.apt_repository');
+    expect(getPlaybook('jenkins')).not.toContain('ansible_os_family');
     expect(getPlaybook('dockhand')).not.toContain('{{ port }}');
     expect(getPlaybook('nginx')).not.toContain('server_name');
   });

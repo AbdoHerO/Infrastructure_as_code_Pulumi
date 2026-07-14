@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import type {
   AnsibleOutcome,
+  AnsibleAccessDetails,
   AnsibleProfile,
   AnsibleStatus,
   NginxSite,
@@ -36,6 +37,7 @@ interface AnsibleActions {
   preflight: UseMutationResult<VpsPreflightReport, Error, PreflightRequest>;
   repair: UseMutationResult<VpsPreflightReport, Error, SshTargetRequest & { targetId?: string }>;
   run: UseMutationResult<AnsibleOutcome, Error, RunRequest>;
+  access: UseMutationResult<AnsibleAccessDetails | null, Error, RunRequest>;
   sites: UseMutationResult<NginxSite[], Error, SshTargetRequest>;
   upsert: UseMutationResult<AnsibleOutcome, Error, UpsertRequest>;
   remove: UseMutationResult<AnsibleOutcome, Error, RemoveRequest>;
@@ -118,6 +120,9 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
       },
     ) => invoke('ansible:run', { ...request, streamId }),
   });
+  const access = useMutation({
+    mutationFn: (request: RunRequest) => invoke('ansible:access', request),
+  });
   const sites = useMutation({
     mutationFn: (target: SshTargetRequest) => invoke('ansible:nginxSites', target),
   });
@@ -130,7 +135,19 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
       invoke('ansible:nginxRemove', { ...request, streamId }),
   });
   const cancel = useMutation({ mutationFn: () => invoke('ansible:cancel', { streamId }) });
-  return { inspect, status, bootstrap, preflight, repair, run, sites, upsert, remove, cancel };
+  return {
+    inspect,
+    status,
+    bootstrap,
+    preflight,
+    repair,
+    run,
+    access,
+    sites,
+    upsert,
+    remove,
+    cancel,
+  };
 }
 
 export function useAnsibleLogs(streamId: string): { lines: string[]; clear: () => void } {
