@@ -19,11 +19,20 @@ describe('generic Ansible catalog', () => {
   });
 
   it('keeps all deployment-specific values variable-driven', () => {
-    expect(getPlaybook('dockhand')).toContain('"{{ port }}:3000"');
+    expect(getPlaybook('dockhand')).toContain('"{{ service_port }}:3000"');
     expect(getPlaybook('dockhand')).toContain('image: "{{ image }}"');
-    expect(getPlaybook('portainer')).toContain('"{{ port }}:9443"');
-    expect(getPlaybook('jenkins')).toContain('JENKINS_PORT={{ port }}');
+    expect(getPlaybook('portainer')).toContain('"{{ service_port }}:9443"');
+    expect(getPlaybook('jenkins')).toContain('JENKINS_PORT={{ service_port }}');
+    expect(getPlaybook('dockhand')).not.toContain('{{ port }}');
     expect(getPlaybook('nginx')).not.toContain('server_name');
+  });
+
+  it('verifies and repairs Docker bridge networking after firewalld startup races', () => {
+    const playbook = getPlaybook('docker');
+    expect(playbook).toContain('After=network-online.target firewalld.service');
+    expect(playbook).toContain('docker network create --driver bridge cloudforge-network-probe');
+    expect(playbook).toContain('Repair Docker firewall chains after a firewalld startup race');
+    expect(playbook).toContain("'DOCKER-FORWARD' in docker_network_probe.stderr");
   });
 });
 

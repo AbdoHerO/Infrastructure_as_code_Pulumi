@@ -34,6 +34,12 @@ export function initUpdateManager(): void {
   });
 }
 
+/** Apply persisted updater preferences without starting a network request. */
+export function configureUpdateManager(autoDownload: boolean): void {
+  initUpdateManager();
+  autoUpdater.autoDownload = autoDownload;
+}
+
 export async function checkForUpdates(): Promise<UpdateState> {
   initUpdateManager();
   if (!app.isPackaged) {

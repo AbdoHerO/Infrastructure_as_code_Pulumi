@@ -5,6 +5,7 @@ import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { initContainer } from './container.js';
 import { initLogger, log } from './logging/logger.js';
+import { checkForUpdates, configureUpdateManager } from './updates/update-manager.js';
 
 /**
  * Apply a Content-Security-Policy to every response.
@@ -73,7 +74,19 @@ async function bootstrap(): Promise<void> {
 
   // Initialise persistence and services before any IPC handler can be invoked.
   try {
-    await initContainer();
+    const container = await initContainer();
+    const settings = await container.settingsService.get();
+    if (settings.ok) {
+      configureUpdateManager(settings.value.updates.autoDownload);
+      if (settings.value.updates.checkOnStartup && app.isPackaged) {
+        void checkForUpdates().catch((error: unknown) =>
+          log().warn(
+            { err: error, event: 'updates.startup-check-failed' },
+            'Startup update check failed',
+          ),
+        );
+      }
+    }
   } catch (err) {
     log().fatal({ err, event: 'app.init-failed' }, 'Failed to initialise application');
     throw err;

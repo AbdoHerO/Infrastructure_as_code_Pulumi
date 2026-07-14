@@ -80,12 +80,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish release and mark it latest
-        shell: pwsh
-        run: gh release edit '${{ github.ref_name }}' --draft=false --prerelease=false --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate release SBOM
         uses: anchore/sbom-action@v0
         with:

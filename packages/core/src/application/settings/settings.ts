@@ -13,6 +13,10 @@ export interface AppSettings {
   readonly logs: {
     readonly retentionDays: number;
   };
+  readonly updates: {
+    readonly checkOnStartup: boolean;
+    readonly autoDownload: boolean;
+  };
 }
 
 /** Immutable default settings applied when no stored value exists. */
@@ -20,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: { reducedMotion: false },
   deployment: { confirmDestructive: true, defaultRegion: '' },
   logs: { retentionDays: 30 },
+  updates: { checkOnStartup: true, autoDownload: false },
 };
 
 /** A deep-partial patch for updating settings. */

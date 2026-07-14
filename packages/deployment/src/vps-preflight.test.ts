@@ -89,8 +89,9 @@ describe('VPS preflight', () => {
   });
 
   it('derives configurable service ports safely', () => {
-    expect(profilePort('dockhand', { port: 3100 })).toBe(3100);
-    expect(profilePort('jenkins', { port: 99_999 })).toBe(8080);
+    expect(profilePort('dockhand', { service_port: 3100 })).toBe(3100);
+    expect(profilePort('jenkins', { service_port: 99_999 })).toBe(8080);
+    expect(profilePort('dockhand', { port: 3200 })).toBe(3200);
     expect(profilePort('nginx')).toBe(80);
   });
 

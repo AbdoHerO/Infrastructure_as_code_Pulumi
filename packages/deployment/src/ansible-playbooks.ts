@@ -21,7 +21,13 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
     name: 'Dockhand',
     description: 'Run Dockhand as a Docker Compose service with persistent data.',
     variables: [
-      { key: 'port', label: 'Web port', type: 'number', required: true, defaultValue: 3000 },
+      {
+        key: 'service_port',
+        label: 'Web port',
+        type: 'number',
+        required: true,
+        defaultValue: 3000,
+      },
       {
         key: 'image',
         label: 'Image',
@@ -36,7 +42,13 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
     name: 'Portainer CE',
     description: 'Run Portainer CE with TLS on a configurable host port.',
     variables: [
-      { key: 'port', label: 'HTTPS port', type: 'number', required: true, defaultValue: 9443 },
+      {
+        key: 'service_port',
+        label: 'HTTPS port',
+        type: 'number',
+        required: true,
+        defaultValue: 9443,
+      },
       {
         key: 'image',
         label: 'Image',
@@ -51,7 +63,13 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
     name: 'Jenkins',
     description: 'Install the current Jenkins LTS package and Java runtime as a native service.',
     variables: [
-      { key: 'port', label: 'HTTP port', type: 'number', required: true, defaultValue: 8080 },
+      {
+        key: 'service_port',
+        label: 'HTTP port',
+        type: 'number',
+        required: true,
+        defaultValue: 8080,
+      },
     ],
   },
   {
@@ -123,11 +141,60 @@ const DOCKER = `${HEADER}
         name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
         state: present
       when: ansible_os_family == 'RedHat'
+    - name: Create Docker systemd override directory on Red Hat family
+      ansible.builtin.file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+      when: ansible_os_family == 'RedHat'
+    - name: Start Docker after firewalld on Red Hat family
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/docker.service.d/cloudforge-firewalld.conf
+        mode: '0644'
+        content: |
+          [Unit]
+          After=network-online.target firewalld.service
+          Wants=network-online.target
+      register: docker_systemd_override
+      when: ansible_os_family == 'RedHat'
+    - name: Reload systemd after Docker ordering change
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: docker_systemd_override is changed
     - name: Enable Docker
       ansible.builtin.service:
         name: docker
         state: started
         enabled: true
+    - name: Remove stale CloudForge Docker network probe
+      ansible.builtin.command: docker network rm cloudforge-network-probe
+      register: docker_probe_cleanup
+      changed_when: docker_probe_cleanup.rc == 0
+      failed_when: false
+    - name: Verify Docker bridge networking
+      ansible.builtin.command: docker network create --driver bridge cloudforge-network-probe
+      register: docker_network_probe
+      changed_when: docker_network_probe.rc == 0
+      failed_when: false
+    - name: Repair Docker firewall chains after a firewalld startup race
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+      when:
+        - docker_network_probe.rc != 0
+        - ansible_os_family == 'RedHat'
+        - >-
+          'DOCKER-FORWARD' in docker_network_probe.stderr or
+          'Failed to Setup IP tables' in docker_network_probe.stderr or
+          'No chain/target/match' in docker_network_probe.stderr
+    - name: Retry Docker bridge networking after firewall repair
+      ansible.builtin.command: docker network create --driver bridge cloudforge-network-probe
+      register: docker_network_retry
+      changed_when: docker_network_retry.rc == 0
+      when: docker_network_probe.rc != 0
+    - name: Remove CloudForge Docker network probe
+      ansible.builtin.command: docker network rm cloudforge-network-probe
+      changed_when: false
     - name: Add selected users to Docker group
       ansible.builtin.user:
         name: "{{ item }}"
@@ -156,7 +223,7 @@ const DOCKHAND = `${HEADER}
               container_name: dockhand
               restart: unless-stopped
               ports:
-                - "{{ port }}:3000"
+                - "{{ service_port }}:3000"
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
                 - dockhand_data:/app/data
@@ -190,7 +257,7 @@ const PORTAINER = `${HEADER}
               container_name: portainer
               restart: unless-stopped
               ports:
-                - "{{ port }}:9443"
+                - "{{ service_port }}:9443"
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
                 - portainer_data:/data
@@ -261,7 +328,7 @@ const JENKINS = `${HEADER}
         mode: '0644'
         content: |
           [Service]
-          Environment="JENKINS_PORT={{ port }}"
+          Environment="JENKINS_PORT={{ service_port }}"
       notify: Restart Jenkins
     - name: Enable Jenkins
       ansible.builtin.service:

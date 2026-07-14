@@ -44,6 +44,7 @@ function merge(base: AppSettings, patch: SettingsPatch): AppSettings {
     appearance: { ...base.appearance, ...patch.appearance },
     deployment: { ...base.deployment, ...patch.deployment },
     logs: { ...base.logs, ...patch.logs },
+    updates: { ...base.updates, ...patch.updates },
   };
 }
 

@@ -22,6 +22,7 @@ describe('SettingsService', () => {
     repository.value = '{broken';
     const result = await service.get();
     expect(result.ok && result.value.logs.retentionDays).toBe(30);
+    expect(result.ok && result.value.updates.checkOnStartup).toBe(true);
   });
 
   it('merges sections and normalizes retention and region', async () => {
@@ -29,9 +30,14 @@ describe('SettingsService', () => {
     const result = await service.update({
       deployment: { defaultRegion: '  eu-frankfurt-1  ', confirmDestructive: false },
       logs: { retentionDays: 999 },
+      updates: { checkOnStartup: false, autoDownload: true },
     });
     expect(result.ok && result.value.deployment.defaultRegion).toBe('eu-frankfurt-1');
     expect(result.ok && result.value.logs.retentionDays).toBe(365);
     expect(result.ok && result.value.appearance.reducedMotion).toBe(false);
+    expect(result.ok && result.value.updates).toEqual({
+      checkOnStartup: false,
+      autoDownload: true,
+    });
   });
 });

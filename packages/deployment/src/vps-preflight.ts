@@ -416,7 +416,7 @@ export function profilePort(
   if (!profileId || profileId === 'docker') return undefined;
   if (profileId === 'nginx') return 80;
   const fallback = profileId === 'dockhand' ? 3000 : profileId === 'portainer' ? 9443 : 8080;
-  const port = Number(variables.port ?? fallback);
+  const port = Number(variables.service_port ?? variables.port ?? fallback);
   return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : fallback;
 }
 
