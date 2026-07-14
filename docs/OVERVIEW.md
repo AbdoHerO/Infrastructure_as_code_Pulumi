@@ -83,7 +83,7 @@ IPC channels (see [IPC Reference](IPC.md)).
 ## The 14 modules
 
 Dashboard · Projects · Cloud Providers · Templates · Infrastructure ·
-Deployments · Containers · Logs · Secrets · SSH Keys · Settings · Built-in
+Deployments · Containers · Ansible · Logs · Secrets · SSH Keys · Settings · Built-in
 Extensions · Updates · About.
 
 All routes are functional. Containers use verified SSH rather than an exposed

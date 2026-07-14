@@ -127,6 +127,7 @@ build) before the next begins.
 | **17** | ✅ Enforced settings, log rotation, backup and restore               |
 | **18** | ✅ Update workflow, sandbox, CI, SBOM and release automation         |
 | **19** | ✅ Safe bundled declarative extension runtime                        |
+| **20** | ✅ Generic Ansible VPS configuration and Nginx domain manager        |
 
 See the [Completion Report](docs/ROADMAP.md) for the implemented scope and the
 external credentials required to publish signed installers.

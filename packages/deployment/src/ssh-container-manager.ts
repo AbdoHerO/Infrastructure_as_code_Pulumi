@@ -131,10 +131,13 @@ function run(
       host: target.host,
       port: target.port,
       username: target.username,
-      privateKey: target.privateKey,
       readyTimeout: TIMEOUT_MS,
-      hostVerifier: (key: Buffer) => fingerprintHostKey(key) === target.hostKeySha256,
+      hostVerifier: (key: Buffer) =>
+        normalizeFingerprint(fingerprintHostKey(key)) ===
+        normalizeFingerprint(target.hostKeySha256),
+      ...(target.privateKey ? { privateKey: target.privateKey } : {}),
       ...(target.passphrase ? { passphrase: target.passphrase } : {}),
+      ...(target.password ? { password: target.password } : {}),
     };
     client.once('error', (cause) =>
       finish(err(new DeploymentError('Remote Docker SSH connection failed', { cause }))),
@@ -172,4 +175,11 @@ function run(
 function fingerprintHostKey(key: Buffer): string {
   const digest = createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
   return `SHA256:${digest}`;
+}
+
+function normalizeFingerprint(value: string): string {
+  return value
+    .trim()
+    .replace(/^SHA256:/i, '')
+    .replace(/=+$/, '');
 }

@@ -14,6 +14,7 @@ import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
 import { SshKeysPage } from '../features/ssh-keys/SshKeysPage.js';
 import { ContainersPage } from '../features/containers/ContainersPage.js';
+import { AnsiblePage } from '../features/ansible/AnsiblePage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -30,6 +31,7 @@ export const router = createHashRouter([
       { path: 'infrastructure', element: <InfrastructurePage /> },
       { path: 'deployments', element: <DeploymentsPage /> },
       { path: 'containers', element: <ContainersPage /> },
+      { path: 'ansible', element: <AnsiblePage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

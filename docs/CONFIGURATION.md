@@ -40,7 +40,7 @@ should read **Pulumi ready**.
 
 ### SSH access
 
-Required by the **Deployments** module. You need a Linux host reachable over SSH
+Required by **Deployments**, **Containers**, and **Ansible**. You need a Linux host reachable over SSH
 and a key pair whose **public** key is installed on the host and whose
 **private** key you store in CloudForge (see [SSH keys](#ssh-keys-for-deployments)).
 The built-in deployment templates target **Debian/Ubuntu** (they use `apt` +
@@ -53,18 +53,19 @@ The built-in deployment templates target **Debian/Ubuntu** (they use `apt` +
 Add these under **Secrets → Add Credential**. Fields marked 🔒 are secret (masked;
 revealed only on request). Fields marked _(optional)_ can be left blank.
 
-| Provider (kind)               | Fields                                                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Oracle Cloud** (`oracle`)   | Tenancy OCID · User OCID · Compartment OCID · Fingerprint · 🔒 API Private Key (PEM) · Region · Profile Name _(optional)_ |
-| **AWS** (`aws`)               | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_                                                      |
-| **Azure** (`azure`)           | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
-| **GitHub** (`github`)         | 🔒 Personal Access Token                                                                                                  |
-| **Cloudflare** (`cloudflare`) | 🔒 API Token                                                                                                              |
-| **OpenAI** (`openai`)         | 🔒 API Key                                                                                                                |
-| **Anthropic** (`anthropic`)   | 🔒 API Key                                                                                                                |
-| **Docker Hub** (`dockerhub`)  | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
-| **GitLab** (`gitlab`)         | 🔒 Access Token                                                                                                           |
-| **SSH Key** (`ssh`)           | 🔒 Private Key (PEM) · 🔒 Passphrase _(optional)_                                                                         |
+| Provider (kind)                   | Fields                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Oracle Cloud** (`oracle`)       | Tenancy OCID · User OCID · Compartment OCID · Fingerprint · 🔒 API Private Key (PEM) · Region · Profile Name _(optional)_ |
+| **AWS** (`aws`)                   | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_                                                      |
+| **Azure** (`azure`)               | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
+| **GitHub** (`github`)             | 🔒 Personal Access Token                                                                                                  |
+| **Cloudflare** (`cloudflare`)     | 🔒 API Token                                                                                                              |
+| **OpenAI** (`openai`)             | 🔒 API Key                                                                                                                |
+| **Anthropic** (`anthropic`)       | 🔒 API Key                                                                                                                |
+| **Docker Hub** (`dockerhub`)      | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
+| **GitLab** (`gitlab`)             | 🔒 Access Token                                                                                                           |
+| **SSH Key** (`ssh`)               | 🔒 Private Key (PEM) · 🔒 Passphrase _(optional)_                                                                         |
+| **SSH Password** (`ssh-password`) | 🔒 Password                                                                                                               |
 
 > Only **Oracle Cloud** performs live provider calls today (connection testing,
 > region/shape discovery). The other provider kinds are stored securely and are
@@ -206,6 +207,11 @@ You may set a passphrase (store it in the credential's **Passphrase** field).
 
 In **Deployments**, set **Host**, **Port** (usually 22), **SSH user** (e.g.
 `ubuntu`), and select this SSH Key credential.
+
+For a password-only VPS, add **Secrets → SSH Password** instead. All SSH modules
+accept either kind, though a key remains recommended for production. Remote
+Ansible installation requires `root` or passwordless sudo. See the
+[Ansible and Nginx guide](ANSIBLE.md).
 
 ---
 

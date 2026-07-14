@@ -14,6 +14,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Workflow,
 } from 'lucide-react';
 
 /** A single navigable module in the sidebar. */
@@ -45,6 +46,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Infrastructure', path: '/infrastructure', icon: Server },
       { label: 'Deployments', path: '/deployments', icon: Rocket },
       { label: 'Containers', path: '/containers', icon: Container },
+      { label: 'Ansible', path: '/ansible', icon: Workflow },
     ],
   },
   {

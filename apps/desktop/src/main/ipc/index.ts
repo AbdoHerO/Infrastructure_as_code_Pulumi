@@ -12,6 +12,7 @@ import { registerSshKeyHandlers } from './handlers/ssh-keys.handlers.js';
 import { registerContainerHandlers } from './handlers/containers.handlers.js';
 import { registerBackupHandlers } from './handlers/backup.handlers.js';
 import { registerUpdateHandlers } from './handlers/updates.handlers.js';
+import { registerAnsibleHandlers } from './handlers/ansible.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -32,4 +33,5 @@ export function registerIpcHandlers(): void {
   registerContainerHandlers();
   registerBackupHandlers();
   registerUpdateHandlers();
+  registerAnsibleHandlers();
 }

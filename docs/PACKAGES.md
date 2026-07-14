@@ -53,7 +53,7 @@ Prisma, Electron, Pulumi, SSH or any provider SDK.
   `ProjectStatus`, branded `ProjectId`.
 - `credential/` — `Credential` entity, `CredentialId`, and `CREDENTIAL_SCHEMAS`:
   the single registry of credential kinds (Oracle, AWS, Azure, GitHub,
-  Cloudflare, OpenAI, Anthropic, Docker Hub, GitLab, SSH) and their fields.
+  Cloudflare, OpenAI, Anthropic, Docker Hub, GitLab, SSH key, SSH password) and their fields.
   Drives both validation and dynamic form generation.
 - `provider/provider-kind.ts` — `PROVIDER_KINDS`, `PROVIDER_LABELS`.
 - `plugin/plugin.ts` — `PluginManifest`, `PLUGIN_KINDS`.
@@ -65,7 +65,8 @@ Interfaces implemented by adapters:
 `ProjectRepository` · `CredentialRepository` · `SettingsRepository` ·
 `DeploymentRepository` · `ActivityRepository` · `PluginRepository` ·
 `PlanStore` · `TemplateStore` · `SecretCipher` · `ProviderFactory` ·
-`ProviderCredentialResolver` · `InfrastructureEngine` · `Deployer`.
+`ProviderCredentialResolver` · `InfrastructureEngine` · `Deployer` ·
+`ContainerManager` · `AnsibleManager`.
 
 `ProviderCredentialResolver` resolves a project's linked credential into the raw
 provider fields the engine needs; `TemplateStore` persists user-saved custom
@@ -180,7 +181,7 @@ automatically on the first preview/apply.
 
 ## `@cloudforge/deployment` — the deployment engine adapter
 
-Implements `core`'s deployment, SSH-key and container ports.
+Implements `core`'s deployment, SSH-key, container and Ansible ports.
 
 - `ssh-deployer.ts` — verified host fingerprint, cancellation/timeouts, streamed
   output and strict exit-status handling.
@@ -188,6 +189,10 @@ Implements `core`'s deployment, SSH-key and container ports.
   and OpenSSH SHA-256 fingerprints.
 - `ssh-container-manager.ts` — Docker lifecycle, logs/stats and Compose over
   verified SSH transport.
+- `ssh-ansible-manager.ts` — remote runtime bootstrap, temporary playbook jobs,
+  live output/cancellation, dependencies, and transactional Nginx configuration.
+- `ansible-playbooks.ts` — generic Docker, Dockhand, Portainer, Jenkins and Nginx
+  catalog with variable metadata and no project-specific values.
 
 Runtime dep `ssh2` stays **external** (optional native binding).
 

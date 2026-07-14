@@ -35,7 +35,7 @@ export function useDeployments(projectId: string | null): UseQueryResult<Deploym
 /** SSH credentials available as deployment keys. */
 export function useSshCredentials(): CredentialSummaryDto[] {
   const { data } = useCredentials();
-  return (data ?? []).filter((c) => c.kind === 'ssh');
+  return (data ?? []).filter((c) => c.kind === 'ssh' || c.kind === 'ssh-password');
 }
 
 export interface RunDeploymentArgs {

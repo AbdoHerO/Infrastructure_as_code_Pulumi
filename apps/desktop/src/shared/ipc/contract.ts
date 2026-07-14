@@ -1,6 +1,11 @@
 import type { SerializedAppError } from '@cloudforge/shared';
 import type {
   ActivityDto,
+  AnsibleEvent,
+  AnsibleOutcome,
+  AnsibleProfile,
+  AnsibleProfileId,
+  AnsibleStatus,
   AppSettings,
   AvailabilityDomain,
   ApplyResult,
@@ -21,6 +26,7 @@ import type {
   InfrastructureTemplateSummary,
   InstanceAction,
   ManagedStackSummary,
+  NginxSite,
   PlanIssue,
   PluginListItem,
   PluginManifest,
@@ -159,6 +165,35 @@ export interface IpcContract {
     response: void;
   };
 
+  'ansible:profiles': { request: void; response: AnsibleProfile[] };
+  'ansible:inspectHostKey': {
+    request: { host: string; port: number };
+    response: { fingerprint: string };
+  };
+  'ansible:status': { request: SshTargetRequest; response: AnsibleStatus };
+  'ansible:bootstrap': {
+    request: SshTargetRequest & { streamId: string };
+    response: AnsibleStatus;
+  };
+  'ansible:run': {
+    request: SshTargetRequest & {
+      profileId: AnsibleProfileId;
+      variables: Record<string, unknown>;
+      streamId: string;
+    };
+    response: AnsibleOutcome;
+  };
+  'ansible:cancel': { request: { streamId: string }; response: void };
+  'ansible:nginxSites': { request: SshTargetRequest; response: NginxSite[] };
+  'ansible:nginxUpsert': {
+    request: SshTargetRequest & { site: NginxSite; streamId: string };
+    response: AnsibleOutcome;
+  };
+  'ansible:nginxRemove': {
+    request: SshTargetRequest & { domain: string; streamId: string };
+    response: AnsibleOutcome;
+  };
+
   'activity:list': { request: { limit?: number }; response: ActivityDto[] };
 
   'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
@@ -209,6 +244,7 @@ export interface IpcContract {
 export interface IpcEventContract {
   'engine:log': { streamId: string; event: EngineEvent };
   'deploy:log': { streamId: string; event: DeployEvent };
+  'ansible:log': { streamId: string; event: AnsibleEvent };
   'updates:state': UpdateState;
 }
 
@@ -219,6 +255,7 @@ export type IpcEventPayload<C extends IpcEventChannel> = IpcEventContract[C];
 export const IPC_EVENT_CHANNELS = [
   'engine:log',
   'deploy:log',
+  'ansible:log',
   'updates:state',
 ] as const satisfies readonly IpcEventChannel[];
 
@@ -239,13 +276,15 @@ export type IpcResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: SerializedAppError };
 
-export interface ContainerTargetRequest {
+export interface SshTargetRequest {
   readonly host: string;
   readonly port: number;
   readonly username: string;
   readonly sshCredentialId: string;
   readonly hostKeySha256: string;
 }
+
+export type ContainerTargetRequest = SshTargetRequest;
 
 export type UpdateStatus =
   'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -326,6 +365,15 @@ export const IPC_CHANNELS = [
   'containers:logs',
   'containers:stats',
   'containers:deployCompose',
+  'ansible:profiles',
+  'ansible:inspectHostKey',
+  'ansible:status',
+  'ansible:bootstrap',
+  'ansible:run',
+  'ansible:cancel',
+  'ansible:nginxSites',
+  'ansible:nginxUpsert',
+  'ansible:nginxRemove',
   'activity:list',
   'infra:templates',
   'infra:applyTemplate',

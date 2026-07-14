@@ -6,6 +6,7 @@ import {
   ActivityService,
   CredentialService,
   type ContainerManager,
+  type AnsibleManager,
   DeploymentService,
   InfrastructureService,
   PluginService,
@@ -17,7 +18,12 @@ import {
   SshKeyService,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
-import { NodeSshKeyGenerator, SshContainerManager, SshDeployer } from '@cloudforge/deployment';
+import {
+  NodeSshKeyGenerator,
+  SshAnsibleManager,
+  SshContainerManager,
+  SshDeployer,
+} from '@cloudforge/deployment';
 import {
   createPrismaClient,
   type Db,
@@ -52,6 +58,7 @@ export interface AppContainer {
   readonly pluginService: PluginService;
   readonly sshKeyService: SshKeyService;
   readonly containerManager: ContainerManager;
+  readonly ansibleManager: AnsibleManager;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -155,6 +162,7 @@ export async function initContainer(): Promise<AppContainer> {
   const pluginService = new PluginService(new PrismaPluginRepository(db));
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
+  const ansibleManager = new SshAnsibleManager();
 
   container = {
     projectService,
@@ -167,6 +175,7 @@ export async function initContainer(): Promise<AppContainer> {
     pluginService,
     sshKeyService,
     containerManager,
+    ansibleManager,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

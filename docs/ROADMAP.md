@@ -75,10 +75,19 @@ contains only trusted declarative extensions bundled with CloudForge. Enabled
 contributions affect the application at runtime (the Nord contribution changes
 theme tokens), while arbitrary downloaded JavaScript is never executed.
 
+### Phase 20 — Generic VPS configuration
+
+The Ansible route supports key or password SSH credentials, pinned host
+fingerprints, isolated remote-runtime bootstrap, streamed progress and
+cancellation. Its trusted catalog contains parameterized Docker, Dockhand,
+Portainer, Jenkins and Nginx profiles. The Nginx domain manager owns only its
+namespaced files, runs `nginx -t`, rolls back failures, and reloads only
+known-good configuration.
+
 ## Verification snapshot
 
 - Strict TypeScript: all eight workspace projects pass.
-- Unit tests: 62/62 pass across 15 test files.
+- Unit tests: 70/70 pass across 16 test files.
 - Production Electron build: main, preload and renderer bundles succeed.
 - Security model: Electron sandbox enabled; SSH host fingerprints required;
   secrets stay in the encrypted main-process credential boundary.

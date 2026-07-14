@@ -65,7 +65,8 @@ security banner / Settings.
   fields are masked in the UI until the user clicks "Show").
 - **Provider/deployment use** — the main process decrypts internally (e.g. to
   build an OCI request signer or an SSH connection) and never sends the plaintext
-  back to the renderer.
+  back to the renderer. Ansible uses a key/password only for the verified SSH
+  connection; it is not uploaded with the temporary playbook.
 
 ## 4. Provider request signing
 
@@ -97,6 +98,10 @@ the Logs module — a lightweight, exportable audit log.
 - **Deployment steps run as shell commands** on the target host over SSH; treat
   templates as privileged input. Host fingerprints are pinned, shell-derived
   values are validated, and container image references reject shell metacharacters.
+- **Remote Ansible is privilege-bearing** — only trusted built-in profiles run.
+  Jobs use localhost mode on the verified VPS, temporary inputs are mode `0600`,
+  variables are JSON, and privileged actions require root or `sudo -n`. Managed
+  Nginx paths derive from validated domains and syntax failure rolls back.
 - **Plugin execution is intentionally out of scope** — the marketplace manages
   trusted declarative contributions only; it does not evaluate third-party code.
 - **Code signing / notarization** for distributables is configured via

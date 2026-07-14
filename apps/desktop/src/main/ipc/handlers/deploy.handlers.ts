@@ -1,8 +1,9 @@
-import type { DeploymentContext, DeploymentTarget } from '@cloudforge/core';
+import type { DeploymentContext } from '@cloudforge/core';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
+import { resolveSshTarget } from './ssh-target.js';
 
 const activeDeployments = new Map<string, AbortController>();
 
@@ -31,15 +32,7 @@ export function registerDeployHandlers(): void {
     const controller = new AbortController();
     activeDeployments.set(req.streamId, controller);
     // Resolve the SSH private key from the encrypted credential (never over IPC).
-    const revealed = orThrow(await getContainer().credentialService.reveal(req.sshCredentialId));
-    const target: DeploymentTarget = {
-      host: req.host,
-      port: req.port,
-      username: req.username,
-      privateKey: revealed.data.privateKey ?? '',
-      passphrase: revealed.data.passphrase,
-      hostKeySha256: req.hostKeySha256,
-    };
+    const target = await resolveSshTarget(req);
     const context: DeploymentContext = {
       ...(req.appImage ? { appImage: req.appImage } : {}),
       ...(req.domain ? { domain: req.domain } : {}),

@@ -10,6 +10,7 @@ export const CREDENTIAL_KINDS = [
   'dockerhub',
   'gitlab',
   'ssh',
+  'ssh-password',
 ] as const;
 
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
@@ -128,6 +129,11 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
       field('fingerprint', 'Fingerprint', { required: false }),
       field('algorithm', 'Algorithm', { required: false }),
     ],
+  },
+  'ssh-password': {
+    kind: 'ssh-password',
+    label: 'SSH Password',
+    fields: [field('password', 'Password', { secret: true })],
   },
 };
 

@@ -43,6 +43,7 @@ logs), the main process **pushes** events to the renderer. Channels are
 | --------------- | ---------------------------------------------------------------------------------------------- |
 | `engine:log`    | `{ streamId, event: EngineEvent }` — text plus optional structured operation/resource progress |
 | `deploy:log`    | `{ streamId, event: DeployEvent }` — SSH deployment output (per step)                          |
+| `ansible:log`   | `{ streamId, event: AnsibleEvent }` — bootstrap/playbook/Nginx stages and output               |
 | `updates:state` | `UpdateState` — check/download/install status and download percentage                          |
 
 ## Channel catalogue
@@ -164,6 +165,9 @@ same stream.
 | `containers:list/action`   | Inventory and lifecycle over verified SSH              |
 | `containers:logs/stats`    | Remote logs and resource usage                         |
 | `containers:deployCompose` | Validate and deploy a Compose project                  |
+| `ansible:profiles/status`  | Catalog and remote Ansible runtime state               |
+| `ansible:bootstrap/run`    | Install runtime and run a streamed generic profile     |
+| `ansible:nginx*`           | Manage validated CloudForge-owned Nginx sites          |
 | `backup:create/restore`    | Export or safely restore database, key and Pulumi data |
 
 ### Logs (application log file)

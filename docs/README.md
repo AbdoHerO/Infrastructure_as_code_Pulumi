@@ -17,11 +17,12 @@ backup/restore and the packaged update workflow are implemented.
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | [Getting Started](GETTING-STARTED.md)           | **Run, test and use** the app end to end, plus troubleshooting                                                    |
 | [First OCI Instance](FIRST-INSTANCE.md)         | Provision, SSH into, discover, and safely delete OCI instances entirely from CloudForge                           |
+| [Ansible & Nginx](ANSIBLE.md)                   | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
 | [Configuration & Credentials](CONFIGURATION.md) | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
 | [Overview](OVERVIEW.md)                         | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
 | [Architecture](ARCHITECTURE.md)                 | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
 | [Packages](PACKAGES.md)                         | Every workspace package: purpose, public exports, key files                                                       |
-| [Modules](MODULES.md)                           | Every one of the 14 UI modules: behaviour and data flow                                                           |
+| [Modules](MODULES.md)                           | Every UI module: behaviour and data flow                                                                          |
 | [IPC Reference](IPC.md)                         | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
 | [Data Model](DATA-MODEL.md)                     | The Prisma/SQLite schema — all 11 tables and conventions                                                          |
 | [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
@@ -41,10 +42,10 @@ Project-level entry points: the top-level [README](../README.md) and the
 | **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand |
 | **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                |
 | **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)            |
-| **Configuration engine**   | SSH (`ssh2`) executing idempotent deployment steps                         |
+| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                              |
 | **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)              |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app  |
-| **Tests**                  | 62 unit tests (Vitest), including SSH key generation and safety paths      |
+| **Tests**                  | 70 unit tests (Vitest), including SSH, Ansible YAML, and safety paths      |
 | **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`           |
 
 ## Reading order

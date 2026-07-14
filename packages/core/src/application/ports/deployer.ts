@@ -6,8 +6,9 @@ export interface DeploymentTarget {
   readonly host: string;
   readonly port: number;
   readonly username: string;
-  readonly privateKey: string;
+  readonly privateKey?: string | undefined;
   readonly passphrase?: string | undefined;
+  readonly password?: string | undefined;
   /** Trusted SHA-256 host-key fingerprint (base64, with or without SHA256: prefix). */
   readonly hostKeySha256: string;
 }

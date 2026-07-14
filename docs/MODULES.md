@@ -10,7 +10,7 @@ business logic lives in components.**
 The sidebar groups modules by concern:
 
 - **Overview** — Dashboard
-- **Manage** — Projects, Infrastructure, Deployments, Containers
+- **Manage** — Projects, Infrastructure, Deployments, Containers, Ansible
 - **Configure** — Cloud Providers, Templates, Secrets, SSH Keys
 - **Observe** — Logs
 - **System** — Plugin Marketplace, Updates, Settings, About
@@ -76,7 +76,7 @@ their project row no longer exists. Channels: `infra:getPlan`, `infra:savePlan`,
 ## Deployments (`/deployments`)
 
 Run a deployment template on a host over SSH. Choose project, template, host,
-port, SSH user and an **SSH-key credential**; optionally a container image. The
+port, SSH user and an **SSH key or password credential**; optionally a container image. The
 run streams per-step output to a `LogTerminal`; history is listed with status
 badges. The main process decrypts the SSH key from the Credential Manager and
 never sends it back to the renderer. Channels: `deploy:templates`, `deploy:run`,
@@ -88,6 +88,15 @@ Manage a Docker host through verified SSH transport. The module inventories
 containers, starts/stops/restarts/removes them, reads logs and live stats, and
 deploys validated Compose YAML. The Docker API is never exposed over an
 unauthenticated TCP socket. Channels: `containers:*`.
+
+## Ansible (`/ansible`)
+
+Configure any reachable Linux VPS with an SSH key or password and a pinned host
+fingerprint. The module bootstraps an isolated remote Ansible runtime, runs
+generic Docker, Dockhand, Portainer, Jenkins and Nginx profiles, streams real
+output, and supports cancellation. Its Nginx tab manages CloudForge-owned
+domain-to-port proxies with `nginx -t`, rollback, reload, and safe removal.
+Channels: `ansible:*`; event `ansible:log`. See [the Ansible guide](ANSIBLE.md).
 
 ## Logs (`/logs`)
 

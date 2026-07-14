@@ -32,6 +32,7 @@ export * from './application/ports/activity-repository.js';
 export * from './application/ports/plugin-repository.js';
 export * from './application/ports/ssh-key-generator.js';
 export * from './application/ports/container-manager.js';
+export * from './application/ports/ansible-manager.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
