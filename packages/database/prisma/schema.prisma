@@ -66,20 +66,23 @@ model Credential {
 }
 
 model VpsTarget {
-  id              String    @id
-  name            String
-  host            String
-  port            Int       @default(22)
-  username        String
-  sshCredentialId String?
-  hostKeySha256   String
-  lastPreflight   String    @default("")
-  lastPreflightAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                  String    @id
+  name                String
+  host                String
+  port                Int       @default(22)
+  username            String
+  sshCredentialId     String?
+  hostKeySha256       String
+  lastPreflight       String    @default("")
+  lastPreflightAt     DateTime?
+  managedProjectId    String?
+  managedResourceName String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   sshCredential Credential? @relation(fields: [sshCredentialId], references: [id], onDelete: SetNull)
 
+  @@unique([managedProjectId, managedResourceName])
   @@index([updatedAt])
   @@index([sshCredentialId])
 }

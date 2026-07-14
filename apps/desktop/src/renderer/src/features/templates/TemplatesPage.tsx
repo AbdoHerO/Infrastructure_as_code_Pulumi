@@ -48,8 +48,12 @@ export function TemplatesPage(): JSX.Element {
     staleTime: Infinity,
   });
   const applyTemplate = useMutation({
-    mutationFn: (args: { projectId: string; templateId: string; sshPublicKey: string }) =>
-      invoke('infra:applyTemplate', args),
+    mutationFn: (args: {
+      projectId: string;
+      templateId: string;
+      sshPublicKey: string;
+      sshCredentialId: string;
+    }) => invoke('infra:applyTemplate', args),
   });
   const customTemplates = useCustomTemplates();
   const applyCustom = useApplyCustomTemplate();
@@ -73,7 +77,12 @@ export function TemplatesPage(): JSX.Element {
       return;
     }
     applyTemplate.mutate(
-      { projectId, templateId: template.id, sshPublicKey: sshKey.publicKey },
+      {
+        projectId,
+        templateId: template.id,
+        sshPublicKey: sshKey.publicKey,
+        sshCredentialId: sshKey.id,
+      },
       {
         onSuccess: () => {
           toast.success(`Applied "${template.name}" to the project`);

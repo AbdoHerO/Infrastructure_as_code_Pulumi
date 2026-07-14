@@ -22,6 +22,7 @@ import type {
   SubnetResource,
   VolumeResource,
   ProviderKind,
+  SshKeySummary,
 } from '@cloudforge/core';
 import { FirewallRulesEditor } from './FirewallRulesEditor.js';
 
@@ -36,6 +37,7 @@ export interface EditorContext {
   readonly availabilityDomains: readonly AvailabilityDomain[];
   readonly liveLoading: boolean;
   readonly providerKind: ProviderKind;
+  readonly sshKeys: readonly SshKeySummary[];
 }
 
 interface ResourceEditorProps {
@@ -333,12 +335,37 @@ function ComputeFields({
       </Grid>
 
       <Field label="SSH public key" hint="Paste the public key used to log in (SSH-key auth)">
+        <Select
+          className="mb-2"
+          value={
+            resource.sshCredentialId ??
+            context.sshKeys.find((key) => key.publicKey.trim() === resource.sshPublicKey.trim())
+              ?.id ??
+            ''
+          }
+          onChange={(event) => {
+            const key = context.sshKeys.find((item) => item.id === event.target.value);
+            patch({
+              sshCredentialId: key?.id,
+              ...(key ? { sshPublicKey: key.publicKey } : {}),
+            });
+          }}
+        >
+          <option value="">Custom public key (not managed)</option>
+          {context.sshKeys.map((key) => (
+            <option key={key.id} value={key.id}>
+              {key.name} · {key.algorithm}
+            </option>
+          ))}
+        </Select>
         <Textarea
           className="font-mono text-xs"
           rows={3}
           placeholder="ssh-rsa AAAA… or ssh-ed25519 AAAA…"
           value={resource.sshPublicKey}
-          onChange={(event) => patch({ sshPublicKey: event.target.value })}
+          onChange={(event) =>
+            patch({ sshPublicKey: event.target.value, sshCredentialId: undefined })
+          }
         />
       </Field>
     </div>

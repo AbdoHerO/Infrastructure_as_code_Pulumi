@@ -49,12 +49,16 @@ CREATE TABLE "VpsTarget" (
     "username" TEXT NOT NULL,
     "sshCredentialId" TEXT,
     "hostKeySha256" TEXT NOT NULL,
-    "lastPreflight" TEXT NOT NULL DEFAULT '',
-    "lastPreflightAt" DATETIME,
+      "lastPreflight" TEXT NOT NULL DEFAULT '',
+      "lastPreflightAt" DATETIME,
+      "managedProjectId" TEXT,
+      "managedResourceName" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "VpsTarget_sshCredentialId_fkey" FOREIGN KEY ("sshCredentialId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-);
+  );
+
+  CREATE UNIQUE INDEX "VpsTarget_managedProjectId_managedResourceName_key" ON "VpsTarget"("managedProjectId", "managedResourceName");
 
 -- CreateTable
 CREATE TABLE "Template" (
@@ -171,4 +175,3 @@ CREATE UNIQUE INDEX "Secret_scope_name_key" ON "Secret"("scope", "name");
 
 -- CreateIndex
 CREATE INDEX "Activity_createdAt_idx" ON "Activity"("createdAt");
-

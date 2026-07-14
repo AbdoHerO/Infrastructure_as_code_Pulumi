@@ -16,15 +16,19 @@ credential. Oracle Console is not required for normal provisioning or deletion.
    24.04 ARM64. Open **Infrastructure** afterward to customize it before Apply.
 5. Open TCP 22 for SSH. Add 80 and 443 only when the server will host HTTP/HTTPS services.
 6. For the compute resource, select the public subnet, enable **Assign public IP**, choose the
-   shape and image, paste the SSH public key, and set the boot-volume size.
+   shape and image, select a validated CloudForge SSH key, and set the boot-volume size.
 7. Select **Save plan**, then **Preview**. Review all create, update, replacement, and delete
    operations before continuing.
 8. Select **Apply** and wait for success. CloudForge reads the public IP and SSH
    user from the completed stack outputs and displays a **Connect with SSH**
    panel with copyable commands for every public compute instance.
-9. Use the direct command when the matching key is loaded in your SSH agent, or
-   copy the `-i "<private-key-path>"` command and replace the placeholder with
-   the private-key file path. Ubuntu uses `ubuntu`; Oracle Linux uses `opc`.
+9. Copy the primary `-i "<private-key-path>"` command and replace the placeholder
+   with the matching private-key file. The shorter command works only when that
+   key is loaded in your SSH agent. Ubuntu uses `ubuntu`; Oracle Linux uses `opc`.
+10. CloudForge waits for SSH, pins the server host fingerprint, and synchronizes
+    the compute instance into the shared VPS Target catalog. It then appears in
+    Ansible, Nginx, SSL, Containers, and Deployments without re-entering the IP,
+    user, credential, or fingerprint. Reapply updates its IP; Destroy removes it.
 
 ## Where the SSH user, key, and password come from
 
@@ -37,8 +41,15 @@ credential. Oracle Console is not required for normal provisioning or deletion.
 - Standard OCI platform images do **not give CloudForge an SSH password**. Use
   key authentication. SSH Password credentials are for existing VPSs where you
   separately enabled password login; CloudForge cannot discover that password.
-- In **Ansible**, choose the key credential, public IP and `ubuntu`; inspect and
-  independently verify the host fingerprint, save the target, then preflight it.
+- In **Ansible**, a CloudForge-managed instance is selected automatically after
+  synchronization. Existing external VPS targets can still be entered manually.
+- If `Permission denied (publickey)` appears, the private key does not match the
+  public key installed at launch. Open **SSH Keys**, find the key named in the
+  Infrastructure connection panel, export it, and use that file with `ssh -i`.
+- OCI does not allow the reserved `ssh_authorized_keys` launch metadata to be
+  changed on an existing instance. Selecting a different SSH key therefore
+  appears as **Replace** in CloudForge Preview. Treat that as destructive: the
+  public IP can change and data on the old boot volume can be lost.
 
 ```powershell
 ssh -i "$HOME\.ssh\my-cloudforge-key" ubuntu@<stack-public-ip>

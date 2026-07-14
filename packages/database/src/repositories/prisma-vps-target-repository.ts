@@ -20,6 +20,18 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
     });
   }
 
+  async findManaged(
+    projectId: string,
+    resourceName: string,
+  ): Promise<Result<VpsTargetRecord | null, PersistenceError>> {
+    return guard('load managed VPS target', async () => {
+      const row = await this.db.vpsTarget.findFirst({
+        where: { managedProjectId: projectId, managedResourceName: resourceName },
+      });
+      return row ? toRecord(row) : null;
+    });
+  }
+
   async create(record: VpsTargetRecord): Promise<Result<void, PersistenceError>> {
     return guard('create VPS target', async () => {
       await this.db.vpsTarget.create({
@@ -52,6 +64,23 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
       await this.db.vpsTarget.delete({ where: { id } });
     });
   }
+
+  async removeManaged(
+    projectId: string,
+    resourceName: string,
+  ): Promise<Result<void, PersistenceError>> {
+    return guard('delete managed VPS target', async () => {
+      await this.db.vpsTarget.deleteMany({
+        where: { managedProjectId: projectId, managedResourceName: resourceName },
+      });
+    });
+  }
+
+  async removeManagedByProject(projectId: string): Promise<Result<void, PersistenceError>> {
+    return guard('delete managed VPS targets', async () => {
+      await this.db.vpsTarget.deleteMany({ where: { managedProjectId: projectId } });
+    });
+  }
 }
 
 function toRecord(row: PrismaVpsTarget): VpsTargetRecord {
@@ -65,6 +94,8 @@ function toRecord(row: PrismaVpsTarget): VpsTargetRecord {
     hostKeySha256: row.hostKeySha256,
     lastPreflight: row.lastPreflight,
     lastPreflightAt: row.lastPreflightAt?.toISOString() ?? null,
+    managedProjectId: row.managedProjectId,
+    managedResourceName: row.managedResourceName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

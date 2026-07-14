@@ -15,6 +15,19 @@ class MemoryTargets implements VpsTargetRepository {
   get(id: string): Promise<Result<VpsTargetRecord | null, PersistenceError>> {
     return Promise.resolve(ok(this.values.get(id) ?? null));
   }
+  findManaged(
+    projectId: string,
+    resourceName: string,
+  ): Promise<Result<VpsTargetRecord | null, PersistenceError>> {
+    return Promise.resolve(
+      ok(
+        [...this.values.values()].find(
+          (value) =>
+            value.managedProjectId === projectId && value.managedResourceName === resourceName,
+        ) ?? null,
+      ),
+    );
+  }
   create(record: VpsTargetRecord): Promise<Result<void, PersistenceError>> {
     this.values.set(record.id, record);
     return Promise.resolve(ok(undefined));
@@ -26,6 +39,20 @@ class MemoryTargets implements VpsTargetRepository {
   }
   remove(id: string): Promise<Result<void, PersistenceError>> {
     this.values.delete(id);
+    return Promise.resolve(ok(undefined));
+  }
+  removeManaged(projectId: string, resourceName: string): Promise<Result<void, PersistenceError>> {
+    for (const [id, value] of this.values) {
+      if (value.managedProjectId === projectId && value.managedResourceName === resourceName) {
+        this.values.delete(id);
+      }
+    }
+    return Promise.resolve(ok(undefined));
+  }
+  removeManagedByProject(projectId: string): Promise<Result<void, PersistenceError>> {
+    for (const [id, value] of this.values) {
+      if (value.managedProjectId === projectId) this.values.delete(id);
+    }
     return Promise.resolve(ok(undefined));
   }
 }
@@ -77,5 +104,24 @@ describe('VpsTargetService', () => {
     expect((await service.remove(created.value.id)).ok).toBe(true);
     const listed = await service.list();
     expect(listed.ok && listed.value).toHaveLength(0);
+  });
+
+  it('upserts one managed target and removes it with its infrastructure project', async () => {
+    const first = await service.upsertManaged({
+      ...valid,
+      managedProjectId: 'project-1',
+      managedResourceName: 'server',
+    });
+    expect(first.ok).toBe(true);
+    const second = await service.upsertManaged({
+      ...valid,
+      host: '203.0.113.11',
+      managedProjectId: 'project-1',
+      managedResourceName: 'server',
+    });
+    expect(second.ok && second.value.id).toBe(first.ok ? first.value.id : '');
+    expect(repository.values.size).toBe(1);
+    await service.removeManagedProject('project-1');
+    expect(repository.values.size).toBe(0);
   });
 });

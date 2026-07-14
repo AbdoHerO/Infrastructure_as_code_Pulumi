@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -172,6 +172,17 @@ export function AnsiblePage(): JSX.Element {
     setSshCredentialId(saved.sshCredentialId ?? '');
     setHostKeySha256(saved.hostKeySha256);
   };
+  useEffect(() => {
+    if (selectedTargetId || !savedTargets.data?.length) return;
+    const saved = savedTargets.data[0]!;
+    setSelectedTargetId(saved.id);
+    setTargetName(saved.name);
+    setHost(saved.host);
+    setPort(saved.port);
+    setUsername(saved.username);
+    setSshCredentialId(saved.sshCredentialId ?? '');
+    setHostKeySha256(saved.hostKeySha256);
+  }, [savedTargets.data, selectedTargetId]);
   const saveTarget = (): void => {
     const request = { name: targetName, ...target };
     const callbacks = {

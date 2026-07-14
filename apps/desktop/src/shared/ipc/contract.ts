@@ -102,6 +102,10 @@ export interface IpcContract {
     response: SshKeySummary;
   };
   'sshKeys:revealPrivate': { request: { id: string }; response: { privateKey: string } };
+  'sshKeys:exportPrivate': {
+    request: { id: string; suggestedName: string };
+    response: { path: string | null };
+  };
   'sshKeys:delete': { request: { id: string }; response: void };
 
   'providers:test': { request: { credentialId: string }; response: ConnectionTestResult };
@@ -306,7 +310,13 @@ export interface IpcContract {
 
   'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
   'infra:applyTemplate': {
-    request: { projectId: string; templateId: string; sshPublicKey?: string; region?: string };
+    request: {
+      projectId: string;
+      templateId: string;
+      sshPublicKey?: string;
+      sshCredentialId?: string;
+      region?: string;
+    };
     response: InfrastructurePlan;
   };
   'infra:customTemplates': { request: void; response: CustomTemplateSummary[] };
@@ -356,6 +366,7 @@ export interface IpcEventContract {
   'nginx:log': { streamId: string; event: NginxEvent };
   'ssl:log': { streamId: string; event: CertificateEvent };
   'updates:state': UpdateState;
+  'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
 }
 
 export type IpcEventChannel = keyof IpcEventContract;
@@ -369,6 +380,7 @@ export const IPC_EVENT_CHANNELS = [
   'nginx:log',
   'ssl:log',
   'updates:state',
+  'vpsTargets:changed',
 ] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */
@@ -462,6 +474,7 @@ export const IPC_CHANNELS = [
   'sshKeys:generate',
   'sshKeys:import',
   'sshKeys:revealPrivate',
+  'sshKeys:exportPrivate',
   'sshKeys:delete',
   'providers:test',
   'providers:listRegions',

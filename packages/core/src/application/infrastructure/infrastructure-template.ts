@@ -5,6 +5,7 @@ import type { ProvisioningProviderKind } from '../../domain/provider/provider-ki
 export interface InfraTemplateContext {
   readonly region?: string;
   readonly sshPublicKey?: string;
+  readonly sshCredentialId?: string;
   readonly shape?: string;
 }
 
@@ -42,6 +43,7 @@ function compute(shape: string, ctx: InfraTemplateContext): ResourceSpec {
     image: 'ubuntu-22.04',
     subnetName: 'subnet',
     sshPublicKey: ctx.sshPublicKey ?? '',
+    ...(ctx.sshCredentialId ? { sshCredentialId: ctx.sshCredentialId } : {}),
     assignPublicIp: true,
     ocpus: 1,
     memoryGb: 8,
@@ -85,6 +87,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
           image: 'ubuntu-24.04',
           subnetName: 'subnet',
           sshPublicKey: ctx.sshPublicKey ?? '',
+          ...(ctx.sshCredentialId ? { sshCredentialId: ctx.sshCredentialId } : {}),
           assignPublicIp: true,
           ocpus: 2,
           memoryGb: 12,
@@ -183,6 +186,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
           image: 'ubuntu-24.04',
           subnetName: 'subnet',
           sshPublicKey: ctx.sshPublicKey ?? '',
+          ...(ctx.sshCredentialId ? { sshCredentialId: ctx.sshCredentialId } : {}),
           assignPublicIp: true,
           bootVolumeGb: 30,
         },

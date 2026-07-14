@@ -51,6 +51,14 @@ export function useAnsibleProfiles(): UseQueryResult<AnsibleProfile[]> {
 }
 
 export function useVpsTargets(): UseQueryResult<VpsTargetDto[]> {
+  const client = useQueryClient();
+  useEffect(
+    () =>
+      subscribe('vpsTargets:changed', () => {
+        void client.invalidateQueries({ queryKey: ['ansible', 'targets'] });
+      }),
+    [client],
+  );
   return useQuery<VpsTargetDto[]>({
     queryKey: ['ansible', 'targets'],
     queryFn: () => invoke('ansible:targets', undefined),

@@ -57,6 +57,7 @@ export function registerInfraHandlers(): void {
       message: 'Applied infrastructure plan',
       projectId,
     });
+    if (result.targetSync?.count) emitEvent('vpsTargets:changed', { reason: 'synchronized' });
     return result;
   });
 
@@ -68,6 +69,7 @@ export function registerInfraHandlers(): void {
       message: 'Destroyed infrastructure and removed its saved plan',
       projectId,
     });
+    emitEvent('vpsTargets:changed', { reason: 'deleted' });
   });
 
   registerHandler('infra:refresh', async ({ projectId, streamId }) => {
@@ -82,7 +84,9 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:outputs', async ({ projectId }) => {
     const ref = await stackRef(projectId);
-    return orThrow(await getContainer().infrastructureService.outputs(ref));
+    const outputs = orThrow(await getContainer().infrastructureService.outputs(ref, projectId));
+    emitEvent('vpsTargets:changed', { reason: 'synchronized' });
+    return outputs;
   });
 
   registerHandler('infra:managedStacks', async () =>
@@ -99,13 +103,16 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:templates', () => getContainer().infrastructureService.listTemplates());
 
-  registerHandler('infra:applyTemplate', async ({ projectId, templateId, sshPublicKey, region }) =>
-    orThrow(
-      await getContainer().infrastructureService.applyTemplate(projectId, templateId, {
-        ...(sshPublicKey ? { sshPublicKey } : {}),
-        ...(region ? { region } : {}),
-      }),
-    ),
+  registerHandler(
+    'infra:applyTemplate',
+    async ({ projectId, templateId, sshPublicKey, sshCredentialId, region }) =>
+      orThrow(
+        await getContainer().infrastructureService.applyTemplate(projectId, templateId, {
+          ...(sshPublicKey ? { sshPublicKey } : {}),
+          ...(sshCredentialId ? { sshCredentialId } : {}),
+          ...(region ? { region } : {}),
+        }),
+      ),
   );
 
   registerHandler('infra:customTemplates', async () =>

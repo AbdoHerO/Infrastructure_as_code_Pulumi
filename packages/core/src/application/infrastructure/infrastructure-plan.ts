@@ -58,6 +58,8 @@ export interface ComputeResource extends BaseResource {
   readonly image: string;
   readonly subnetName: string;
   readonly sshPublicKey: string;
+  /** Encrypted CloudForge SSH credential whose public key is installed. */
+  readonly sshCredentialId?: string | undefined;
   readonly assignPublicIp: boolean;
   /** vCPUs for flexible shapes (ignored by fixed shapes). Defaults to 1. */
   readonly ocpus?: number | undefined;

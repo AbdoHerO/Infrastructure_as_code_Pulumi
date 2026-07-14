@@ -227,10 +227,11 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
           displayName: spec.name,
           preserveBootVolume: false,
         },
-        // Let the OCI provider schema decide update vs replacement. Shape,
-        // shapeConfig and metadata are OCI-updatable and must not be made
-        // destructive by CloudForge-level replaceOnChanges rules.
-        opts,
+        // OCI reserves `ssh_authorized_keys` for instance launch and does not
+        // allow that metadata key to be changed later. Force an explicit
+        // replacement so Preview warns about the destructive operation rather
+        // than leaving the user with an instance that still trusts the old key.
+        { ...opts, replaceOnChanges: ['metadata'] },
       );
       instances.set(spec.name, instance);
       outputs[`${spec.name}PublicIp`] = instance.publicIp;

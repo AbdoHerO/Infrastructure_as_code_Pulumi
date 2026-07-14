@@ -13,15 +13,20 @@ export function registerAnsibleHandlers(): void {
   );
   registerHandler('ansible:createTarget', async (request) => {
     await validateSshCredential(request.sshCredentialId);
-    return orThrow(await getContainer().vpsTargetService.create(request));
+    const target = orThrow(await getContainer().vpsTargetService.create(request));
+    emitEvent('vpsTargets:changed', { reason: 'created' });
+    return target;
   });
   registerHandler('ansible:updateTarget', async ({ id, ...request }) => {
     await validateSshCredential(request.sshCredentialId);
-    return orThrow(await getContainer().vpsTargetService.update(id, request));
+    const target = orThrow(await getContainer().vpsTargetService.update(id, request));
+    emitEvent('vpsTargets:changed', { reason: 'updated' });
+    return target;
   });
-  registerHandler('ansible:deleteTarget', async ({ id }) =>
-    orThrow(await getContainer().vpsTargetService.remove(id)),
-  );
+  registerHandler('ansible:deleteTarget', async ({ id }) => {
+    orThrow(await getContainer().vpsTargetService.remove(id));
+    emitEvent('vpsTargets:changed', { reason: 'deleted' });
+  });
   registerHandler('ansible:inspectHostKey', async ({ host, port }) => ({
     fingerprint: orThrow(await getContainer().ansibleManager.inspectHostKey(host, port)),
   }));

@@ -40,7 +40,8 @@ export class SshKeyService {
       const revealed = await this.credentials.reveal(summary.id);
       if (!revealed.ok) return revealed;
       const material = this.materialFromData(revealed.value.data);
-      if (!material.ok) return material;
+      // A malformed legacy Secrets record must not hide every valid SSH key.
+      if (!material.ok) continue;
       result.push({
         id: summary.id,
         name: summary.name,
@@ -85,6 +86,16 @@ export class SshKeyService {
     return ok(revealed.value.data.privateKey ?? '');
   }
 
+  /** Resolve the encrypted credential that owns an installed public key. */
+  async findByPublicKey(
+    publicKey: string,
+  ): Promise<Result<SshKeySummary | null, SshKeyServiceError>> {
+    const keys = await this.list();
+    if (!keys.ok) return keys;
+    const normalized = normalizePublicKey(publicKey);
+    return ok(keys.value.find((key) => normalizePublicKey(key.publicKey) === normalized) ?? null);
+  }
+
   remove(id: string): Promise<Result<void, SshKeyServiceError>> {
     return this.credentials.remove(id);
   }
@@ -92,19 +103,15 @@ export class SshKeyService {
   private materialFromData(
     data: Readonly<Record<string, string>>,
   ): Result<SshKeyMaterial, ValidationError> {
+    const inspected = this.generator.inspect(data.privateKey ?? '', data.passphrase);
+    if (!inspected.ok) return inspected;
     if (
       data.publicKey &&
-      data.fingerprint &&
-      (data.algorithm === 'ed25519' || data.algorithm === 'rsa')
+      normalizePublicKey(data.publicKey) !== normalizePublicKey(inspected.value.publicKey)
     ) {
-      return ok({
-        algorithm: data.algorithm,
-        privateKey: data.privateKey ?? '',
-        publicKey: data.publicKey,
-        fingerprint: data.fingerprint,
-      });
+      return err(new ValidationError('Stored SSH public and private keys do not match'));
     }
-    return this.generator.inspect(data.privateKey ?? '', data.passphrase);
+    return inspected;
   }
 
   private async save(
@@ -133,4 +140,8 @@ export class SshKeyService {
       createdAt: created.value.createdAt,
     });
   }
+}
+
+function normalizePublicKey(value: string): string {
+  return value.trim().split(/\s+/).slice(0, 2).join(' ');
 }

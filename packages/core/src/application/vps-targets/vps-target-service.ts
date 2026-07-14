@@ -24,6 +24,8 @@ export interface VpsTargetDto {
   readonly hostKeySha256: string;
   readonly lastPreflight: unknown;
   readonly lastPreflightAt: string | null;
+  readonly managedProjectId: string | null;
+  readonly managedResourceName: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -68,6 +70,8 @@ export class VpsTargetService {
       ...validated.value,
       lastPreflight: '',
       lastPreflightAt: null,
+      managedProjectId: null,
+      managedResourceName: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -118,12 +122,78 @@ export class VpsTargetService {
   remove(id: string): Promise<Result<void, PersistenceError>> {
     return this.targets.remove(id);
   }
+
+  /** Create or update the shared target generated from a managed compute resource. */
+  async upsertManaged(
+    input: SaveVpsTargetInput & { managedProjectId: string; managedResourceName: string },
+  ): Promise<Result<VpsTargetDto, VpsTargetServiceError>> {
+    const validated = validate(input);
+    if (!validated.ok) return validated;
+    const existing = await this.targets.findManaged(
+      input.managedProjectId,
+      input.managedResourceName,
+    );
+    if (!existing.ok) return existing;
+    if (!existing.value) {
+      const now = toIsoDateString(new Date());
+      const record: VpsTargetRecord = {
+        id: newUuid(),
+        ...validated.value,
+        managedProjectId: input.managedProjectId,
+        managedResourceName: input.managedResourceName,
+        lastPreflight: '',
+        lastPreflightAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const created = await this.targets.create(record);
+      return created.ok ? ok(toDto(record)) : created;
+    }
+    const connectionChanged =
+      existing.value.host !== validated.value.host ||
+      existing.value.username !== validated.value.username ||
+      existing.value.sshCredentialId !== validated.value.sshCredentialId ||
+      existing.value.hostKeySha256 !== validated.value.hostKeySha256;
+    const patch: VpsTargetUpdate = {
+      ...validated.value,
+      ...(connectionChanged ? { lastPreflight: '', lastPreflightAt: null } : {}),
+    };
+    const updated = await this.targets.update(existing.value.id, patch);
+    if (!updated.ok) return updated;
+    return ok(
+      toDto({
+        ...existing.value,
+        ...patch,
+        updatedAt: toIsoDateString(new Date()),
+      }),
+    );
+  }
+
+  removeManagedProject(projectId: string): Promise<Result<void, PersistenceError>> {
+    return this.targets.removeManagedByProject(projectId);
+  }
+
+  removeManagedResource(
+    projectId: string,
+    resourceName: string,
+  ): Promise<Result<void, PersistenceError>> {
+    return this.targets.removeManaged(projectId, resourceName);
+  }
 }
 
 function validate(
   input: SaveVpsTargetInput,
 ): Result<
-  Omit<VpsTargetRecord, 'id' | 'lastPreflight' | 'lastPreflightAt' | 'createdAt' | 'updatedAt'>,
+  Omit<
+    VpsTargetRecord,
+    | 'id'
+    | 'lastPreflight'
+    | 'lastPreflightAt'
+    | 'managedProjectId'
+    | 'managedResourceName'
+    | 'createdAt'
+    | 'updatedAt'
+  >,
   ValidationError
 > {
   const name = input.name.trim();

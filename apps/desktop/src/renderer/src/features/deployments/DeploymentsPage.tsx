@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Fingerprint, Loader2, Rocket, Square } from 'lucide-react';
 import {
@@ -22,6 +22,7 @@ import {
 import type { DeploymentDto } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useVpsTargets } from '../ansible/useAnsible.js';
 import { useProjects } from '../projects/useProjects.js';
 import {
   useDeployLogs,
@@ -51,6 +52,7 @@ export function DeploymentsPage(): JSX.Element {
   const { data: projects } = useProjects();
   const { data: templates } = useDeploymentTemplates();
   const sshCredentials = useSshCredentials();
+  const targets = useVpsTargets();
   const run = useRunDeployment();
   const inspectHostKey = useInspectHostKey();
   const cancel = useCancelDeployment();
@@ -60,6 +62,7 @@ export function DeploymentsPage(): JSX.Element {
   const [projectId, setProjectId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [host, setHost] = useState('');
+  const [selectedTargetId, setSelectedTargetId] = useState('');
   const [username, setUsername] = useState('ubuntu');
   const [port, setPort] = useState(22);
   const [sshCredentialId, setSshCredentialId] = useState('');
@@ -67,6 +70,20 @@ export function DeploymentsPage(): JSX.Element {
   const [hostKeySha256, setHostKeySha256] = useState('');
 
   const { data: history } = useDeployments(projectId || null);
+
+  const selectTarget = useCallback(
+    (id: string): void => {
+      setSelectedTargetId(id);
+      const selected = targets.data?.find((target) => target.id === id);
+      if (!selected) return;
+      setHost(selected.host);
+      setPort(selected.port);
+      setUsername(selected.username);
+      setSshCredentialId(selected.sshCredentialId ?? '');
+      setHostKeySha256(selected.hostKeySha256);
+    },
+    [targets.data],
+  );
 
   useEffect(() => {
     if (!projectId && projects && projects.length > 0) setProjectId(projects[0]!.id);
@@ -77,6 +94,12 @@ export function DeploymentsPage(): JSX.Element {
   useEffect(() => {
     if (!sshCredentialId && sshCredentials.length > 0) setSshCredentialId(sshCredentials[0]!.id);
   }, [sshCredentials, sshCredentialId]);
+  useEffect(() => {
+    const selected = targets.data?.find((target) => target.id === selectedTargetId);
+    if (selected?.managedProjectId === projectId) return;
+    const managed = targets.data?.find((target) => target.managedProjectId === projectId);
+    if (managed) selectTarget(managed.id);
+  }, [projectId, selectedTargetId, selectTarget, targets.data]);
 
   if (projects?.length === 0) {
     return (
@@ -157,11 +180,27 @@ export function DeploymentsPage(): JSX.Element {
                   ))}
                 </Select>
               </Field>
+              <div className="col-span-2">
+                <Field label="Saved VPS target">
+                  <Select
+                    value={selectedTargetId}
+                    onChange={(event) => selectTarget(event.target.value)}
+                  >
+                    <option value="">Manual connection…</option>
+                    {(targets.data ?? []).map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.name} · {target.host}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
               <Field label="Host">
                 <Input
                   placeholder="203.0.113.10"
                   value={host}
                   onChange={(e) => {
+                    setSelectedTargetId('');
                     setHost(e.target.value);
                     setHostKeySha256('');
                   }}
@@ -172,18 +211,28 @@ export function DeploymentsPage(): JSX.Element {
                   type="number"
                   value={port}
                   onChange={(e) => {
+                    setSelectedTargetId('');
                     setPort(Number(e.target.value) || 22);
                     setHostKeySha256('');
                   }}
                 />
               </Field>
               <Field label="SSH user">
-                <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+                <Input
+                  value={username}
+                  onChange={(e) => {
+                    setSelectedTargetId('');
+                    setUsername(e.target.value);
+                  }}
+                />
               </Field>
               <Field label="SSH key">
                 <Select
                   value={sshCredentialId}
-                  onChange={(e) => setSshCredentialId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedTargetId('');
+                    setSshCredentialId(e.target.value);
+                  }}
                 >
                   {sshCredentials.map((c) => (
                     <option key={c.id} value={c.id}>

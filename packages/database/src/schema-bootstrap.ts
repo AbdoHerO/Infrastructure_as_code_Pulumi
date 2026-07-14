@@ -36,6 +36,10 @@ interface ForeignKeyRow {
   readonly from: string;
 }
 
+interface ColumnRow {
+  readonly name: string;
+}
+
 /** Hooks the caller can use to react to a destructive migration step. */
 export interface MigrateSchemaHooks {
   /** Invoked once, immediately before the Project table is rebuilt. */
@@ -75,6 +79,8 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
       "hostKeySha256" TEXT NOT NULL,
       "lastPreflight" TEXT NOT NULL DEFAULT '',
       "lastPreflightAt" DATETIME,
+      "managedProjectId" TEXT,
+      "managedResourceName" TEXT,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL,
       CONSTRAINT "VpsTarget_sshCredentialId_fkey" FOREIGN KEY ("sshCredentialId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -85,7 +91,22 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
     await db.$executeRawUnsafe(
       'CREATE INDEX "VpsTarget_sshCredentialId_idx" ON "VpsTarget"("sshCredentialId")',
     );
+    await db.$executeRawUnsafe(
+      'CREATE UNIQUE INDEX "VpsTarget_managedProjectId_managedResourceName_key" ON "VpsTarget"("managedProjectId", "managedResourceName")',
+    );
     migrated = true;
+  }
+
+  if (targetTables.length > 0) {
+    const targetColumns = await db.$queryRawUnsafe<ColumnRow[]>('PRAGMA table_info("VpsTarget")');
+    if (!targetColumns.some((column) => column.name === 'managedProjectId')) {
+      await db.$executeRawUnsafe('ALTER TABLE "VpsTarget" ADD COLUMN "managedProjectId" TEXT');
+      await db.$executeRawUnsafe('ALTER TABLE "VpsTarget" ADD COLUMN "managedResourceName" TEXT');
+      await db.$executeRawUnsafe(
+        'CREATE UNIQUE INDEX "VpsTarget_managedProjectId_managedResourceName_key" ON "VpsTarget"("managedProjectId", "managedResourceName")',
+      );
+      migrated = true;
+    }
   }
 
   const foreignKeys = await db.$queryRawUnsafe<ForeignKeyRow[]>(

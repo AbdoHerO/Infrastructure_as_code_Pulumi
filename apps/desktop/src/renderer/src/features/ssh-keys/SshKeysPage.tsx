@@ -21,6 +21,7 @@ import type { SshKeyAlgorithm, SshKeySummary } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import {
   revealSshPrivateKey,
+  exportSshPrivateKey,
   useDeleteSshKey,
   useGenerateSshKey,
   useImportSshKey,
@@ -130,7 +131,20 @@ function SshKeyCard({
               void revealSshPrivateKey(sshKey.id).then((value) => copy(value, 'Private key'));
             }}
           >
-            <Download className="size-4" /> Reveal private key
+            <Copy className="size-4" /> Copy private key
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void exportSshPrivateKey(sshKey.id, sshKey.name)
+                .then((path) => {
+                  if (path) toast.success(`Private key exported to ${path}`);
+                })
+                .catch((error: Error) => toast.error(error.message));
+            }}
+          >
+            <Download className="size-4" /> Export private key
           </Button>
           <Button variant="destructive" size="sm" disabled={deleting} onClick={onDelete}>
             <Trash2 className="size-4" /> Delete

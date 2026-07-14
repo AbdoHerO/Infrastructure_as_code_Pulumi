@@ -31,6 +31,7 @@ import {
   type InfrastructureTemplateSummary,
   listInfrastructureTemplateSummaries,
 } from './infrastructure-template.js';
+import type { ManagedVpsTargetSyncService } from '../vps-targets/managed-vps-target-sync-service.js';
 
 /**
  * Application service coordinating a project's infrastructure: it persists the
@@ -45,6 +46,7 @@ export class InfrastructureService {
     private readonly plans: PlanStore,
     private readonly credentials: ProviderCredentialResolver,
     private readonly templates: TemplateStore,
+    private readonly targetSync?: ManagedVpsTargetSyncService,
   ) {}
 
   /** Whether the underlying IaC engine is available on this host. */
@@ -210,8 +212,18 @@ export class InfrastructureService {
       );
     }
     const applied = await this.engine.apply(ref, plan.value, credentials.value.data, onEvent);
-    if (applied.ok) this.previews.delete(stackKey(ref));
-    return applied;
+    if (!applied.ok) return applied;
+    this.previews.delete(stackKey(ref));
+    const synchronized = this.targetSync
+      ? await this.targetSync.sync(projectId, plan.value, applied.value.outputs, onEvent)
+      : { targets: [], warnings: [] };
+    for (const warning of synchronized.warnings) {
+      onEvent?.({ stream: 'stderr', message: `VPS target synchronization: ${warning}` });
+    }
+    return ok({
+      ...applied.value,
+      targetSync: { count: synchronized.targets.length, warnings: synchronized.warnings },
+    });
   }
 
   async destroy(
@@ -221,6 +233,11 @@ export class InfrastructureService {
   ): Promise<Result<void, InfrastructureError | PersistenceError>> {
     const destroyed = await this.engine.destroy(ref, onEvent);
     if (!destroyed.ok) return destroyed;
+
+    const targetWarnings = this.targetSync ? await this.targetSync.removeProject(projectId) : [];
+    for (const warning of targetWarnings) {
+      onEvent?.({ stream: 'stderr', message: `VPS target cleanup: ${warning}` });
+    }
 
     const deleted = await this.plans.delete(projectId);
     if (deleted.ok) this.previews.delete(stackKey(ref));
@@ -234,8 +251,20 @@ export class InfrastructureService {
     return this.engine.refresh(ref, onEvent);
   }
 
-  outputs(ref: StackReference): Promise<Result<Record<string, unknown>, InfrastructureError>> {
-    return this.engine.outputs(ref);
+  async outputs(
+    ref: StackReference,
+    projectId?: string,
+    onEvent?: EngineEventSink,
+  ): Promise<Result<Record<string, unknown>, InfrastructureError>> {
+    const outputs = await this.engine.outputs(ref);
+    if (!outputs.ok || !projectId || !this.targetSync) return outputs;
+    const plan = await this.plans.load(projectId);
+    if (!plan.ok || !plan.value) return outputs;
+    const synchronized = await this.targetSync.sync(projectId, plan.value, outputs.value, onEvent);
+    for (const warning of synchronized.warnings) {
+      onEvent?.({ stream: 'stderr', message: `VPS target synchronization: ${warning}` });
+    }
+    return outputs;
   }
 
   private async requirePlan(

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   FileText,
@@ -26,6 +26,7 @@ import type { ContainerAction, RemoteContainer } from '@cloudforge/core';
 import type { ContainerTargetRequest } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useInspectHostKey, useSshCredentials } from '../deployments/useDeployments.js';
+import { useVpsTargets } from '../ansible/useAnsible.js';
 import {
   useContainerAction,
   useContainerLogs,
@@ -36,6 +37,7 @@ import {
 
 export function ContainersPage(): JSX.Element {
   const credentials = useSshCredentials();
+  const targets = useVpsTargets();
   const inspect = useInspectHostKey();
   const list = useListContainers();
   const action = useContainerAction();
@@ -43,6 +45,7 @@ export function ContainersPage(): JSX.Element {
   const stats = useContainerStats();
   const compose = useDeployCompose();
   const [host, setHost] = useState('');
+  const [selectedTargetId, setSelectedTargetId] = useState('');
   const [port, setPort] = useState(22);
   const [username, setUsername] = useState('opc');
   const [sshCredentialId, setSshCredentialId] = useState('');
@@ -51,6 +54,23 @@ export function ContainersPage(): JSX.Element {
   const [composeYaml, setComposeYaml] = useState(
     'services:\n  app:\n    image: nginx:1.27-alpine\n    ports:\n      - "80:80"\n',
   );
+
+  const selectTarget = useCallback(
+    (id: string): void => {
+      setSelectedTargetId(id);
+      const selected = targets.data?.find((target) => target.id === id);
+      if (!selected) return;
+      setHost(selected.host);
+      setPort(selected.port);
+      setUsername(selected.username);
+      setSshCredentialId(selected.sshCredentialId ?? '');
+      setHostKeySha256(selected.hostKeySha256);
+    },
+    [targets.data],
+  );
+  useEffect(() => {
+    if (!selectedTargetId && targets.data?.length) selectTarget(targets.data[0]!.id);
+  }, [selectedTargetId, targets.data, selectTarget]);
 
   const target: ContainerTargetRequest = { host, port, username, sshCredentialId, hostKeySha256 };
   const ready = host && username && sshCredentialId && hostKeySha256;
@@ -86,11 +106,22 @@ export function ContainersPage(): JSX.Element {
       />
 
       <Card className="mb-5">
-        <CardContent className="grid gap-3 pt-6 md:grid-cols-2 xl:grid-cols-5">
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-2 xl:grid-cols-6">
+          <Field label="Saved VPS target">
+            <Select value={selectedTargetId} onChange={(event) => selectTarget(event.target.value)}>
+              <option value="">Manual connection…</option>
+              {(targets.data ?? []).map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.name} · {target.host}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Host">
             <Input
               value={host}
               onChange={(event) => {
+                setSelectedTargetId('');
                 setHost(event.target.value);
                 setHostKeySha256('');
               }}
@@ -101,18 +132,28 @@ export function ContainersPage(): JSX.Element {
               type="number"
               value={port}
               onChange={(event) => {
+                setSelectedTargetId('');
                 setPort(Number(event.target.value) || 22);
                 setHostKeySha256('');
               }}
             />
           </Field>
           <Field label="SSH user">
-            <Input value={username} onChange={(event) => setUsername(event.target.value)} />
+            <Input
+              value={username}
+              onChange={(event) => {
+                setSelectedTargetId('');
+                setUsername(event.target.value);
+              }}
+            />
           </Field>
           <Field label="SSH key">
             <Select
               value={sshCredentialId}
-              onChange={(event) => setSshCredentialId(event.target.value)}
+              onChange={(event) => {
+                setSelectedTargetId('');
+                setSshCredentialId(event.target.value);
+              }}
             >
               <option value="">Select a key…</option>
               {credentials.map((credential) => (
@@ -146,7 +187,7 @@ export function ContainersPage(): JSX.Element {
             </Button>
           </Field>
           {hostKeySha256 ? (
-            <p className="text-warning break-all text-xs md:col-span-2 xl:col-span-5">
+            <p className="text-warning break-all text-xs md:col-span-2 xl:col-span-6">
               Verify before use: {hostKeySha256}
             </p>
           ) : null}

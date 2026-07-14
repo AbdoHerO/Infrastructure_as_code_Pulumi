@@ -48,3 +48,7 @@ export function useDeleteSshKey(): UseMutationResult<void, Error, string> {
 export function revealSshPrivateKey(id: string): Promise<string> {
   return invoke('sshKeys:revealPrivate', { id }).then((result) => result.privateKey);
 }
+
+export function exportSshPrivateKey(id: string, suggestedName: string): Promise<string | null> {
+  return invoke('sshKeys:exportPrivate', { id, suggestedName }).then((result) => result.path);
+}

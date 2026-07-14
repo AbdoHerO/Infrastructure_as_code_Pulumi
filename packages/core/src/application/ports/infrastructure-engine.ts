@@ -60,6 +60,10 @@ export interface PreviewResult extends PreviewAnalysis {
 export interface ApplyResult {
   readonly outputs: Readonly<Record<string, unknown>>;
   readonly summary: string;
+  readonly targetSync?: {
+    readonly count: number;
+    readonly warnings: readonly string[];
+  };
 }
 
 /** A cloud resource tracked by a local infrastructure stack. */

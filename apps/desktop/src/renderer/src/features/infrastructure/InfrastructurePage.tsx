@@ -36,6 +36,7 @@ import {
   type ProjectDto,
   type ResourceKind,
   type ResourceSpec,
+  type SshKeySummary,
   extractSshConnectionHints,
   formatSshCommand,
   isProvisioningProviderKind,
@@ -46,6 +47,7 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { useSettings } from '../settings/useSettings.js';
+import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
 import { ADDABLE_KINDS, createResource, uniqueName } from './resource-templates.js';
@@ -71,6 +73,7 @@ export function InfrastructurePage(): JSX.Element {
   const { data: projects } = useProjects();
   const { data: credentials } = useCredentials();
   const { data: settings } = useSettings();
+  const sshKeys = useSshKeys();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [resources, setResources] = useState<ResourceSpec[]>([]);
   const [config, setConfig] = useState<Record<string, string>>({});
@@ -109,8 +112,22 @@ export function InfrastructurePage(): JSX.Element {
     );
   const outputs = useOutputs(projectId, currentStackExists);
   const sshConnections = useMemo(
-    () => extractSshConnectionHints(outputs.data ?? {}),
-    [outputs.data],
+    () =>
+      extractSshConnectionHints(outputs.data ?? {}).map((connection) => {
+        const compute = resources.find(
+          (resource) => resource.kind === 'compute' && resource.name === connection.resourceName,
+        );
+        const sshKey =
+          compute?.kind === 'compute'
+            ? sshKeys.data?.find(
+                (key) =>
+                  key.id === compute.sshCredentialId ||
+                  key.publicKey.trim() === compute.sshPublicKey.trim(),
+              )
+            : undefined;
+        return { ...connection, ...(sshKey ? { sshKey } : {}) };
+      }),
+    [outputs.data, resources, sshKeys.data],
   );
   const { lines, progress, resources: resourceProgress, clear } = useEngineLogs(streamId);
 
@@ -153,6 +170,7 @@ export function InfrastructurePage(): JSX.Element {
       availabilityDomains: availabilityDomains.data ?? [],
       liveLoading: shapes.isFetching || availabilityDomains.isFetching,
       providerKind: linkedProviderKind,
+      sshKeys: sshKeys.data ?? [],
     }),
     [
       resources,
@@ -161,6 +179,7 @@ export function InfrastructurePage(): JSX.Element {
       availabilityDomains.data,
       availabilityDomains.isFetching,
       linkedProviderKind,
+      sshKeys.data,
     ],
   );
 
@@ -259,9 +278,15 @@ export function InfrastructurePage(): JSX.Element {
       apply.mutate(
         { projectId, streamId, previewToken: currentPreview.previewToken },
         {
-          onSuccess: () => {
+          onSuccess: (result) => {
             setApprovedPreview(null);
-            toast.success('Apply complete');
+            if (result.targetSync?.warnings.length) {
+              toast.warning(`Apply complete · ${result.targetSync.warnings.join(' · ')}`);
+            } else if (result.targetSync?.count) {
+              toast.success(`Apply complete · ${result.targetSync.count} VPS target synchronized`);
+            } else {
+              toast.success('Apply complete');
+            }
           },
           onError,
         },
@@ -464,7 +489,9 @@ export function InfrastructurePage(): JSX.Element {
 function SshConnectionPanel({
   connections,
 }: {
-  connections: ReturnType<typeof extractSshConnectionHints>;
+  connections: readonly (ReturnType<typeof extractSshConnectionHints>[number] & {
+    sshKey?: SshKeySummary;
+  })[];
 }): JSX.Element | null {
   if (connections.length === 0) return null;
 
@@ -486,29 +513,25 @@ function SshConnectionPanel({
           </div>
         </div>
         {connections.map((connection) => {
-          const defaultCommand = formatSshCommand(connection);
           const identityCommand = formatSshCommand(connection, true);
+          const agentCommand = formatSshCommand(connection);
           return (
             <div key={connection.resourceName} className="space-y-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{connection.resourceName}</p>
+                <div>
+                  <p className="text-sm font-medium">{connection.resourceName}</p>
+                  {connection.sshKey ? (
+                    <p className="text-muted-foreground text-xs">
+                      Matching CloudForge key: {connection.sshKey.name}
+                    </p>
+                  ) : null}
+                </div>
                 <Badge variant="success">{connection.user}</Badge>
               </div>
               <div className="bg-foreground text-background flex items-center gap-2 rounded-md px-3 py-2">
-                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{defaultCommand}</code>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  title="Copy SSH command"
-                  onClick={() => void copy(defaultCommand)}
-                >
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-              <div className="bg-secondary flex items-center gap-2 rounded-md px-3 py-2">
                 <code className="min-w-0 flex-1 overflow-x-auto text-xs">{identityCommand}</code>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="icon"
                   title="Copy SSH command with private-key path"
                   onClick={() => void copy(identityCommand)}
@@ -516,14 +539,37 @@ function SshConnectionPanel({
                   <Copy className="size-4" />
                 </Button>
               </div>
+              <div className="bg-secondary flex items-center gap-2 rounded-md px-3 py-2">
+                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{agentCommand}</code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Copy SSH-agent command"
+                  onClick={() => void copy(agentCommand)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
               <p className="text-muted-foreground text-xs">
-                Replace <code>&lt;private-key-path&gt;</code> when the key is not loaded in your SSH
-                agent. You can manage encrypted keys under{' '}
+                Replace <code>&lt;private-key-path&gt;</code> with the matching private-key file.
+                The shorter command works only when that key is already loaded in your SSH agent.
+                You can manage encrypted keys under{' '}
                 <Link className="text-primary underline" to="/ssh-keys">
                   SSH Keys
                 </Link>
                 .
               </p>
+              {!connection.sshKey ? (
+                <div className="bg-warning/10 text-warning flex gap-2 rounded-md p-3 text-xs">
+                  <AlertTriangle className="size-4 shrink-0" />
+                  <span>
+                    This instance was launched with a public key that has no matching validated
+                    private key in CloudForge. SSH automation and VPS-target synchronization are
+                    unavailable. Select a valid key on the compute resource, then Preview the
+                    required instance replacement before applying it.
+                  </span>
+                </div>
+              ) : null}
             </div>
           );
         })}

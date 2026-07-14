@@ -25,6 +25,14 @@ renderer.
 
 ## Add a credential and connect
 
+Instances provisioned by CloudForge with a validated SSH key are synchronized
+automatically. The target stores the stack public IP, image user, encrypted key
+reference, pinned host fingerprint, project, and compute logical name. Every
+SSH-based module receives target-change events, so a changed public IP or a
+destroyed stack is reflected without duplicating connection records.
+
+For an existing or externally managed VPS:
+
 1. Open **Secrets → Add credential** and choose **SSH Key** (recommended) or
    **SSH Password**.
 2. Open **Ansible** in the **Manage** navigation group.

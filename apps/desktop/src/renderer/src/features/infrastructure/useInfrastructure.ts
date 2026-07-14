@@ -66,6 +66,7 @@ export function useApply(): ReturnType<
     onSuccess: (_result, variables) => {
       void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
       void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['ansible', 'targets'] });
     },
   });
 }
@@ -82,6 +83,7 @@ export function useDestroy(): ReturnType<
       queryClient.setQueryData(['infra', 'plan', variables.projectId], null);
       void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
       void queryClient.removeQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['ansible', 'targets'] });
     },
   });
 }

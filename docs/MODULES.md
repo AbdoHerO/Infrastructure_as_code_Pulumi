@@ -75,10 +75,16 @@ longer exists. Channels: `infra:getPlan`, `infra:savePlan`,
 `infra:managedStacks`, `infra:destroyStack`, `infra:saveTemplate`; event
 `engine:log`.
 
+Public compute outputs are reconciled into the shared VPS Target catalog after
+Apply, when outputs are refreshed, and in the background at startup. The
+association retains the selected encrypted SSH credential and verified host
+fingerprint. An IP update propagates to every SSH module; Destroy removes the
+managed target. Event: `vpsTargets:changed`.
+
 ## Deployments (`/deployments`)
 
-Run a deployment template on a host over SSH. Choose project, template, host,
-port, SSH user and an **SSH key or password credential**; optionally a container image. The
+Run a deployment template on a host over SSH. Select a synchronized VPS target
+or enter a manual host, port, user and **SSH key or password credential**; optionally a container image. The
 run streams per-step output to a `LogTerminal`; history is listed with status
 badges. The main process decrypts the SSH key from the Credential Manager and
 never sends it back to the renderer. Channels: `deploy:templates`, `deploy:run`,
@@ -88,7 +94,8 @@ never sends it back to the renderer. Channels: `deploy:templates`, `deploy:run`,
 
 Manage a Docker host through verified SSH transport. The module inventories
 containers, starts/stops/restarts/removes them, reads logs and live stats, and
-deploys validated Compose YAML. The Docker API is never exposed over an
+deploys validated Compose YAML. It uses the same synchronized VPS Target
+selector as Ansible, Nginx, SSL, and Deployments. The Docker API is never exposed over an
 unauthenticated TCP socket. Channels: `containers:*`.
 
 ## Ansible (`/ansible`)

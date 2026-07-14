@@ -14,6 +14,7 @@ import {
   type RemoteTargetResolver,
   DeploymentService,
   InfrastructureService,
+  ManagedVpsTargetSyncService,
   PluginService,
   ProjectService,
   type ProviderCredentialResolver,
@@ -50,6 +51,8 @@ import {
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs } from './logging/logger.js';
+import { projectStackReference } from './infra/stack-reference.js';
+import { emitEvent } from './ipc/emit.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -159,12 +162,6 @@ export async function initContainer(): Promise<AppContainer> {
     },
   };
 
-  const infrastructureService = new InfrastructureService(
-    createInfrastructureEngine(),
-    new PrismaPlanStore(db),
-    credentialResolver,
-    new PrismaTemplateStore(db),
-  );
   const deploymentService = new DeploymentService(
     new SshDeployer(),
     new PrismaDeploymentRepository(db),
@@ -182,6 +179,18 @@ export async function initContainer(): Promise<AppContainer> {
   const containerManager = new SshContainerManager();
   const ansibleManager = new SshAnsibleManager();
   const vpsTargetService = new VpsTargetService(new PrismaVpsTargetRepository(db));
+  const targetSyncService = new ManagedVpsTargetSyncService(
+    vpsTargetService,
+    sshKeyService,
+    deploymentService,
+  );
+  const infrastructureService = new InfrastructureService(
+    createInfrastructureEngine(),
+    new PrismaPlanStore(db),
+    credentialResolver,
+    new PrismaTemplateStore(db),
+    targetSyncService,
+  );
   const remoteTargetResolver: RemoteTargetResolver = {
     async resolve(targetId) {
       const saved = await vpsTargetService.get(targetId);
@@ -274,7 +283,42 @@ export async function initContainer(): Promise<AppContainer> {
     },
   };
   log().info({ event: 'container.ready' }, 'Application services initialised');
+  setTimeout(() => {
+    void reconcileManagedTargets(projectService, infrastructureService);
+  }, 2_000).unref();
   return container;
+}
+
+async function reconcileManagedTargets(
+  projects: ProjectService,
+  infrastructure: InfrastructureService,
+): Promise<void> {
+  const [projectList, stacks] = await Promise.all([
+    projects.list(),
+    infrastructure.listManagedStacks(),
+  ]);
+  if (!projectList.ok || !stacks.ok) {
+    log().warn({ event: 'vps-target.reconcile.skipped' }, 'Could not discover managed stacks');
+    return;
+  }
+  let synchronized = false;
+  for (const project of projectList.value) {
+    const ref = projectStackReference(project);
+    const exists = stacks.value.some(
+      (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
+    );
+    if (!exists) continue;
+    const outputs = await infrastructure.outputs(ref, project.id);
+    if (!outputs.ok) {
+      log().warn(
+        { event: 'vps-target.reconcile.failed', projectId: project.id, err: outputs.error },
+        'Could not synchronize managed VPS targets',
+      );
+      continue;
+    }
+    synchronized = true;
+  }
+  if (synchronized) emitEvent('vpsTargets:changed', { reason: 'synchronized' });
 }
 
 /** Access the initialised container. Throws if called before {@link initContainer}. */
