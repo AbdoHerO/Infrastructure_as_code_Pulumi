@@ -21,6 +21,7 @@ jobs:
           node-version: 20.19.6
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @cloudforge/database prisma:generate
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
@@ -44,4 +45,5 @@ jobs:
           node-version: 20.19.6
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @cloudforge/database prisma:generate
       - run: pnpm --filter @cloudforge/desktop package:dir

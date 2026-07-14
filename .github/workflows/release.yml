@@ -45,6 +45,9 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: pnpm --filter @cloudforge/database prisma:generate
+
       - name: Formatting
         run: pnpm format:check
 
