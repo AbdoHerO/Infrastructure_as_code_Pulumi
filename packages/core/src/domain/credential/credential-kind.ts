@@ -73,6 +73,7 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
       field('accessKeyId', 'Access Key ID'),
       field('secretAccessKey', 'Secret Access Key', { secret: true }),
       field('sessionToken', 'Session Token', { secret: true, required: false }),
+      field('region', 'Default Region', { placeholder: 'eu-west-1' }),
     ],
   },
   azure: {

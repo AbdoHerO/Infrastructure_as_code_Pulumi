@@ -13,7 +13,7 @@ export function ProvidersPage(): JSX.Element {
     <>
       <PageHeader
         title="Cloud Providers"
-        description="Test connections and discover regions and shapes."
+        description="Test provider connections and discover supported cloud capabilities."
         actions={
           <Button asChild variant="outline">
             <Link to="/secrets">Manage credentials</Link>
@@ -32,7 +32,7 @@ export function ProvidersPage(): JSX.Element {
             <div className="space-y-1">
               <p className="font-medium">No cloud providers connected</p>
               <p className="text-muted-foreground text-sm">
-                Add an Oracle Cloud (or other provider) credential to get started.
+                Add an Oracle Cloud or AWS credential to get started.
               </p>
             </div>
             <Button asChild>

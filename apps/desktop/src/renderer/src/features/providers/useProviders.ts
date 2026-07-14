@@ -9,6 +9,7 @@ import {
   type Region,
   type Shape,
   type InstanceAction,
+  type MachineImage,
 } from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
@@ -40,6 +41,13 @@ export function useLoadRegions(): UseMutationResult<Region[], Error, string> {
 export function useLoadShapes(): UseMutationResult<Shape[], Error, string> {
   return useMutation({
     mutationFn: (credentialId: string) => invoke('providers:listShapes', { credentialId }),
+  });
+}
+
+/** Load provider-curated machine images for launching compute instances. */
+export function useLoadImages(): UseMutationResult<MachineImage[], Error, string> {
+  return useMutation({
+    mutationFn: (credentialId: string) => invoke('providers:listImages', { credentialId }),
   });
 }
 

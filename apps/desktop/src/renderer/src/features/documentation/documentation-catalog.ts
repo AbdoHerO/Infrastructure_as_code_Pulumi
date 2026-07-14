@@ -20,6 +20,7 @@ import releases from '@docs/MOVING-AND-RELEASING.md?raw';
 import roadmap from '@docs/ROADMAP.md?raw';
 import privacy from '@docs/PRIVACY.md?raw';
 import license from '@docs/LICENSE.md?raw';
+import aws from '@docs/AWS.md?raw';
 
 export type DocumentationCategory = 'Start here' | 'Operate' | 'Reference' | 'Develop';
 
@@ -64,6 +65,14 @@ export const DOCUMENTATION: readonly DocumentationArticle[] = [
     'Provision a complete server, connect over SSH, and remove it safely.',
     'Start here',
     firstInstance,
+  ),
+  article(
+    'aws',
+    'AWS.md',
+    'Amazon Web Services',
+    'Configure AWS credentials and use safe read-only discovery.',
+    'Start here',
+    aws,
   ),
   article(
     'overview',

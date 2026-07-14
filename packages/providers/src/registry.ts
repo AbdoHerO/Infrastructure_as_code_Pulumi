@@ -6,9 +6,10 @@ import type {
   ProviderKind,
 } from '@cloudforge/core';
 import { OracleProvider } from './oracle/oracle-provider.js';
+import { AwsProvider } from './aws/aws-provider.js';
 
 /** Provider kinds with a concrete implementation available today. */
-const IMPLEMENTED: ReadonlySet<ProviderKind> = new Set(['oracle']);
+const IMPLEMENTED: ReadonlySet<ProviderKind> = new Set(['oracle', 'aws']);
 
 /**
  * Default {@link ProviderFactory}. Registering a new provider is adding one
@@ -26,6 +27,8 @@ export class DefaultProviderFactory implements ProviderFactory {
     switch (kind) {
       case 'oracle':
         return OracleProvider.fromCredentials(credentials);
+      case 'aws':
+        return AwsProvider.fromCredentials(credentials);
       default:
         return err(
           new ProviderError(`Provider "${kind}" is not yet implemented`, { context: { kind } }),

@@ -29,6 +29,7 @@ import {
   SettingsService,
   SshKeyService,
   VpsTargetService,
+  isProvisioningProviderKind,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
 import {
@@ -152,6 +153,14 @@ export async function initContainer(): Promise<AppContainer> {
           new InfrastructureError('Could not load the project’s provider credential', {
             cause: credential.error,
           }),
+        );
+      }
+      if (!isProvisioningProviderKind(credential.value.kind)) {
+        return err(
+          new InfrastructureError(
+            `${credential.value.kind} infrastructure provisioning is not enabled yet. Use Cloud Providers for read-only discovery, or link an Oracle credential for Preview and Apply.`,
+            { context: { projectId, providerKind: credential.value.kind } },
+          ),
         );
       }
       return ok(credential.value.data);

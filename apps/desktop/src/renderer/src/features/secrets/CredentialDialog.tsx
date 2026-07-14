@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Button,
   Dialog,
@@ -81,6 +82,20 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
               ))}
             </Select>
           </div>
+
+          {kind === 'aws' ? (
+            <div className="border-primary/30 bg-primary/5 rounded-lg border p-3 text-sm">
+              <p className="font-medium">AWS discovery is read-only in this milestone increment.</p>
+              <p className="text-muted-foreground mt-1 text-xs leading-5">
+                Use a narrowly scoped IAM access key. Instance and network mutation are not enabled.
+              </p>
+              <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0">
+                <Link to="/documentation?doc=aws" onClick={() => onOpenChange(false)}>
+                  How to create the key and IAM policy
+                </Link>
+              </Button>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label>Name</Label>

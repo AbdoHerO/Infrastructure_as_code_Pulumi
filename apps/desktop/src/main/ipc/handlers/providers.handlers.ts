@@ -16,6 +16,10 @@ export function registerProviderHandlers(): void {
     orThrow(await getContainer().providerService.listShapes(credentialId)),
   );
 
+  registerHandler('providers:listImages', async ({ credentialId }) =>
+    orThrow(await getContainer().providerService.listImages(credentialId)),
+  );
+
   registerHandler('providers:listAvailabilityDomains', async ({ credentialId }) =>
     orThrow(await getContainer().providerService.listAvailabilityDomains(credentialId)),
   );

@@ -4,6 +4,7 @@ import {
   Cpu,
   Globe,
   HardDrive,
+  Image,
   Loader2,
   Play,
   PlugZap,
@@ -16,6 +17,8 @@ import { Badge, Button, Card, CardContent, Separator } from '@cloudforge/ui';
 import { type CredentialSummaryDto, PROVIDER_LABELS, type ProviderKind } from '@cloudforge/core';
 import {
   useLoadInstances,
+  useLoadAvailabilityDomains,
+  useLoadImages,
   useLoadRegions,
   useLoadResources,
   useLoadShapes,
@@ -30,11 +33,14 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
   const regions = useLoadRegions();
   const shapes = useLoadShapes();
   const instances = useLoadInstances();
+  const availabilityDomains = useLoadAvailabilityDomains();
+  const images = useLoadImages();
   const terminate = useTerminateInstance();
   const resources = useLoadResources();
   const instanceAction = useInstanceAction();
 
   const result = test.data;
+  const isAws = credential.kind === 'aws';
 
   return (
     <Card>
@@ -49,6 +55,11 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
               <p className="text-muted-foreground text-xs">
                 {PROVIDER_LABELS[credential.kind as ProviderKind]}
               </p>
+              {credential.kind === 'aws' ? (
+                <Badge variant="outline" className="mt-1">
+                  Read-only discovery
+                </Badge>
+              ) : null}
             </div>
           </div>
           <Button
@@ -89,19 +100,48 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 <Globe className="size-4" />
                 {regions.data ? `${regions.data.length} regions` : 'Load regions'}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={resources.isPending}
-                onClick={() => resources.mutate(credential.id)}
-              >
-                {resources.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <HardDrive className="size-4" />
-                )}
-                {resources.data ? `${resources.data.length} resources` : 'Load cloud resources'}
-              </Button>
+              {isAws ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={availabilityDomains.isPending}
+                    onClick={() => availabilityDomains.mutate(credential.id)}
+                  >
+                    <Server className="size-4" />
+                    {availabilityDomains.data
+                      ? `${availabilityDomains.data.length} availability zones`
+                      : 'Load availability zones'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={images.isPending}
+                    onClick={() => images.mutate(credential.id)}
+                  >
+                    {images.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Image className="size-4" />
+                    )}
+                    {images.data ? `${images.data.length} images` : 'Load images'}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={resources.isPending}
+                  onClick={() => resources.mutate(credential.id)}
+                >
+                  {resources.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <HardDrive className="size-4" />
+                  )}
+                  {resources.data ? `${resources.data.length} resources` : 'Load cloud resources'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -111,19 +151,21 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 <Cpu className="size-4" />
                 {shapes.data ? `${shapes.data.length} shapes` : 'Load shapes'}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={instances.isPending}
-                onClick={() => instances.mutate(credential.id)}
-              >
-                {instances.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Server className="size-4" />
-                )}
-                {instances.data ? `${instances.data.length} instances` : 'Load instances'}
-              </Button>
+              {!isAws ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={instances.isPending}
+                  onClick={() => instances.mutate(credential.id)}
+                >
+                  {instances.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Server className="size-4" />
+                  )}
+                  {instances.data ? `${instances.data.length} instances` : 'Load instances'}
+                </Button>
+              ) : null}
             </div>
             {regions.data && regions.data.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
@@ -134,6 +176,39 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                   </Badge>
                 ))}
               </div>
+            ) : null}
+            {isAws && availabilityDomains.data ? (
+              <DiscoveryList
+                title="Availability zones"
+                items={availabilityDomains.data.map((zone) => ({ id: zone.id, text: zone.name }))}
+              />
+            ) : null}
+            {isAws && shapes.data ? (
+              <DiscoveryList
+                title="Instance types"
+                items={shapes.data.slice(0, 24).map((shape) => ({
+                  id: shape.id,
+                  text: `${shape.name}${shape.ocpus ? ` · ${shape.ocpus} vCPU` : ''}${shape.memoryGb ? ` · ${shape.memoryGb} GB` : ''}`,
+                }))}
+                total={shapes.data.length}
+              />
+            ) : null}
+            {isAws && images.data ? (
+              <DiscoveryList
+                title="Recent Amazon Linux and Ubuntu images"
+                items={images.data.slice(0, 20).map((image) => ({
+                  id: image.id,
+                  text: `${image.name} · ${image.architecture}`,
+                }))}
+                total={images.data.length}
+              />
+            ) : null}
+            {isAws && (availabilityDomains.isError || shapes.isError || images.isError) ? (
+              <p className="text-destructive text-xs">
+                {availabilityDomains.error?.message ??
+                  shapes.error?.message ??
+                  images.error?.message}
+              </p>
             ) : null}
             {instances.isError ? (
               <p className="text-destructive text-xs">{instances.error.message}</p>
@@ -265,6 +340,34 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function DiscoveryList({
+  title,
+  items,
+  total,
+}: {
+  title: string;
+  items: readonly { id: string; text: string }[];
+  total?: number;
+}): JSX.Element {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        {title}
+        {total !== undefined && total > items.length
+          ? ` · showing ${items.length} of ${total}`
+          : ''}
+      </p>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.id} className="bg-secondary/40 truncate rounded-md px-3 py-2 text-xs">
+            {item.text}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

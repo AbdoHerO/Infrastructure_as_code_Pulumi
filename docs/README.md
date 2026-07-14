@@ -17,6 +17,7 @@ backup/restore and the packaged update workflow are implemented.
 | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | [Getting Started](GETTING-STARTED.md)               | **Run, test and use** the app end to end, plus troubleshooting                                                    |
 | [First OCI Instance](FIRST-INSTANCE.md)             | Provision, SSH into, discover, and safely delete OCI instances entirely from CloudForge                           |
+| [Amazon Web Services](AWS.md)                       | Configure AWS credentials and use read-only region, zone, instance-type, and AMI discovery                        |
 | [Ansible & Nginx](ANSIBLE.md)                       | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
 | [Nginx Manager](NGINX-MANAGER.md)                   | Dedicated per-target Nginx dashboard, editor, logs, backups, validation, reload, and rollback                     |
 | [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
@@ -54,7 +55,7 @@ the current module; no internet connection is required to read bundled guides.
 | **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                                      |
 | **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                                  |
 | **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                                    |
-| **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)                                    |
+| **Cloud providers**        | Oracle Cloud (complete management) · AWS (read-only discovery foundation)                        |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app                        |
 | **Tests**                  | 85 unit tests (Vitest), including portable backup, VPS preflight, Ansible YAML, and safety paths |
 | **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                                 |

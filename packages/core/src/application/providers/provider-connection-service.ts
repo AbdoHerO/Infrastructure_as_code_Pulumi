@@ -13,6 +13,7 @@ import type {
   Shape,
   LiveFirewallRule,
   InstanceFirewall,
+  MachineImage,
 } from './cloud-provider.js';
 
 /**
@@ -36,6 +37,17 @@ export class ProviderConnectionService {
 
   listShapes(credentialId: string): Promise<Result<Shape[], ProviderError>> {
     return this.withProvider(credentialId, (provider) => provider.listShapes());
+  }
+
+  listImages(credentialId: string): Promise<Result<MachineImage[], ProviderError>> {
+    return this.withProvider(
+      credentialId,
+      (provider) =>
+        provider.listImages?.() ??
+        Promise.resolve(
+          err(new ProviderError(`${provider.kind} does not support image discovery`)),
+        ),
+    );
   }
 
   listAvailabilityDomains(

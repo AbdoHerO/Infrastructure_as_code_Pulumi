@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Card, CardContent, Input, Label, Select, Textarea, toast } from '@cloudforge/ui';
-import { ENVIRONMENTS, isProviderKind, PROVIDER_LABELS } from '@cloudforge/core';
+import { ENVIRONMENTS, isProvisioningProviderKind, PROVIDER_LABELS } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { useCreateProject } from './useProjects.js';
@@ -29,7 +29,7 @@ export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProp
   const createProject = useCreateProject();
   const { data: credentials } = useCredentials();
   const { data: settings } = useSettings();
-  const providerCredentials = (credentials ?? []).filter((c) => isProviderKind(c.kind));
+  const providerCredentials = (credentials ?? []).filter((c) => isProvisioningProviderKind(c.kind));
   const {
     register,
     handleSubmit,

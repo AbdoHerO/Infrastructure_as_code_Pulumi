@@ -56,7 +56,7 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 | Provider (kind)                   | Fields                                                                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | **Oracle Cloud** (`oracle`)       | Tenancy OCID · User OCID · Compartment OCID · Fingerprint · 🔒 API Private Key (PEM) · Region · Profile Name _(optional)_ |
-| **AWS** (`aws`)                   | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_                                                      |
+| **AWS** (`aws`)                   | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_ · Default Region                                     |
 | **Azure** (`azure`)               | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
 | **GitHub** (`github`)             | 🔒 Personal Access Token                                                                                                  |
 | **Cloudflare** (`cloudflare`)     | 🔒 API Token                                                                                                              |
@@ -67,10 +67,10 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 | **SSH Key** (`ssh`)               | 🔒 Private Key (PEM) · 🔒 Passphrase _(optional)_                                                                         |
 | **SSH Password** (`ssh-password`) | 🔒 Password                                                                                                               |
 
-> Only **Oracle Cloud** performs live provider calls today (connection testing,
-> region/shape discovery). The other provider kinds are stored securely and are
-> the extension points for future providers; GitHub/Cloudflare/OpenAI/Anthropic/
-> Docker Hub/GitLab are general-purpose service credentials.
+> **Oracle Cloud** provides the complete infrastructure workflow. **AWS** now
+> provides read-only connection and compute discovery. Other provider kinds are
+> stored extension points; GitHub/Cloudflare/OpenAI/Anthropic/Docker Hub/GitLab
+> are general-purpose service credentials.
 
 ---
 
@@ -225,7 +225,8 @@ each selected profile.
 Brief pointers for the remaining credential kinds:
 
 - **AWS** — IAM → Users → Security credentials → **Create access key**. Provide
-  Access Key ID + Secret Access Key (Session Token only for temporary creds).
+  Access Key ID + Secret Access Key, a Default Region, and Session Token only
+  for temporary credentials. See the complete [AWS guide](AWS.md).
 - **Azure** — create a Service Principal (`az ad sp create-for-rbac`) or in the
   Portal (App registrations). Provide Subscription/Tenant/Client IDs + a Client
   Secret.

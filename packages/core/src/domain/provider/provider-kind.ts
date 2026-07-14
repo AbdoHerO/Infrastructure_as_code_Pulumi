@@ -18,6 +18,14 @@ export const PROVIDER_KINDS = [
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
+/** Providers whose infrastructure engine is enabled for Preview/Apply. */
+export const PROVISIONING_PROVIDER_KINDS = ['oracle'] as const satisfies readonly ProviderKind[];
+export type ProvisioningProviderKind = (typeof PROVISIONING_PROVIDER_KINDS)[number];
+
+export function isProvisioningProviderKind(value: string): value is ProvisioningProviderKind {
+  return (PROVISIONING_PROVIDER_KINDS as readonly string[]).includes(value);
+}
+
 /** Human-readable labels for provider kinds. */
 export const PROVIDER_LABELS: Readonly<Record<ProviderKind, string>> = {
   oracle: 'Oracle Cloud',

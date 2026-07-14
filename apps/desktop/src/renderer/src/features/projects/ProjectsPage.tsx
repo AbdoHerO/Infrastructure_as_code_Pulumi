@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Boxes, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Label, Select, toast } from '@cloudforge/ui';
-import { isProviderKind, PROVIDER_LABELS, type ProjectDto } from '@cloudforge/core';
+import { isProvisioningProviderKind, PROVIDER_LABELS, type ProjectDto } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { CreateProjectForm } from './CreateProjectForm.js';
@@ -110,7 +110,7 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
 function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
   const { data: credentials } = useCredentials();
   const updateProject = useUpdateProject();
-  const providerCredentials = (credentials ?? []).filter((c) => isProviderKind(c.kind));
+  const providerCredentials = (credentials ?? []).filter((c) => isProvisioningProviderKind(c.kind));
 
   const change = (providerId: string): void => {
     updateProject.mutate(

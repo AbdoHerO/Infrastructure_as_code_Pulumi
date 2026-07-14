@@ -22,6 +22,16 @@ export interface Shape {
   readonly memoryGb?: number;
 }
 
+/** A provider machine image suitable for launching compute instances. */
+export interface MachineImage {
+  readonly id: string;
+  readonly name: string;
+  readonly operatingSystem: string;
+  readonly architecture: string;
+  readonly owner?: string;
+  readonly createdAt?: string;
+}
+
 /** A compute instance discovered directly from the provider account. */
 export interface CloudInstance {
   readonly id: string;
@@ -109,6 +119,9 @@ export interface CloudProvider {
 
   /** List the compute shapes available to this account. */
   listShapes(): Promise<Result<Shape[], ProviderError>>;
+
+  /** Optional provider capability for discovering launchable machine images. */
+  listImages?(): Promise<Result<MachineImage[], ProviderError>>;
 
   /** List instances even when they were created outside CloudForge. */
   listInstances(): Promise<Result<CloudInstance[], ProviderError>>;

@@ -2,7 +2,7 @@
   "name": "@cloudforge/providers",
   "version": "0.1.0",
   "private": true,
-  "description": "CloudForge cloud provider plugins (Oracle Cloud first) implementing the CloudProvider contract.",
+  "description": "CloudForge Oracle and AWS adapters implementing the provider-independent CloudProvider contract.",
   "type": "module",
   "exports": {
     ".": {
@@ -20,6 +20,8 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1086.0",
+    "@aws-sdk/client-sts": "^3.1086.0",
     "@cloudforge/core": "workspace:*",
     "@cloudforge/shared": "workspace:*"
   },

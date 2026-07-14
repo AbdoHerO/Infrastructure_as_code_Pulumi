@@ -44,6 +44,7 @@ import type {
   RevealedCredentialDto,
   SettingsPatch,
   Shape,
+  MachineImage,
   SshKeyAlgorithm,
   SshKeySummary,
   UpdateProjectInput,
@@ -106,6 +107,7 @@ export interface IpcContract {
   'providers:test': { request: { credentialId: string }; response: ConnectionTestResult };
   'providers:listRegions': { request: { credentialId: string }; response: Region[] };
   'providers:listShapes': { request: { credentialId: string }; response: Shape[] };
+  'providers:listImages': { request: { credentialId: string }; response: MachineImage[] };
   'providers:listAvailabilityDomains': {
     request: { credentialId: string };
     response: AvailabilityDomain[];
@@ -464,6 +466,7 @@ export const IPC_CHANNELS = [
   'providers:test',
   'providers:listRegions',
   'providers:listShapes',
+  'providers:listImages',
   'providers:listAvailabilityDomains',
   'providers:listInstances',
   'providers:listResources',
