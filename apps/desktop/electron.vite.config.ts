@@ -60,8 +60,7 @@ function gitCommit(): string {
 
 const builtAt = process.env.CLOUDFORGE_BUILD_DATE ?? new Date().toISOString();
 const buildNumber =
-  process.env.CLOUDFORGE_BUILD_NUMBER ??
-  `${builtAt.slice(0, 10).replaceAll('-', '')}.dev`;
+  process.env.CLOUDFORGE_BUILD_NUMBER ?? `${builtAt.slice(0, 10).replaceAll('-', '')}.dev`;
 const buildInfo = { buildNumber, gitCommit: gitCommit(), builtAt };
 
 export default defineConfig({

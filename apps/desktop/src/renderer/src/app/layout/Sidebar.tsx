@@ -51,7 +51,9 @@ export function Sidebar(): JSX.Element {
       </nav>
 
       <div className="border-sidebar-border border-t px-5 py-3">
-        <p className="text-muted-foreground text-[11px]">{info ? `v${info.version}` : 'Version —'}</p>
+        <p className="text-muted-foreground text-[11px]">
+          {info ? `v${info.version}` : 'Version —'}
+        </p>
       </div>
     </aside>
   );
