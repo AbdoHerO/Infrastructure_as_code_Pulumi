@@ -34,7 +34,9 @@ apps/desktop/prisma/*.db
 !**/fixtures/**/*.pem
 
 # Logs
-logs/
+# Runtime logs at the repository root. Keep source folders such as
+# apps/desktop/src/renderer/src/features/logs tracked.
+/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
