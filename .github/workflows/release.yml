@@ -13,6 +13,7 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  artifact-metadata: write
 
 jobs:
   test-package-publish:
@@ -76,7 +77,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CloudForge-${{ github.ref_name }}-windows
-          path: apps/desktop/release/**
+          path: |
+            apps/desktop/release/*-setup.exe
+            apps/desktop/release/*-setup.exe.blockmap
+            apps/desktop/release/latest.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -94,6 +98,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attest release provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
-          subject-path: apps/desktop/release/**
+          subject-path: |
+            apps/desktop/release/*-setup.exe
+            apps/desktop/release/*-setup.exe.blockmap
+            apps/desktop/release/latest.yml
+            CloudForge-${{ github.ref_name }}.cdx.json
