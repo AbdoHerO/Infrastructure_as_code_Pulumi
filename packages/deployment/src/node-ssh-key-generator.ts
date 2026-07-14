@@ -6,6 +6,7 @@ import {
   type JsonWebKey,
   type KeyObject,
 } from 'node:crypto';
+import { utils as sshUtils } from 'ssh2';
 import { err, ok, type Result, ValidationError } from '@cloudforge/shared';
 import type { SshKeyAlgorithm, SshKeyGenerator, SshKeyMaterial } from '@cloudforge/core';
 
@@ -28,11 +29,20 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
   inspect(privateKey: string, passphrase?: string): Result<SshKeyMaterial, ValidationError> {
     try {
       if (!privateKey.trim()) return err(new ValidationError('SSH private key is required'));
-      const privateObject = createPrivateKey({ key: privateKey, format: 'pem', passphrase });
-      const publicObject = createPublicKey(privateObject);
-      const jwk = publicObject.export({ format: 'jwk' });
-      const algorithm = algorithmFromJwk(jwk);
-      const publicKey = openSshPublicKey(jwk, algorithm);
+      const parsed = sshUtils.parseKey(privateKey.trim(), passphrase);
+      let algorithm: SshKeyAlgorithm;
+      let publicKey: string;
+      if (parsed instanceof Error) {
+        const privateObject = createPrivateKey({ key: privateKey, format: 'pem', passphrase });
+        const publicObject = createPublicKey(privateObject);
+        const jwk = publicObject.export({ format: 'jwk' });
+        algorithm = algorithmFromJwk(jwk);
+        publicKey = openSshPublicKey(jwk, algorithm);
+      } else {
+        if (!parsed.isPrivateKey()) throw new Error('SSH key does not contain private material');
+        algorithm = algorithmFromSshType(parsed.type);
+        publicKey = `${parsed.type} ${parsed.getPublicSSH().toString('base64')} ${parsed.comment || 'cloudforge'}`;
+      }
       return ok({
         algorithm,
         privateKey: privateKey.trim(),
@@ -45,6 +55,12 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
       );
     }
   }
+}
+
+function algorithmFromSshType(type: string): SshKeyAlgorithm {
+  if (type === 'ssh-ed25519') return 'ed25519';
+  if (type === 'ssh-rsa') return 'rsa';
+  throw new Error(`Unsupported SSH key type: ${type}`);
 }
 
 function toMaterial(

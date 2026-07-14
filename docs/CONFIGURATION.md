@@ -64,7 +64,7 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 | **Anthropic** (`anthropic`)       | 🔒 API Key                                                                                                                |
 | **Docker Hub** (`dockerhub`)      | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
 | **GitLab** (`gitlab`)             | 🔒 Access Token                                                                                                           |
-| **SSH Key** (`ssh`)               | 🔒 Private Key (PEM) · 🔒 Passphrase _(optional)_                                                                         |
+| **SSH Key** (`ssh`)               | 🔒 Private Key (OpenSSH or PEM) · 🔒 Passphrase _(optional)_                                                              |
 | **SSH Password** (`ssh-password`) | 🔒 Password                                                                                                               |
 
 > **Oracle Cloud** provides the complete infrastructure workflow. **AWS** now
@@ -197,10 +197,11 @@ You may set a passphrase (store it in the credential's **Passphrase** field).
 
 ### 3. Store the private key in CloudForge
 
-**Secrets → Add Credential → SSH Key**:
+Use **SSH Keys → Import** (or **Secrets → Add Credential → SSH Key**):
 
-- **Private Key (PEM)** — paste the **entire** contents of `~/.ssh/cloudforge`
-  (the private file), including the `-----BEGIN ... PRIVATE KEY-----` lines.
+- **Private Key (OpenSSH or PEM)** — paste the **entire** contents of
+  `~/.ssh/cloudforge` (the private file), including its `-----BEGIN ... PRIVATE
+KEY-----` lines. CloudForge accepts OpenSSH, PKCS#8 and traditional PEM keys.
 - **Passphrase** _(optional)_ — only if you set one.
 
 ### 4. Deploy

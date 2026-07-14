@@ -75,7 +75,7 @@ export function SshKeysPage(): JSX.Element {
             <KeyRound className="text-muted-foreground size-8" />
             <p className="font-medium">No SSH keys yet</p>
             <p className="text-muted-foreground text-sm">
-              Generate a key or import an existing PEM private key.
+              Generate a key or import an existing OpenSSH or PEM private key.
             </p>
           </CardContent>
         </Card>
@@ -198,7 +198,7 @@ function KeyDialog({
               </Select>
             </Field>
           ) : (
-            <Field label="Private key (PEM)">
+            <Field label="Private key (OpenSSH or PEM)">
               <Textarea
                 className="min-h-40 font-mono text-xs"
                 value={privateKey}

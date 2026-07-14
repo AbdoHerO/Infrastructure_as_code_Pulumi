@@ -123,8 +123,8 @@ Channels: `credentials:*`, `security:status`.
 
 ## SSH Keys (`/ssh-keys`)
 
-Generate encrypted Ed25519 or RSA-3072 key pairs, import PEM private keys,
-validate passphrases, show OpenSSH public keys and SHA-256 fingerprints, and
+Generate encrypted Ed25519 or RSA-3072 key pairs, import OpenSSH or PEM private
+keys, validate passphrases, show OpenSSH public keys and SHA-256 fingerprints, and
 perform protected private-key reveal/delete actions. The encrypted Credential
 record is the single source of truth. Channels: `sshKeys:*`.
 

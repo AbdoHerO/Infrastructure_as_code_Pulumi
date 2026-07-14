@@ -27,10 +27,11 @@ the source, routes, typed IPC contract, tests and packaging configuration as of
 
 ### Phase 14 — SSH Keys
 
-The dedicated route generates Ed25519/RSA-3072 keys, imports PEM keys, validates
-passphrases, displays OpenSSH public keys and SHA-256 fingerprints, and protects
-private-key reveal/delete actions. Encrypted `Credential` records are the one
-source of truth, so existing SSH credentials remain compatible.
+The dedicated route generates Ed25519/RSA-3072 keys, imports OpenSSH, PKCS#8 and
+traditional PEM keys, validates passphrases, displays OpenSSH public keys and
+SHA-256 fingerprints, and protects private-key reveal/delete actions. Encrypted
+`Credential` records are the one source of truth, so existing SSH credentials
+remain compatible.
 
 ### Phase 15 — Containers and Compose
 

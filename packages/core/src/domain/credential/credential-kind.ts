@@ -124,7 +124,7 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
     kind: 'ssh',
     label: 'SSH Key',
     fields: [
-      field('privateKey', 'Private Key (PEM)', { secret: true, multiline: true }),
+      field('privateKey', 'Private Key (OpenSSH or PEM)', { secret: true, multiline: true }),
       field('passphrase', 'Passphrase', { secret: true, required: false }),
       field('publicKey', 'Public Key', { required: false, multiline: true }),
       field('fingerprint', 'Fingerprint', { required: false }),
