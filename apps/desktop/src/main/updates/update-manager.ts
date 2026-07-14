@@ -30,7 +30,7 @@ export function initUpdateManager(): void {
   );
   autoUpdater.on('error', (error) => {
     log().error({ err: error, event: 'updates.error' }, 'Application update failed');
-    setState({ status: 'error', message: error.message });
+    setState({ status: 'error', message: updateErrorMessage(error) });
   });
 }
 
@@ -50,7 +50,17 @@ export async function checkForUpdates(): Promise<UpdateState> {
     });
     return state;
   }
-  await autoUpdater.checkForUpdates();
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    // electron-updater also emits the error event above. Return the resulting
+    // state so IPC does not expose internal HTTP headers and stack traces.
+    if (state.status !== 'error') {
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      log().error({ err: normalized, event: 'updates.check.error' }, 'Update check failed');
+      setState({ status: 'error', message: updateErrorMessage(normalized) });
+    }
+  }
   return state;
 }
 
@@ -73,4 +83,11 @@ export function currentUpdateState(): UpdateState {
 function setState(patch: Partial<UpdateState>): void {
   state = { ...state, ...patch, current: app.getVersion() };
   emitEvent('updates:state', state);
+}
+
+export function updateErrorMessage(error: Error): string {
+  if (/latest\.yml|404|Cannot find latest/i.test(error.message)) {
+    return 'This GitHub release is missing Windows update metadata. Install the newest CloudForge release manually, then try again.';
+  }
+  return 'CloudForge could not check GitHub Releases. Check your internet connection and try again.';
 }

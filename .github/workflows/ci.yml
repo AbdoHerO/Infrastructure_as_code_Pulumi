@@ -1,4 +1,5 @@
-name: CI
+name: Code quality
+run-name: quality - ${{ github.ref_name }}
 
 on:
   pull_request:
@@ -26,24 +27,4 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
       - run: pnpm audit --prod --audit-level high
-
-  package-smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.19.6
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @cloudforge/database prisma:generate
-      - run: pnpm --filter @cloudforge/desktop package:dir

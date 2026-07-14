@@ -43,16 +43,6 @@ win:
     - nsis
   artifactName: ${productName}-${version}-setup.${ext}
 
-mac:
-  target:
-    - dmg
-  category: public.app-category.developer-tools
-
-linux:
-  target:
-    - AppImage
-  category: Development
-
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
