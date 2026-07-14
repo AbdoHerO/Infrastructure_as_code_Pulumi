@@ -67,8 +67,10 @@ a live `LogTerminal` and structured progress. The progress panel is
 indeterminate—Oracle does not expose a reliable percentage—and shows the current
 real resource operation, per-resource Ready/Failed states, and distinct final
 states for Preview, Apply, Refresh and Destroy. Preview/apply require a linked
-provider credential. Managed stacks can be discovered and destroyed even when
-their project row no longer exists. Channels: `infra:getPlan`, `infra:savePlan`,
+provider credential. A successful project **Destroy** also deletes its persisted
+plan and clears the editor; a failed destroy preserves the plan for recovery.
+Managed stacks can be discovered and destroyed even when their project row no
+longer exists. Channels: `infra:getPlan`, `infra:savePlan`,
 `infra:preview`, `infra:apply`, `infra:destroy`, `infra:outputs`,
 `infra:managedStacks`, `infra:destroyStack`, `infra:saveTemplate`; event
 `engine:log`.

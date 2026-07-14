@@ -152,7 +152,9 @@ recheck them against [Configuration & Credentials](CONFIGURATION.md).
 5. **Apply** to provision. The panel moves through real Pulumi/OCI resource
    operations and becomes **Ready** only after the operation summary succeeds.
    **Destroy** shows the same dependency-ordered resource progress and ends as
-   **Infrastructure destroyed**.
+   **Infrastructure destroyed**. After Pulumi confirms success, CloudForge also
+   permanently deletes that project's saved plan and clears every resource card.
+   If cloud destruction fails, the plan is kept so you can diagnose and retry.
 6. To reuse a plan, click **Save as template** — it appears under **Templates →
    Your templates**, where you can apply it to any project or delete it.
 

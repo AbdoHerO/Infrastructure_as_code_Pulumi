@@ -79,6 +79,7 @@ export function useDestroy(): ReturnType<
     mutationFn: ({ projectId, streamId }: { projectId: string; streamId: string }) =>
       invoke('infra:destroy', { projectId, streamId }),
     onSuccess: (_result, variables) => {
+      queryClient.setQueryData(['infra', 'plan', variables.projectId], null);
       void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
       void queryClient.removeQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
     },

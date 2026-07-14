@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ok } from '@cloudforge/shared';
+import { err, InfrastructureError, ok } from '@cloudforge/shared';
 import type { InfrastructureEngine } from '../ports/infrastructure-engine.js';
 import type { PlanStore } from '../ports/plan-store.js';
 import type { ProviderCredentialResolver } from '../ports/provider-credential-resolver.js';
@@ -18,9 +18,16 @@ function fixture(): {
   service: InfrastructureService;
   setPlan(plan: InfrastructurePlan): void;
   apply: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+  deletePlan: ReturnType<typeof vi.fn>;
 } {
-  let plan = initialPlan;
+  let plan: InfrastructurePlan | null = initialPlan;
   const apply = vi.fn().mockResolvedValue(ok({ outputs: {}, summary: 'succeeded' }));
+  const destroy = vi.fn().mockResolvedValue(ok(undefined));
+  const deletePlan = vi.fn().mockImplementation(() => {
+    plan = null;
+    return Promise.resolve(ok(undefined));
+  });
   const engine = {
     preview: vi.fn().mockResolvedValue(
       ok({
@@ -41,6 +48,7 @@ function fixture(): {
       }),
     ),
     apply,
+    destroy,
   } as unknown as InfrastructureEngine;
   const plans = {
     load: vi.fn().mockImplementation(() => Promise.resolve(ok(plan))),
@@ -48,6 +56,7 @@ function fixture(): {
       plan = next;
       return Promise.resolve(ok(undefined));
     }),
+    delete: deletePlan,
   } as unknown as PlanStore;
   const credentials = {
     forProject: vi.fn().mockResolvedValue(ok({ region: 'eu-frankfurt-1' })),
@@ -59,6 +68,8 @@ function fixture(): {
       plan = next;
     },
     apply,
+    destroy,
+    deletePlan,
   };
 }
 
@@ -91,5 +102,29 @@ describe('InfrastructureService safe apply', () => {
 
     expect(result.ok).toBe(false);
     expect(subject.apply.mock.calls).toHaveLength(0);
+  });
+});
+
+describe('InfrastructureService destroy cleanup', () => {
+  it('deletes the persisted project plan after the cloud stack is destroyed', async () => {
+    const subject = fixture();
+
+    const result = await subject.service.destroy(ref, 'project-id');
+
+    expect(result.ok).toBe(true);
+    expect(subject.destroy).toHaveBeenCalledWith(ref, undefined);
+    expect(subject.deletePlan).toHaveBeenCalledWith('project-id');
+    await expect(subject.service.getPlan('project-id')).resolves.toEqual(ok(null));
+  });
+
+  it('preserves the persisted plan when cloud destruction fails', async () => {
+    const subject = fixture();
+    subject.destroy.mockResolvedValueOnce(err(new InfrastructureError('Cloud destruction failed')));
+
+    const result = await subject.service.destroy(ref, 'project-id');
+
+    expect(result.ok).toBe(false);
+    expect(subject.deletePlan).not.toHaveBeenCalled();
+    await expect(subject.service.getPlan('project-id')).resolves.toEqual(ok(initialPlan));
   });
 });

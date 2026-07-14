@@ -62,10 +62,10 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:destroy', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    orThrow(await getContainer().infrastructureService.destroy(ref, sink(streamId)));
+    orThrow(await getContainer().infrastructureService.destroy(ref, projectId, sink(streamId)));
     getContainer().activityService.recordSafe({
       type: 'infrastructure.destroyed',
-      message: 'Destroyed infrastructure',
+      message: 'Destroyed infrastructure and removed its saved plan',
       projectId,
     });
   });

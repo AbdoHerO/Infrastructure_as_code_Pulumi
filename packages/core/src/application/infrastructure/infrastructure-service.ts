@@ -200,11 +200,17 @@ export class InfrastructureService {
     return applied;
   }
 
-  destroy(
+  async destroy(
     ref: StackReference,
+    projectId: string,
     onEvent?: EngineEventSink,
-  ): Promise<Result<void, InfrastructureError>> {
-    return this.engine.destroy(ref, onEvent);
+  ): Promise<Result<void, InfrastructureError | PersistenceError>> {
+    const destroyed = await this.engine.destroy(ref, onEvent);
+    if (!destroyed.ok) return destroyed;
+
+    const deleted = await this.plans.delete(projectId);
+    if (deleted.ok) this.previews.delete(stackKey(ref));
+    return deleted;
   }
 
   refresh(

@@ -199,7 +199,9 @@ export function InfrastructurePage(): JSX.Element {
     if (
       operation === 'destroy' &&
       (settings?.deployment.confirmDestructive ?? true) &&
-      !window.confirm('Destroy every cloud resource in this project stack? This cannot be undone.')
+      !window.confirm(
+        'Destroy every cloud resource in this project stack and permanently remove its saved infrastructure plan? This cannot be undone.',
+      )
     ) {
       return;
     }
@@ -252,7 +254,15 @@ export function InfrastructurePage(): JSX.Element {
     }
     destroy.mutate(
       { projectId, streamId },
-      { onSuccess: () => toast.success('Destroy complete'), onError },
+      {
+        onSuccess: () => {
+          setResources([]);
+          setConfig({});
+          setApprovedPreview(null);
+          toast.success('Cloud resources destroyed and saved plan removed');
+        },
+        onError,
+      },
     );
   };
 
@@ -580,9 +590,8 @@ function InfrastructureProgress({
 
         {destroyed ? (
           <p className="text-muted-foreground text-xs">
-            All managed cloud resources are gone. The saved plan remains locally so you can Preview
-            and Apply it again. Remove the resource cards and save the plan if you want to clear
-            that definition too.
+            All managed cloud resources and the saved infrastructure plan are gone. Add resources or
+            apply a template when you are ready to start again.
           </p>
         ) : null}
 

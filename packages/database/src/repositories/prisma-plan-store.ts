@@ -37,4 +37,13 @@ export class PrismaPlanStore implements PlanStore {
       return err(new PersistenceError('Failed to save infrastructure plan', { cause }));
     }
   }
+
+  async delete(projectId: string): Promise<Result<void, PersistenceError>> {
+    try {
+      await this.db.setting.deleteMany({ where: { key: this.key(projectId) } });
+      return ok(undefined);
+    } catch (cause) {
+      return err(new PersistenceError('Failed to delete infrastructure plan', { cause }));
+    }
+  }
 }
