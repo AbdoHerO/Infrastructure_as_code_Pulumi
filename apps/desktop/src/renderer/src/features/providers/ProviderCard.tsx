@@ -78,7 +78,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
         </div>
 
         {test.isError ? (
-          <StatusLine ok={false} text="Connection failed. Check the credential fields." />
+          <StatusLine ok={false} text={test.error.message} />
         ) : result ? (
           <StatusLine
             ok={result.connected}

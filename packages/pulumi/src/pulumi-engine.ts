@@ -292,13 +292,15 @@ function outputOpts(
 } {
   if (!onEvent && !previewChanges) return {};
   let failed = false;
+  let completed = false;
   return {
     ...(onEvent ? { onOutput: (out: string) => onEvent({ stream: 'stdout', message: out }) } : {}),
     onEvent: (event: PulumiEngineEvent) => {
       capturePreviewChange(event, previewChanges);
-      const mapped = toProgressEvent(event, failed, operation);
+      const mapped = toProgressEvent(event, failed, operation, completed);
       if (!mapped) return;
       if (mapped.progress?.status === 'failed') failed = true;
+      if (event.summaryEvent && mapped.progress?.status === 'ready') completed = true;
       onEvent?.(mapped);
     },
   };
@@ -371,6 +373,7 @@ export function toProgressEvent(
   event: PulumiEngineEvent,
   operationFailed = false,
   operation: InfrastructureOperation = 'apply',
+  operationCompleted = false,
 ): EngineEvent | null {
   if (event.preludeEvent) {
     return progressEvent('operation', 'preparing', 'Calculating infrastructure changes');
@@ -429,6 +432,9 @@ export function toProgressEvent(
   }
 
   if (event.cancelEvent) {
+    // Pulumi can emit cancelEvent while tearing down its event stream after a
+    // successful summary. A terminal event must never overwrite that success.
+    if (operationCompleted) return null;
     return progressEvent('operation', 'failed', 'Infrastructure operation cancelled');
   }
 

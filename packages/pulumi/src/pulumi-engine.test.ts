@@ -79,6 +79,17 @@ describe('PulumiEngine structured progress', () => {
     expect(successfulDestroy?.progress?.label).toBe('Infrastructure destroyed in 1m 15s');
   });
 
+  it('does not let a late cancellation event overwrite a successful destroy summary', () => {
+    const event = toProgressEvent(
+      { sequence: 5, timestamp: 5, cancelEvent: {} },
+      false,
+      'destroy',
+      true,
+    );
+
+    expect(event).toBeNull();
+  });
+
   it('captures replacement properties from the real preview event', () => {
     const changes = new Map<string, PreviewResourceChange>();
     capturePreviewChange(

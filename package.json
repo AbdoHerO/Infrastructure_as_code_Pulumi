@@ -1,6 +1,6 @@
 {
   "name": "cloudforge",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "private": true,
   "description": "CloudForge — Modern Infrastructure Platform. Provision. Configure. Deploy. Manage.",
   "author": "CloudForge",

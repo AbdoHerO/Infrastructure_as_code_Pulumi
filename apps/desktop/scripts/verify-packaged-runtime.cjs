@@ -73,6 +73,22 @@ function verifyDependencyClosure(appDirectory) {
   return visited.size;
 }
 
+function directoryContains(directory, marker) {
+  if (!existsSync(directory)) return false;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory() && directoryContains(path, marker)) return true;
+    if (
+      entry.isFile() &&
+      entry.name.endsWith('.js') &&
+      readFileSync(path, 'utf8').includes(marker)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Electron-builder hook that prevents publishing an incomplete runtime. */
 exports.default = function verifyPackagedRuntime(context) {
   const app = join(context.appOutDir, 'resources', 'app');
@@ -81,7 +97,8 @@ exports.default = function verifyPackagedRuntime(context) {
   const missing = required.filter((file) => !existsSync(join(client, file)));
   const engines = existsSync(client)
     ? readdirSync(client).filter(
-        (file) => file.includes('query_engine') && (file.endsWith('.node') || file.endsWith('.wasm')),
+        (file) =>
+          file.includes('query_engine') && (file.endsWith('.node') || file.endsWith('.wasm')),
       )
     : [];
 
@@ -89,6 +106,18 @@ exports.default = function verifyPackagedRuntime(context) {
     throw new Error(
       `Packaged Prisma runtime is incomplete (missing: ${missing.join(', ') || 'query engine'})`,
     );
+  }
+
+  const awsPackages = ['@aws-sdk/client-ec2', '@aws-sdk/client-sts'];
+  const missingAwsPackages = awsPackages.filter(
+    (name) => !existsSync(join(app, 'node_modules', ...name.split('/'), 'package.json')),
+  );
+  if (missingAwsPackages.length > 0) {
+    throw new Error(`Packaged AWS runtime is incomplete: ${missingAwsPackages.join(', ')}`);
+  }
+
+  if (!directoryContains(join(app, 'out', 'main'), 'Connected to AWS account')) {
+    throw new Error('Packaged main process does not contain the AWS provider implementation');
   }
 
   const packageCount = verifyDependencyClosure(app);

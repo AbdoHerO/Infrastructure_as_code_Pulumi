@@ -503,6 +503,8 @@ function InfrastructureProgress({
   const running = progress.status === 'preparing' || progress.status === 'in-progress';
   const ready = progress.status === 'ready';
   const failed = progress.status === 'failed';
+  const destroyed = ready && progress.label.startsWith('Infrastructure destroyed');
+  const completedLabel = destroyed ? 'Destroyed' : 'Ready';
 
   return (
     <Card
@@ -523,13 +525,17 @@ function InfrastructureProgress({
             )}
             <div className="min-w-0">
               <p className="text-sm font-medium">
-                {failed ? 'Failed' : ready ? 'Ready' : 'Oracle operation in progress'}
+                {failed
+                  ? 'Failed'
+                  : ready
+                    ? completedLabel
+                    : 'Infrastructure operation in progress'}
               </p>
               <p className="text-muted-foreground truncate text-xs">{progress.label}</p>
             </div>
           </div>
           <Badge variant={failed ? 'destructive' : ready ? 'success' : 'default'}>
-            {failed ? 'Failed' : ready ? 'Ready' : 'In progress'}
+            {failed ? 'Failed' : ready ? completedLabel : 'In progress'}
           </Badge>
         </div>
 
@@ -561,11 +567,23 @@ function InfrastructureProgress({
                   {resource.type} · {resource.name}
                 </span>
                 <span className="text-muted-foreground ml-auto capitalize">
-                  {resource.status === 'ready' ? 'Ready' : resource.status}
+                  {resource.status === 'ready'
+                    ? resource.operation.startsWith('delete')
+                      ? 'Deleted'
+                      : 'Ready'
+                    : resource.status}
                 </span>
               </div>
             ))}
           </div>
+        ) : null}
+
+        {destroyed ? (
+          <p className="text-muted-foreground text-xs">
+            All managed cloud resources are gone. The saved plan remains locally so you can Preview
+            and Apply it again. Remove the resource cards and save the plan if you want to clear
+            that definition too.
+          </p>
         ) : null}
 
         {running ? (
