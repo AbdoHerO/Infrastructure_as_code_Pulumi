@@ -97,5 +97,15 @@ jobs:
 
           gh release upload $tag $assets --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not upload Windows release assets" }
+
+          $publishedAssets = gh release view $tag --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) { throw "Could not verify GitHub release assets" }
+          foreach ($asset in $assets) {
+            $expectedName = Split-Path -Leaf $asset
+            if ($publishedAssets -notcontains $expectedName) {
+              throw "GitHub release is incomplete after upload: $expectedName is missing"
+            }
+          }
+          Write-Host "Verified Windows installer and updater metadata on GitHub Release $tag"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
