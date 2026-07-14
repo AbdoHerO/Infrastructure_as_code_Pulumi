@@ -13,14 +13,21 @@ files:
   - out/**
   - '!**/*.map'
 
-# Native modules and the Prisma query engine must be unpacked from the asar so
-# they can be dlopen'd / spawned at runtime.
-asarUnpack:
-  - '**/node_modules/@prisma/**'
-  - '**/node_modules/prisma/**'
-  - '**/node_modules/.prisma/**'
-  - '**/node_modules/ssh2/**'
-  - '**/node_modules/@pulumi/**'
+extraResources:
+  - from: node_modules/.prisma/client
+    to: app/node_modules/.prisma/client
+    filter:
+      - '**/*'
+      - '!*.tmp*'
+
+# Abort before creating an installer if Prisma's generated client or native
+# query engine was not copied into the packaged application payload.
+afterPack: scripts/verify-packaged-runtime.cjs
+
+# Prisma, SSH2 and Pulumi load native binaries or spawn runtime files by their
+# real paths. Keeping the application unpacked makes those paths deterministic
+# across clean Windows installations (including pnpm's generated .prisma client).
+asar: false
 
 npmRebuild: true
 
@@ -31,6 +38,7 @@ publish:
   releaseType: release
 
 win:
+  icon: icon.png
   target:
     - nsis
   artifactName: ${productName}-${version}-setup.${ext}

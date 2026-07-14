@@ -1,6 +1,6 @@
 {
   "name": "@cloudforge/desktop",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "CloudForge desktop application (Electron + React).",
   "main": "./out/main/index.js",
@@ -14,8 +14,9 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
-    "package": "electron-vite build && electron-builder",
-    "package:dir": "electron-vite build && electron-builder --dir",
+    "package:runtime": "node scripts/stage-packaged-runtime.cjs",
+    "package": "pnpm package:runtime && electron-vite build && electron-builder",
+    "package:dir": "pnpm package:runtime && electron-vite build && electron-builder --dir",
     "clean": "rimraf out dist release *.tsbuildinfo"
   },
   "dependencies": {

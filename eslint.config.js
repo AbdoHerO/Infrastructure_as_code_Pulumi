@@ -22,6 +22,7 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/postcss.config.{js,cjs,mjs}',
       '**/*.config.mjs',
+      'apps/desktop/scripts/*.cjs',
     ],
   },
   js.configs.recommended,
