@@ -1,6 +1,6 @@
 {
   "name": "cloudforge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "CloudForge — Modern Infrastructure Platform. Provision. Configure. Deploy. Manage.",
   "author": "CloudForge",
@@ -20,6 +20,7 @@
     "lint:fix": "corepack pnpm -r --if-present lint -- --fix",
     "test": "corepack pnpm -r --if-present test",
     "test:coverage": "vitest run --coverage",
+    "release:version": "node scripts/set-release-version.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "clean": "corepack pnpm -r --if-present clean && rimraf node_modules"

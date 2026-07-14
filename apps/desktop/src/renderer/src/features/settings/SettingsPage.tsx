@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Card,
   CardContent,
@@ -26,6 +26,8 @@ export function SettingsPage(): JSX.Element {
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   const { data: security } = useSecurityStatus();
+  const [backupPassphrase, setBackupPassphrase] = useState('');
+  const backupReady = backupPassphrase.length >= 12;
 
   return (
     <>
@@ -122,15 +124,31 @@ export function SettingsPage(): JSX.Element {
                 </span>
               </Row>
               <Row
+                title="Portable backup passphrase"
+                description="At least 12 characters. You need the same passphrase on the other computer."
+              >
+                <Input
+                  className="w-64"
+                  type="password"
+                  autoComplete="new-password"
+                  value={backupPassphrase}
+                  onChange={(event) => setBackupPassphrase(event.target.value)}
+                  placeholder="Backup passphrase"
+                />
+              </Row>
+              <Row
                 title="Backup"
-                description="Export the database, encryption key and Pulumi state."
+                description="Create a consistent database snapshot with portable encrypted credentials and Pulumi state."
               >
                 <Button
                   variant="outline"
+                  disabled={!backupReady}
                   onClick={() =>
-                    void invoke('backup:create', undefined).then(({ path }) => {
-                      if (path) toast.success(`Backup created: ${path}`);
-                    })
+                    void invoke('backup:create', { passphrase: backupPassphrase })
+                      .then(({ path }) => {
+                        if (path) toast.success(`Portable backup created: ${path}`);
+                      })
+                      .catch((error: Error) => toast.error(error.message))
                   }
                 >
                   Create backup
@@ -139,6 +157,7 @@ export function SettingsPage(): JSX.Element {
               <Row title="Restore" description="Restore a backup and restart CloudForge.">
                 <Button
                   variant="destructive"
+                  disabled={!backupReady}
                   onClick={() => {
                     if (
                       !window.confirm(
@@ -146,7 +165,9 @@ export function SettingsPage(): JSX.Element {
                       )
                     )
                       return;
-                    void invoke('backup:restore', undefined);
+                    void invoke('backup:restore', { passphrase: backupPassphrase }).catch(
+                      (error: Error) => toast.error(error.message),
+                    );
                   }}
                 >
                   Restore backup

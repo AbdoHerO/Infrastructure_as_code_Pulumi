@@ -19,7 +19,7 @@ the source, routes, typed IPC contract, tests and packaging configuration as of
 ### Phase 13 — Regression foundation
 
 - Coverage excludes generated output, release artifacts, declarations and tests.
-- The suite now covers 82 cases across domain/services, Pulumi event parsing,
+- The suite now covers 85 cases across domain/services, Pulumi event parsing,
   credential encryption boundaries, OCI signing, deployment validation, settings,
   trusted extensions and real Ed25519/RSA generation/import/passphrases.
 - CI runs formatting, lint, strict type checking, tests, build, production audit
@@ -57,8 +57,9 @@ not shown merely because a credential schema exists.
 Reduced motion, default region, destructive confirmation and log retention are
 enforced. Logs rotate at 10 MB and old rotations are pruned. Telemetry was
 removed instead of presenting a non-functional privacy control. Settings can
-create and restore an application backup containing the SQLite database, local
-secret key and private Pulumi state; restore first creates a safety backup.
+create and restore a passphrase-protected portable backup containing a consistent
+SQLite snapshot, machine-independent credential envelope and private Pulumi
+state; restore first creates a safety backup and re-wraps secrets for the new OS.
 
 ### Phase 18 — Release engineering
 
@@ -93,19 +94,18 @@ requires an SSH public key, and OCI stack outputs state the default SSH user.
 ## Verification snapshot
 
 - Strict TypeScript: all eight workspace projects pass.
-- Unit tests: 82/82 pass across 18 test files.
+- Unit tests: 85/85 pass across 19 test files.
 - Production Electron build: main, preload and renderer bundles succeed.
 - Security model: Electron sandbox enabled; SSH host fingerprints required;
   secrets stay in the encrypted main-process credential boundary.
 
 ## External release requirements
 
-Code cannot manufacture trusted publisher identities. Before publishing a public
-release, the repository owner must add Windows and Apple signing certificates,
-Apple notarization credentials and GitHub release permissions to repository
-secrets. The release workflow consumes those credentials without committing
-them. A tag such as `v0.1.0` then produces the signed feed and artifacts used by
-the Updates module.
+Code cannot manufacture trusted publisher identities. Before publishing a trusted
+Windows release, the repository owner must add a Windows signing certificate and
+password to repository secrets. The workflow consumes them without committing
+them. A semantic tag matching the desktop package version then produces the
+installer and update feed used by the Updates module.
 
 Live OCI destructive tests are deliberately not run by the automated suite: they
 would create or delete billed account resources. Provider contract tests and

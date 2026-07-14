@@ -63,6 +63,7 @@ export interface AppContainer {
   readonly ansibleManager: AnsibleManager;
   readonly vpsTargetService: VpsTargetService;
   readonly secretsBackedByOsKeychain: boolean;
+  snapshotDatabase(destination: string): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -179,6 +180,9 @@ export async function initContainer(): Promise<AppContainer> {
     ansibleManager,
     vpsTargetService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
+    snapshotDatabase: async (destination) => {
+      await db.$executeRawUnsafe('VACUUM INTO ?', destination);
+    },
     dispose: async () => {
       await db.$disconnect();
       container = null;

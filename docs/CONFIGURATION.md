@@ -244,15 +244,15 @@ Brief pointers for the remaining credential kinds:
 
 Configured under **Settings** (persisted in the local database, not files):
 
-| Setting                     | Section    | Meaning                             | Default  |
-| --------------------------- | ---------- | ----------------------------------- | -------- |
-| Theme                       | Appearance | `light` / `dark` / `system`         | `system` |
-| Reduced motion              | Appearance | Minimise animations                 | off      |
-| Log retention (days)        | General    | How long to keep logs               | 30       |
-| Confirm destructive actions | Deployment | Prompt before destroy               | on       |
-| Default region              | Deployment | Pre-fill new projects               | empty    |
-| Secret storage              | Security   | Read-only: OS keychain vs local key | auto     |
-| Backup / restore            | Security   | Database, secret key and IaC state  | manual   |
+| Setting                     | Section    | Meaning                                        | Default  |
+| --------------------------- | ---------- | ---------------------------------------------- | -------- |
+| Theme                       | Appearance | `light` / `dark` / `system`                    | `system` |
+| Reduced motion              | Appearance | Minimise animations                            | off      |
+| Log retention (days)        | General    | How long to keep logs                          | 30       |
+| Confirm destructive actions | Deployment | Prompt before destroy                          | on       |
+| Default region              | Deployment | Pre-fill new projects                          | empty    |
+| Secret storage              | Security   | Read-only: OS keychain vs local key            | auto     |
+| Portable backup / restore   | Security   | Database, re-wrapped credentials and IaC state | manual   |
 
 ---
 

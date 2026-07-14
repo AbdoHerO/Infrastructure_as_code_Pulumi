@@ -97,4 +97,25 @@ describe('CredentialService', () => {
     const listed = await service.list();
     expect(listed.ok && listed.value).toHaveLength(0);
   });
+
+  it('re-wraps portable credential plaintexts for a different machine cipher', async () => {
+    const created = await service.create({
+      kind: 'github',
+      name: 'portable',
+      data: { personalAccessToken: 'ghp_portable' },
+    });
+    if (!created.ok) return;
+    const exported = await service.exportPortableSecrets();
+    if (!exported.ok) return;
+    const otherCipher: SecretCipher = {
+      backedByOsKeychain: true,
+      encrypt: (plaintext) => ok(`other:${Buffer.from(plaintext).toString('base64')}`),
+      decrypt: (ciphertext) =>
+        ok(Buffer.from(ciphertext.replace(/^other:/, ''), 'base64').toString('utf8')),
+    };
+    const restored = new CredentialService(repo, otherCipher);
+    expect((await restored.importPortableSecrets(exported.value)).ok).toBe(true);
+    const revealed = await restored.reveal(created.value.id);
+    expect(revealed.ok && revealed.value.data.personalAccessToken).toBe('ghp_portable');
+  });
 });

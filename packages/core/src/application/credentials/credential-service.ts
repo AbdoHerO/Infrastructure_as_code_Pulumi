@@ -26,6 +26,9 @@ import type { CredentialSummaryDto, RevealedCredentialDto } from '../dto/credent
 export type CredentialServiceError =
   ValidationError | NotFoundError | PersistenceError | EncryptionError;
 
+/** Machine-independent plaintext payload used only inside an encrypted backup envelope. */
+export type PortableCredentialSecrets = Readonly<Record<string, string>>;
+
 /**
  * Application service for the encrypted Credential Manager. Secret material is
  * encrypted through the {@link SecretCipher} before it ever reaches the
@@ -96,6 +99,45 @@ export class CredentialService {
     const credentialId = parseCredentialId(id);
     if (!credentialId.ok) return credentialId;
     return this.credentials.delete(credentialId.value);
+  }
+
+  /**
+   * Export credential plaintexts for immediate wrapping by the portable-backup
+   * cipher. Callers must never persist or log the returned value directly.
+   */
+  async exportPortableSecrets(): Promise<
+    Result<PortableCredentialSecrets, CredentialServiceError>
+  > {
+    const found = await this.credentials.findAll();
+    if (!found.ok) return found;
+    const output: Record<string, string> = {};
+    for (const record of found.value) {
+      const plaintext = this.cipher.decrypt(record.ciphertext);
+      if (!plaintext.ok) return plaintext;
+      output[record.id] = plaintext.value;
+    }
+    return ok(output);
+  }
+
+  /** Re-wrap restored credentials with this machine's OS-backed cipher. */
+  async importPortableSecrets(
+    secrets: PortableCredentialSecrets,
+  ): Promise<Result<void, CredentialServiceError>> {
+    for (const [id, plaintext] of Object.entries(secrets)) {
+      const credentialId = parseCredentialId(id);
+      if (!credentialId.ok) return credentialId;
+      const found = await this.credentials.findById(credentialId.value);
+      if (!found.ok) return found;
+      if (!found.value) return err(new NotFoundError('A restored credential record is missing'));
+      const parsed = parseData(plaintext);
+      if (Object.keys(parsed).length === 0)
+        return err(new ValidationError('A restored credential payload is invalid'));
+      const ciphertext = this.cipher.encrypt(JSON.stringify(parsed));
+      if (!ciphertext.ok) return ciphertext;
+      const saved = await this.credentials.save({ ...found.value, ciphertext: ciphertext.value });
+      if (!saved.ok) return saved;
+    }
+    return ok(undefined);
   }
 
   private async loadDecrypted(

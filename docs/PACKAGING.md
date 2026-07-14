@@ -65,8 +65,9 @@ disabled in unpackaged development builds. Publishing must include the generated
 
 ## Code signing
 
-`.github/workflows/release.yml` packages all three platforms, creates a CycloneDX
-SBOM and build provenance, and supplies signing/notarization values through
-repository secrets. Add `WIN_CSC_LINK`/`MAC_CSC_LINK`, certificate passwords,
-`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`; private keys are
-intentionally never committed.
+`.github/workflows/release.yml` validates a semantic `v*` tag against the desktop
+package version, runs every quality gate on Windows, publishes the NSIS installer
+and `latest.yml`, and attaches a CycloneDX SBOM plus build provenance. Add
+`WIN_CSC_LINK` and `CSC_KEY_PASSWORD` as repository secrets for a trusted Windows
+publisher; private keys are intentionally never committed. See
+[Move State & Release](MOVING-AND-RELEASING.md) for the exact release commands.

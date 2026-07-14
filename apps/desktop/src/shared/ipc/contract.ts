@@ -74,8 +74,8 @@ export interface IpcContract {
   'settings:update': { request: SettingsPatch; response: AppSettings };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
-  'backup:create': { request: void; response: { path: string | null } };
-  'backup:restore': { request: void; response: { restored: boolean } };
+  'backup:create': { request: { passphrase: string }; response: { path: string | null } };
+  'backup:restore': { request: { passphrase: string }; response: { restored: boolean } };
 
   'sshKeys:list': { request: void; response: SshKeySummary[] };
   'sshKeys:generate': {

@@ -28,6 +28,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
 | [Development](DEVELOPMENT.md)                   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
 | [Packaging](PACKAGING.md)                       | Building distributables and runtime prerequisites                                                                 |
+| [Move State & Release](MOVING-AND-RELEASING.md) | Transfer the database safely and publish tested Windows installers from Git tags                                  |
 | [Completion Report](ROADMAP.md)                 | Implemented phases, verification evidence and external release requirements                                       |
 
 Project-level entry points: the top-level [README](../README.md) and the
@@ -35,18 +36,18 @@ Project-level entry points: the top-level [README](../README.md) and the
 
 ## At a glance
 
-|                            |                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                                 |
-| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)                         |
-| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand           |
-| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                          |
-| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                      |
-| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                        |
-| **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)                        |
-| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app            |
-| **Tests**                  | 82 unit tests (Vitest), including SSH, VPS preflight, Ansible YAML, and safety paths |
-| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                     |
+|                            |                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                                             |
+| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)                                     |
+| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand                       |
+| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                                      |
+| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                                  |
+| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                                    |
+| **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)                                    |
+| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app                        |
+| **Tests**                  | 85 unit tests (Vitest), including portable backup, VPS preflight, Ansible YAML, and safety paths |
+| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                                 |
 
 ## Reading order
 
