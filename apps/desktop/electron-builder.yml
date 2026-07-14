@@ -14,8 +14,8 @@ files:
   - '!**/*.map'
 
 extraResources:
-  - from: node_modules/.prisma/client
-    to: app/node_modules/.prisma/client
+  - from: .packaged-runtime/node_modules
+    to: app/node_modules
     filter:
       - '**/*'
       - '!*.tmp*'
@@ -25,8 +25,8 @@ extraResources:
 afterPack: scripts/verify-packaged-runtime.cjs
 
 # Prisma, SSH2 and Pulumi load native binaries or spawn runtime files by their
-# real paths. Keeping the application unpacked makes those paths deterministic
-# across clean Windows installations (including pnpm's generated .prisma client).
+# real paths. Keeping the application unpacked makes those paths deterministic.
+# The staged production tree also preserves pnpm's nested dependency versions.
 asar: false
 
 npmRebuild: true
