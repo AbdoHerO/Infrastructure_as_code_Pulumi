@@ -22,9 +22,10 @@ credential. Oracle Console is not required for normal provisioning or deletion.
 8. Select **Apply** and wait for success. CloudForge reads the public IP and SSH
    user from the completed stack outputs and displays a **Connect with SSH**
    panel with copyable commands for every public compute instance.
-9. Copy the primary `-i "<private-key-path>"` command and replace the placeholder
-   with the matching private-key file. The shorter command works only when that
-   key is loaded in your SSH agent. Ubuntu uses `ubuntu`; Oracle Linux uses `opc`.
+9. Copy the exact `ssh -i "C:\\Users\\…\\.ssh\\cloudforge-…" user@host`
+   command. CloudForge securely prepares the validated matching private-key file
+   in your local `.ssh` directory, so there is no path placeholder to replace.
+   Ubuntu uses `ubuntu`; Oracle Linux uses `opc`.
 10. CloudForge waits for SSH, pins the server host fingerprint, and synchronizes
     the compute instance into the shared VPS Target catalog. It then appears in
     Ansible, Nginx, SSL, Containers, and Deployments without re-entering the IP,

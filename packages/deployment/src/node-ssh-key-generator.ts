@@ -2,9 +2,8 @@ import {
   createHash,
   createPrivateKey,
   createPublicKey,
-  generateKeyPairSync,
+  randomBytes,
   type JsonWebKey,
-  type KeyObject,
 } from 'node:crypto';
 import { utils as sshUtils } from 'ssh2';
 import { err, ok, type Result, ValidationError } from '@cloudforge/shared';
@@ -16,11 +15,16 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
     passphrase?: string,
   ): Result<SshKeyMaterial, ValidationError> {
     try {
-      const pair =
-        algorithm === 'ed25519'
-          ? generateKeyPairSync('ed25519')
-          : generateKeyPairSync('rsa', { modulusLength: 3072, publicExponent: 0x10001 });
-      return ok(toMaterial(pair.privateKey, pair.publicKey, algorithm, passphrase));
+      const encryption = passphrase
+        ? { passphrase, cipher: 'aes256-ctr' as const, rounds: 16 }
+        : {};
+      const pair = sshUtils.generateKeyPairSync(
+        algorithm,
+        algorithm === 'rsa'
+          ? { bits: 3072, comment: 'cloudforge', ...encryption }
+          : { comment: 'cloudforge', ...encryption },
+      );
+      return this.inspect(pair.private, passphrase);
     } catch (cause) {
       return err(new ValidationError('Failed to generate SSH key pair', { cause }));
     }
@@ -38,6 +42,12 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
         const jwk = publicObject.export({ format: 'jwk' });
         algorithm = algorithmFromJwk(jwk);
         publicKey = openSshPublicKey(jwk, algorithm);
+        if (passphrase) {
+          throw new Error(
+            'Encrypted PEM/PKCS8 keys cannot be converted safely; import an OpenSSH private key',
+          );
+        }
+        privateKey = openSshPrivateKey(privateObject.export({ format: 'jwk' }), algorithm);
       } else {
         if (!parsed.isPrivateKey()) throw new Error('SSH key does not contain private material');
         algorithm = algorithmFromSshType(parsed.type);
@@ -45,7 +55,9 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
       }
       return ok({
         algorithm,
-        privateKey: privateKey.trim(),
+        // Windows OpenSSH rejects otherwise valid private keys when the PEM/
+        // OpenSSH footer is not newline-terminated.
+        privateKey: `${privateKey.trim()}\n`,
         publicKey,
         fingerprint: fingerprint(publicKey),
       });
@@ -63,30 +75,67 @@ function algorithmFromSshType(type: string): SshKeyAlgorithm {
   throw new Error(`Unsupported SSH key type: ${type}`);
 }
 
-function toMaterial(
-  privateKey: KeyObject,
-  publicKey: KeyObject,
-  algorithm: SshKeyAlgorithm,
-  passphrase?: string,
-): SshKeyMaterial {
-  const privatePem = privateKey.export(
-    passphrase
-      ? { format: 'pem', type: 'pkcs8', cipher: 'aes-256-cbc', passphrase }
-      : { format: 'pem', type: 'pkcs8' },
-  );
-  const publicValue = openSshPublicKey(publicKey.export({ format: 'jwk' }), algorithm);
-  return {
-    algorithm,
-    privateKey: privatePem.toString(),
-    publicKey: publicValue,
-    fingerprint: fingerprint(publicValue),
-  };
-}
-
 function algorithmFromJwk(jwk: JsonWebKey): SshKeyAlgorithm {
   if (jwk.kty === 'OKP' && jwk.crv === 'Ed25519') return 'ed25519';
   if (jwk.kty === 'RSA') return 'rsa';
   throw new Error(`Unsupported SSH key type: ${jwk.kty ?? 'unknown'}`);
+}
+
+/** Convert an unencrypted PKCS8 key into the format accepted by OpenSSH clients. */
+function openSshPrivateKey(jwk: JsonWebKey, algorithm: SshKeyAlgorithm): string {
+  const type = Buffer.from(algorithm === 'ed25519' ? 'ssh-ed25519' : 'ssh-rsa');
+  const publicBlob =
+    algorithm === 'ed25519'
+      ? Buffer.concat([sshField(type), sshField(requiredJwk(jwk.x, 'x'))])
+      : Buffer.concat([
+          sshField(type),
+          sshField(mpint(requiredJwk(jwk.e, 'e'))),
+          sshField(mpint(requiredJwk(jwk.n, 'n'))),
+        ]);
+  const check = randomBytes(4);
+  const privateFields =
+    algorithm === 'ed25519'
+      ? Buffer.concat([
+          sshField(type),
+          sshField(requiredJwk(jwk.x, 'x')),
+          sshField(Buffer.concat([requiredJwk(jwk.d, 'd'), requiredJwk(jwk.x, 'x')])),
+          sshField(Buffer.from('cloudforge')),
+        ])
+      : Buffer.concat([
+          sshField(type),
+          sshField(mpint(requiredJwk(jwk.n, 'n'))),
+          sshField(mpint(requiredJwk(jwk.e, 'e'))),
+          sshField(mpint(requiredJwk(jwk.d, 'd'))),
+          sshField(mpint(requiredJwk(jwk.qi, 'qi'))),
+          sshField(mpint(requiredJwk(jwk.p, 'p'))),
+          sshField(mpint(requiredJwk(jwk.q, 'q'))),
+          sshField(Buffer.from('cloudforge')),
+        ]);
+  const unpadded = Buffer.concat([check, check, privateFields]);
+  const paddingLength = (8 - (unpadded.length % 8)) % 8;
+  const padding = Buffer.from(Array.from({ length: paddingLength }, (_, index) => index + 1));
+  const encoded = Buffer.concat([
+    Buffer.from('openssh-key-v1\0'),
+    sshField(Buffer.from('none')),
+    sshField(Buffer.from('none')),
+    sshField(Buffer.alloc(0)),
+    uint32(1),
+    sshField(publicBlob),
+    sshField(Buffer.concat([unpadded, padding])),
+  ]).toString('base64');
+  const lines = encoded.match(/.{1,64}/g)?.join('\n') ?? encoded;
+  return `-----BEGIN OPENSSH PRIVATE KEY-----\n${lines}\n-----END OPENSSH PRIVATE KEY-----\n`;
+}
+
+function requiredJwk(value: string | undefined, field: string): Buffer {
+  if (!value) throw new Error(`Private key is missing JWK field ${field}`);
+  return Buffer.from(value, 'base64url');
+}
+
+function uint32(value: number): Buffer {
+  const output = Buffer.alloc(4);
+  output.writeUInt32BE(value);
+  return output;
 }
 
 function openSshPublicKey(jwk: JsonWebKey, algorithm: SshKeyAlgorithm): string {

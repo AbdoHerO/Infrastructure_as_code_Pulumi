@@ -42,7 +42,7 @@ import {
   isProvisioningProviderKind,
   validatePlan,
 } from '@cloudforge/core';
-import { IpcCallError } from '../../lib/ipc.js';
+import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
 import { useCredentials } from '../secrets/useCredentials.js';
@@ -493,11 +493,45 @@ function SshConnectionPanel({
     sshKey?: SshKeySummary;
   })[];
 }): JSX.Element | null {
+  const [keyPaths, setKeyPaths] = useState<Record<string, string>>({});
+  const [keyErrors, setKeyErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const connection of connections) {
+      if (!connection.sshKey) continue;
+      void invoke('sshKeys:materializePrivate', {
+        id: connection.sshKey.id,
+        suggestedName: connection.sshKey.name,
+      })
+        .then(({ path }) => {
+          if (!cancelled)
+            setKeyPaths((current) => ({ ...current, [connection.resourceName]: path }));
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setKeyErrors((current) => ({
+              ...current,
+              [connection.resourceName]:
+                error instanceof Error ? error.message : 'Could not prepare the SSH private key',
+            }));
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [connections]);
+
   if (connections.length === 0) return null;
 
   const copy = async (command: string): Promise<void> => {
-    await navigator.clipboard.writeText(command);
-    toast.success('SSH command copied');
+    try {
+      await invoke('app:copyText', { text: command });
+      toast.success('SSH command copied');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not copy the SSH command');
+    }
   };
 
   return (
@@ -513,8 +547,8 @@ function SshConnectionPanel({
           </div>
         </div>
         {connections.map((connection) => {
-          const identityCommand = formatSshCommand(connection, true);
-          const agentCommand = formatSshCommand(connection);
+          const keyPath = keyPaths[connection.resourceName];
+          const identityCommand = keyPath ? formatSshCommand(connection, keyPath) : null;
           return (
             <div key={connection.resourceName} className="space-y-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
@@ -528,37 +562,36 @@ function SshConnectionPanel({
                 </div>
                 <Badge variant="success">{connection.user}</Badge>
               </div>
-              <div className="bg-foreground text-background flex items-center gap-2 rounded-md px-3 py-2">
-                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{identityCommand}</code>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  title="Copy SSH command with private-key path"
-                  onClick={() => void copy(identityCommand)}
-                >
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-              <div className="bg-secondary flex items-center gap-2 rounded-md px-3 py-2">
-                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{agentCommand}</code>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  title="Copy SSH-agent command"
-                  onClick={() => void copy(agentCommand)}
-                >
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                Replace <code>&lt;private-key-path&gt;</code> with the matching private-key file.
-                The shorter command works only when that key is already loaded in your SSH agent.
-                You can manage encrypted keys under{' '}
-                <Link className="text-primary underline" to="/ssh-keys">
-                  SSH Keys
-                </Link>
-                .
-              </p>
+              {identityCommand ? (
+                <>
+                  <div className="bg-foreground text-background flex items-center gap-2 rounded-md px-3 py-2">
+                    <code className="min-w-0 flex-1 overflow-x-auto text-xs">
+                      {identityCommand}
+                    </code>
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      title="Copy exact SSH command"
+                      onClick={() => void copy(identityCommand)}
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    CloudForge prepared the matching private key at <code>{keyPath}</code> with
+                    owner-only permissions.
+                  </p>
+                </>
+              ) : connection.sshKey && !keyErrors[connection.resourceName] ? (
+                <div className="bg-secondary flex items-center gap-2 rounded-md p-3 text-xs">
+                  <Loader2 className="size-4 animate-spin" /> Preparing the exact SSH command…
+                </div>
+              ) : null}
+              {keyErrors[connection.resourceName] ? (
+                <div className="bg-destructive/10 text-destructive rounded-md p-3 text-xs">
+                  {keyErrors[connection.resourceName]}
+                </div>
+              ) : null}
               {!connection.sshKey ? (
                 <div className="bg-warning/10 text-warning flex gap-2 rounded-md p-3 text-xs">
                   <AlertTriangle className="size-4 shrink-0" />
@@ -566,7 +599,10 @@ function SshConnectionPanel({
                     This instance was launched with a public key that has no matching validated
                     private key in CloudForge. SSH automation and VPS-target synchronization are
                     unavailable. Select a valid key on the compute resource, then Preview the
-                    required instance replacement before applying it.
+                    required instance replacement before applying it.{' '}
+                    <Link className="underline" to="/ssh-keys">
+                      Manage SSH Keys
+                    </Link>
                   </span>
                 </div>
               ) : null}

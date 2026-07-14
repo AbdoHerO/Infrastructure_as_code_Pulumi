@@ -26,6 +26,12 @@ export interface SshKeySummary {
 export type SshKeyServiceError =
   ValidationError | NotFoundError | PersistenceError | EncryptionError;
 
+export interface SshAuthentication {
+  readonly privateKey?: string;
+  readonly passphrase?: string;
+  readonly password?: string;
+}
+
 export class SshKeyService {
   constructor(
     private readonly credentials: CredentialService,
@@ -83,7 +89,29 @@ export class SshKeyService {
     if (!revealed.ok) return revealed;
     if (revealed.value.kind !== 'ssh')
       return err(new ValidationError('Credential is not an SSH key'));
-    return ok(revealed.value.data.privateKey ?? '');
+    const material = this.materialFromData(revealed.value.data);
+    return material.ok ? ok(material.value.privateKey) : material;
+  }
+
+  /** Resolve and normalize either key or password authentication for SSH adapters. */
+  async resolveAuthentication(id: string): Promise<Result<SshAuthentication, SshKeyServiceError>> {
+    const revealed = await this.credentials.reveal(id);
+    if (!revealed.ok) return revealed;
+    if (revealed.value.kind === 'ssh-password') {
+      const password = revealed.value.data.password;
+      return password
+        ? ok({ password })
+        : err(new ValidationError('The selected SSH password credential is empty'));
+    }
+    if (revealed.value.kind !== 'ssh') {
+      return err(new ValidationError('The selected credential is not an SSH credential'));
+    }
+    const material = this.materialFromData(revealed.value.data);
+    if (!material.ok) return material;
+    return ok({
+      privateKey: material.value.privateKey,
+      ...(revealed.value.data.passphrase ? { passphrase: revealed.value.data.passphrase } : {}),
+    });
   }
 
   /** Resolve the encrypted credential that owns an installed public key. */

@@ -133,9 +133,7 @@ export function registerAnsibleHandlers(): void {
 }
 
 async function validateSshCredential(id: string): Promise<void> {
-  const revealed = orThrow(await getContainer().credentialService.reveal(id));
-  if (revealed.kind !== 'ssh' && revealed.kind !== 'ssh-password')
-    throw new Error('The selected credential is not an SSH credential');
+  orThrow(await getContainer().sshKeyService.resolveAuthentication(id));
 }
 
 async function operation<T>(

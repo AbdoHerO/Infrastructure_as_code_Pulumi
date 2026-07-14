@@ -27,8 +27,9 @@ export function extractSshConnectionHints(
 }
 
 /** Build a copyable OpenSSH command without allowing stack outputs to inject shell syntax. */
-export function formatSshCommand(connection: SshConnectionHint, identityFile = false): string {
-  return `ssh ${identityFile ? '-i "<private-key-path>" ' : ''}${connection.user}@${connection.host}`;
+export function formatSshCommand(connection: SshConnectionHint, identityFile?: string): string {
+  const identity = identityFile ? `-i "${identityFile.replaceAll('"', '\\"')}" ` : '';
+  return `ssh ${identity}${connection.user}@${connection.host}`;
 }
 
 function isSafeUser(value: string): boolean {

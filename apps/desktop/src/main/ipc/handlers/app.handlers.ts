@@ -14,6 +14,7 @@ export function registerAppHandlers(): void {
   registerHandler('app:ping', (payload: string): string => `pong: ${payload}`);
   registerHandler('app:openExternal', async ({ link }) => openProductExternalLink(link));
   registerHandler('app:copyDiagnostics', () => clipboard.writeText(formatDiagnostics(appInfo())));
+  registerHandler('app:copyText', ({ text }) => clipboard.writeText(text));
 }
 
 function appInfo(): AppInfo {

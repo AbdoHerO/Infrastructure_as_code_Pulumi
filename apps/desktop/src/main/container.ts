@@ -198,26 +198,19 @@ export async function initContainer(): Promise<AppContainer> {
         return err(new DeploymentError('Could not load the VPS target', { cause: saved.error }));
       if (!saved.value.sshCredentialId)
         return err(new DeploymentError('The VPS target has no SSH credential'));
-      const revealed = await credentialService.reveal(saved.value.sshCredentialId);
-      if (!revealed.ok)
+      const authentication = await sshKeyService.resolveAuthentication(saved.value.sshCredentialId);
+      if (!authentication.ok)
         return err(
           new DeploymentError('Could not decrypt the VPS SSH credential', {
-            cause: revealed.error,
+            cause: authentication.error,
           }),
         );
-      if (revealed.value.kind !== 'ssh' && revealed.value.kind !== 'ssh-password')
-        return err(new DeploymentError('The VPS target credential is not an SSH credential'));
-      const { privateKey, password, passphrase } = revealed.value.data;
-      if (!privateKey && !password)
-        return err(new DeploymentError('The VPS SSH credential is empty'));
       return ok({
         host: saved.value.host,
         port: saved.value.port,
         username: saved.value.username,
         hostKeySha256: saved.value.hostKeySha256,
-        ...(privateKey ? { privateKey } : {}),
-        ...(password ? { password } : {}),
-        ...(passphrase ? { passphrase } : {}),
+        ...authentication.value,
       });
     },
   };

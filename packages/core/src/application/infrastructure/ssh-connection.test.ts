@@ -14,8 +14,8 @@ describe('SSH connection hints', () => {
       { resourceName: 'api-server', host: '51.170.135.49', user: 'ubuntu' },
     ]);
     expect(formatSshCommand(connections[0]!)).toBe('ssh ubuntu@51.170.135.49');
-    expect(formatSshCommand(connections[0]!, true)).toBe(
-      'ssh -i "<private-key-path>" ubuntu@51.170.135.49',
+    expect(formatSshCommand(connections[0]!, 'C:\\Users\\test\\.ssh\\cloudforge-server')).toBe(
+      'ssh -i "C:\\Users\\test\\.ssh\\cloudforge-server" ubuntu@51.170.135.49',
     );
   });
 

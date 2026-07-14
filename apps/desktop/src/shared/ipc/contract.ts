@@ -69,6 +69,7 @@ export interface IpcContract {
   'app:ping': { request: string; response: string };
   'app:openExternal': { request: { link: 'github' | 'releases' }; response: void };
   'app:copyDiagnostics': { request: void; response: void };
+  'app:copyText': { request: { text: string }; response: void };
 
   'projects:list': { request: void; response: ProjectDto[] };
   'projects:get': { request: { id: string }; response: ProjectDto };
@@ -105,6 +106,10 @@ export interface IpcContract {
   'sshKeys:exportPrivate': {
     request: { id: string; suggestedName: string };
     response: { path: string | null };
+  };
+  'sshKeys:materializePrivate': {
+    request: { id: string; suggestedName: string };
+    response: { path: string };
   };
   'sshKeys:delete': { request: { id: string }; response: void };
 
@@ -455,6 +460,7 @@ export const IPC_CHANNELS = [
   'app:ping',
   'app:openExternal',
   'app:copyDiagnostics',
+  'app:copyText',
   'projects:list',
   'projects:get',
   'projects:create',
@@ -475,6 +481,7 @@ export const IPC_CHANNELS = [
   'sshKeys:import',
   'sshKeys:revealPrivate',
   'sshKeys:exportPrivate',
+  'sshKeys:materializePrivate',
   'sshKeys:delete',
   'providers:test',
   'providers:listRegions',
