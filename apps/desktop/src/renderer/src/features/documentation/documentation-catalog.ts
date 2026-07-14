@@ -70,7 +70,7 @@ export const DOCUMENTATION: readonly DocumentationArticle[] = [
     'aws',
     'AWS.md',
     'Amazon Web Services',
-    'Configure AWS credentials and use safe read-only discovery.',
+    'Configure AWS credentials, provision an EC2 stack, and manage its lifecycle.',
     'Start here',
     aws,
   ),

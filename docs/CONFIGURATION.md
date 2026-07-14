@@ -67,8 +67,8 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 | **SSH Key** (`ssh`)               | 🔒 Private Key (OpenSSH or PEM) · 🔒 Passphrase _(optional)_                                                              |
 | **SSH Password** (`ssh-password`) | 🔒 Password                                                                                                               |
 
-> **Oracle Cloud** provides the complete infrastructure workflow. **AWS** now
-> provides read-only connection and compute discovery. Other provider kinds are
+> **Oracle Cloud** and **AWS** provide complete project attachment,
+> Preview/Apply/Destroy and resource discovery workflows. Other provider kinds are
 > stored extension points; GitHub/Cloudflare/OpenAI/Anthropic/Docker Hub/GitLab
 > are general-purpose service credentials.
 

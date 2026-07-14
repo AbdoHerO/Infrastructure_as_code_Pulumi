@@ -2,14 +2,7 @@ import { copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolve4, resolve6 } from 'node:dns/promises';
 import { app } from 'electron';
-import {
-  DeploymentError,
-  err,
-  InfrastructureError,
-  ok,
-  type Result,
-  unwrap,
-} from '@cloudforge/shared';
+import { DeploymentError, err, InfrastructureError, ok, unwrap } from '@cloudforge/shared';
 import {
   ActivityService,
   CredentialService,
@@ -24,7 +17,6 @@ import {
   PluginService,
   ProjectService,
   type ProviderCredentialResolver,
-  type ProviderCredentials,
   ProviderConnectionService,
   SettingsService,
   SshKeyService,
@@ -133,7 +125,7 @@ export async function initContainer(): Promise<AppContainer> {
   // Resolve a project's linked cloud credential into the raw fields the
   // infrastructure engine needs to authenticate against the provider account.
   const credentialResolver: ProviderCredentialResolver = {
-    async forProject(projectId): Promise<Result<ProviderCredentials, InfrastructureError>> {
+    async forProject(projectId) {
       const project = await projectService.get(projectId);
       if (!project.ok) {
         return err(new InfrastructureError('Could not load project', { cause: project.error }));
@@ -158,12 +150,12 @@ export async function initContainer(): Promise<AppContainer> {
       if (!isProvisioningProviderKind(credential.value.kind)) {
         return err(
           new InfrastructureError(
-            `${credential.value.kind} infrastructure provisioning is not enabled yet. Use Cloud Providers for read-only discovery, or link an Oracle credential for Preview and Apply.`,
+            `${credential.value.kind} infrastructure provisioning is not enabled yet.`,
             { context: { projectId, providerKind: credential.value.kind } },
           ),
         );
       }
-      return ok(credential.value.data);
+      return ok({ providerKind: credential.value.kind, data: credential.value.data });
     },
   };
 

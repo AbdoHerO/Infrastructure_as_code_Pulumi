@@ -7,4 +7,5 @@
  */
 export { PulumiEngine, type PulumiEngineOptions } from './pulumi-engine.js';
 export { buildProgram } from './build-program.js';
+export { buildAwsProgram, type AwsCredentials } from './aws-program.js';
 export { buildOracleProgram, type OciCredentials } from './oci-program.js';

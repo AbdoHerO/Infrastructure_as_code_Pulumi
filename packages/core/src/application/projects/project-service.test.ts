@@ -83,4 +83,21 @@ describe('ProjectService', () => {
     const listed = await service.list();
     expect(listed.ok && listed.value).toHaveLength(0);
   });
+
+  it('persists an AWS credential attachment on an existing project', async () => {
+    const created = await service.create({
+      name: 'AWS API',
+      environment: 'development',
+      region: 'eu-west-1',
+    });
+    if (!created.ok) throw created.error;
+
+    const updated = await service.update(created.value.id, {
+      providerId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(updated.ok && updated.value.providerId).toBe('11111111-1111-4111-8111-111111111111');
+    const loaded = await service.get(created.value.id);
+    expect(loaded.ok && loaded.value.providerId).toBe('11111111-1111-4111-8111-111111111111');
+  });
 });

@@ -1,7 +1,11 @@
 import type { ResourceKind, ResourceSpec } from '@cloudforge/core';
 
 /** A blank resource of a given kind, with sensible defaults. */
-export function createResource(kind: ResourceKind, name: string): ResourceSpec {
+export function createResource(
+  kind: ResourceKind,
+  name: string,
+  providerKind = 'oracle',
+): ResourceSpec {
   switch (kind) {
     case 'network':
       return { kind, name, cidrBlock: '10.0.0.0/16' };
@@ -21,14 +25,13 @@ export function createResource(kind: ResourceKind, name: string): ResourceSpec {
       return {
         kind,
         name,
-        shape: 'VM.Standard.E2.1.Micro',
-        image: 'ubuntu-22.04',
+        shape: providerKind === 'aws' ? 't3.micro' : 'VM.Standard.E2.1.Micro',
+        image: providerKind === 'aws' ? 'ubuntu-24.04' : 'ubuntu-22.04',
         subnetName: 'subnet',
         sshPublicKey: '',
         assignPublicIp: true,
-        ocpus: 1,
-        memoryGb: 1,
-        bootVolumeGb: 50,
+        ...(providerKind === 'oracle' ? { ocpus: 1, memoryGb: 1 } : {}),
+        bootVolumeGb: providerKind === 'aws' ? 30 : 50,
         availabilityDomain: '',
       };
     case 'volume':
@@ -40,7 +43,7 @@ export function createResource(kind: ResourceKind, name: string): ResourceSpec {
 
 /** Kinds offered in the "add resource" menu, in a sensible order. */
 export const ADDABLE_KINDS: readonly { kind: ResourceKind; label: string }[] = [
-  { kind: 'network', label: 'Network (VCN)' },
+  { kind: 'network', label: 'Network (VCN/VPC)' },
   { kind: 'subnet', label: 'Subnet' },
   { kind: 'firewall', label: 'Firewall' },
   { kind: 'compute', label: 'Compute instance' },

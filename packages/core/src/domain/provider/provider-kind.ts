@@ -19,7 +19,10 @@ export const PROVIDER_KINDS = [
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 /** Providers whose infrastructure engine is enabled for Preview/Apply. */
-export const PROVISIONING_PROVIDER_KINDS = ['oracle'] as const satisfies readonly ProviderKind[];
+export const PROVISIONING_PROVIDER_KINDS = [
+  'oracle',
+  'aws',
+] as const satisfies readonly ProviderKind[];
 export type ProvisioningProviderKind = (typeof PROVISIONING_PROVIDER_KINDS)[number];
 
 export function isProvisioningProviderKind(value: string): value is ProvisioningProviderKind {

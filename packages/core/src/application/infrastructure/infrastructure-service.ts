@@ -164,7 +164,14 @@ export class InfrastructureService {
     if (!plan.ok) return plan;
     const credentials = await this.credentials.forProject(projectId);
     if (!credentials.ok) return credentials;
-    const preview = await this.engine.preview(ref, plan.value, credentials.value, onEvent);
+    if (credentials.value.providerKind !== plan.value.providerKind) {
+      return err(
+        new InfrastructureError(
+          `The saved plan targets ${plan.value.providerKind}, but this project is linked to ${credentials.value.providerKind}. Apply a matching template or link the correct provider credential.`,
+        ),
+      );
+    }
+    const preview = await this.engine.preview(ref, plan.value, credentials.value.data, onEvent);
     if (!preview.ok) return preview;
     const token = newUuid();
     this.previews.set(stackKey(ref), { token, planFingerprint: fingerprint(plan.value) });
@@ -195,7 +202,14 @@ export class InfrastructureService {
     }
     const credentials = await this.credentials.forProject(projectId);
     if (!credentials.ok) return credentials;
-    const applied = await this.engine.apply(ref, plan.value, credentials.value, onEvent);
+    if (credentials.value.providerKind !== plan.value.providerKind) {
+      return err(
+        new InfrastructureError(
+          `The saved plan targets ${plan.value.providerKind}, but this project is linked to ${credentials.value.providerKind}. Apply a matching template or link the correct provider credential.`,
+        ),
+      );
+    }
+    const applied = await this.engine.apply(ref, plan.value, credentials.value.data, onEvent);
     if (applied.ok) this.previews.delete(stackKey(ref));
     return applied;
   }

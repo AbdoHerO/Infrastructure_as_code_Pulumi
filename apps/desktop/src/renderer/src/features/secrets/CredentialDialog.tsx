@@ -85,9 +85,10 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
 
           {kind === 'aws' ? (
             <div className="border-primary/30 bg-primary/5 rounded-lg border p-3 text-sm">
-              <p className="font-medium">AWS discovery is read-only in this milestone increment.</p>
+              <p className="font-medium">AWS infrastructure provisioning is available.</p>
               <p className="text-muted-foreground mt-1 text-xs leading-5">
-                Use a narrowly scoped IAM access key. Instance and network mutation are not enabled.
+                Use a narrowly scoped IAM access key. Preview the exact VPC, EC2, security-group and
+                EBS changes before Apply because AWS resources may incur charges.
               </p>
               <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0">
                 <Link to="/documentation?doc=aws" onClick={() => onOpenChange(false)}>

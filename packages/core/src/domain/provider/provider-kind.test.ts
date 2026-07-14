@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { isProviderKind, isProvisioningProviderKind } from './provider-kind.js';
 
 describe('provider capabilities', () => {
-  it('recognizes AWS as a provider without enabling infrastructure mutation', () => {
+  it('enables AWS infrastructure provisioning', () => {
     expect(isProviderKind('aws')).toBe(true);
-    expect(isProvisioningProviderKind('aws')).toBe(false);
+    expect(isProvisioningProviderKind('aws')).toBe(true);
   });
 
   it('keeps Oracle infrastructure provisioning enabled', () => {

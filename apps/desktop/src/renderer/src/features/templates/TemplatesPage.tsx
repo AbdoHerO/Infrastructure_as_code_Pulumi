@@ -7,6 +7,7 @@ import type { CustomTemplateSummary, InfrastructureTemplateSummary } from '@clou
 import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
+import { useCredentials } from '../secrets/useCredentials.js';
 import {
   useApplyCustomTemplate,
   useCustomTemplates,
@@ -25,15 +26,22 @@ const CATEGORY_ICON = {
 export function TemplatesPage(): JSX.Element {
   const navigate = useNavigate();
   const { data: projects } = useProjects();
+  const { data: credentials } = useCredentials();
   const sshKeys = useSshKeys();
   const [projectId, setProjectId] = useState('');
   const [sshKeyId, setSshKeyId] = useState('');
-
+  const selectedProject = projects?.find((project) => project.id === projectId);
+  const selectedProviderKind = credentials?.find(
+    (credential) => credential.id === selectedProject?.providerId,
+  )?.kind;
   const infraTemplates = useQuery({
     queryKey: ['infra', 'templates'],
     queryFn: () => invoke('infra:templates', undefined),
     staleTime: Infinity,
   });
+  const visibleInfraTemplates = infraTemplates.data?.filter(
+    (template) => !selectedProviderKind || template.providerKind === selectedProviderKind,
+  );
   const deployTemplates = useQuery({
     queryKey: ['deploy', 'templates'],
     queryFn: () => invoke('deploy:templates', undefined),
@@ -154,7 +162,7 @@ export function TemplatesPage(): JSX.Element {
         </CardContent>
       </Card>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {infraTemplates.data?.map((template) => {
+        {visibleInfraTemplates?.map((template) => {
           const Icon = CATEGORY_ICON[template.category];
           return (
             <Card key={template.id}>

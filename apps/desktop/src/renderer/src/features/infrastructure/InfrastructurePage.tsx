@@ -38,11 +38,13 @@ import {
   type ResourceSpec,
   extractSshConnectionHints,
   formatSshCommand,
+  isProvisioningProviderKind,
   validatePlan,
 } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
+import { useCredentials } from '../secrets/useCredentials.js';
 import { useSettings } from '../settings/useSettings.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
@@ -67,6 +69,7 @@ import {
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
 export function InfrastructurePage(): JSX.Element {
   const { data: projects } = useProjects();
+  const { data: credentials } = useCredentials();
   const { data: settings } = useSettings();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [resources, setResources] = useState<ResourceSpec[]>([]);
@@ -79,6 +82,13 @@ export function InfrastructurePage(): JSX.Element {
   } | null>(null);
 
   const credentialId = projects?.find((p) => p.id === projectId)?.providerId ?? null;
+  const linkedCredentialKind = credentials?.find(
+    (credential) => credential.id === credentialId,
+  )?.kind;
+  const linkedProviderKind =
+    linkedCredentialKind && isProvisioningProviderKind(linkedCredentialKind)
+      ? linkedCredentialKind
+      : 'oracle';
   const shapes = useShapes(credentialId);
   const availabilityDomains = useAvailabilityDomains(credentialId);
 
@@ -119,8 +129,8 @@ export function InfrastructurePage(): JSX.Element {
   }, [plan]);
 
   const currentPlan: InfrastructurePlan = useMemo(
-    () => ({ providerKind: plan?.providerKind ?? 'oracle', config, resources }),
-    [plan?.providerKind, config, resources],
+    () => ({ providerKind: plan?.providerKind ?? linkedProviderKind, config, resources }),
+    [plan?.providerKind, linkedProviderKind, config, resources],
   );
   const planFingerprint = useMemo(() => JSON.stringify(currentPlan), [currentPlan]);
   const currentPreview =
@@ -142,6 +152,7 @@ export function InfrastructurePage(): JSX.Element {
       shapes: shapes.data ?? [],
       availabilityDomains: availabilityDomains.data ?? [],
       liveLoading: shapes.isFetching || availabilityDomains.isFetching,
+      providerKind: linkedProviderKind,
     }),
     [
       resources,
@@ -149,6 +160,7 @@ export function InfrastructurePage(): JSX.Element {
       shapes.isFetching,
       availabilityDomains.data,
       availabilityDomains.isFetching,
+      linkedProviderKind,
     ],
   );
 
@@ -186,7 +198,10 @@ export function InfrastructurePage(): JSX.Element {
   }
 
   const addResource = (kind: ResourceKind): void => {
-    setResources((prev) => [...prev, createResource(kind, uniqueName(prev, kind))]);
+    setResources((prev) => [
+      ...prev,
+      createResource(kind, uniqueName(prev, kind), linkedProviderKind),
+    ]);
   };
 
   const persist = async (): Promise<boolean> => {

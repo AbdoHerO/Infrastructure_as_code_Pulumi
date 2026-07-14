@@ -1,9 +1,18 @@
 import {
   DescribeAvailabilityZonesCommand,
   DescribeImagesCommand,
+  DescribeInstancesCommand,
   DescribeInstanceTypesCommand,
+  DescribeInternetGatewaysCommand,
   DescribeRegionsCommand,
+  DescribeSubnetsCommand,
+  DescribeVolumesCommand,
+  DescribeVpcsCommand,
   EC2Client,
+  RebootInstancesCommand,
+  StartInstancesCommand,
+  StopInstancesCommand,
+  TerminateInstancesCommand,
 } from '@aws-sdk/client-ec2';
 import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { err, ok, ProviderError, type Result } from '@cloudforge/shared';
@@ -77,11 +86,56 @@ interface ImagesOutput {
   }[];
 }
 
+interface InstancesOutput {
+  readonly Reservations?: readonly {
+    Instances?: readonly {
+      InstanceId?: string;
+      InstanceType?: string;
+      State?: { Name?: string };
+      Placement?: { AvailabilityZone?: string };
+      LaunchTime?: Date;
+      Tags?: readonly { Key?: string; Value?: string }[];
+    }[];
+  }[];
+}
+
+interface ResourcesOutput {
+  readonly Vpcs?: readonly {
+    VpcId?: string;
+    State?: string;
+    CidrBlock?: string;
+    Tags?: AwsTag[];
+  }[];
+  readonly Subnets?: readonly {
+    SubnetId?: string;
+    State?: string;
+    CidrBlock?: string;
+    Tags?: AwsTag[];
+  }[];
+  readonly InternetGateways?: readonly {
+    InternetGatewayId?: string;
+    Attachments?: readonly { State?: string }[];
+    Tags?: AwsTag[];
+  }[];
+  readonly Volumes?: readonly {
+    VolumeId?: string;
+    State?: string;
+    Size?: number;
+    Tags?: AwsTag[];
+  }[];
+}
+
+interface AwsTag {
+  readonly Key?: string;
+  readonly Value?: string;
+}
+
 const AWS_IMAGE_LIMIT = 100;
 
 /**
- * AWS discovery adapter. It is completely separate from the OCI adapter and
- * performs no infrastructure mutations in this milestone increment.
+ * AWS account discovery and EC2 lifecycle adapter. Infrastructure creation is
+ * compiled separately by the AWS Pulumi program, keeping the OCI adapter
+ * unchanged.
  */
 export class AwsProvider implements CloudProvider {
   readonly kind = 'aws' as const;
@@ -254,23 +308,121 @@ export class AwsProvider implements CloudProvider {
     }
   }
 
-  listInstances(): Promise<Result<CloudInstance[], ProviderError>> {
-    return unsupported('instance discovery');
+  async listInstances(): Promise<Result<CloudInstance[], ProviderError>> {
+    try {
+      const output = (await this.clients.ec2.send(
+        new DescribeInstancesCommand({
+          Filters: [
+            { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
+          ],
+        }),
+      )) as InstancesOutput;
+      return ok(mapInstances(output, this.config.region));
+    } catch (error) {
+      return err(awsError('list EC2 instances', error));
+    }
   }
 
-  terminateInstance(_instanceId: string): Promise<Result<void, ProviderError>> {
-    return unsupported('instance termination');
+  async terminateInstance(instanceId: string): Promise<Result<void, ProviderError>> {
+    try {
+      await this.clients.ec2.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
+      return ok(undefined);
+    } catch (error) {
+      return err(awsError('terminate the EC2 instance', error));
+    }
   }
 
-  instanceAction(
-    _instanceId: string,
-    _action: InstanceAction,
+  async instanceAction(
+    instanceId: string,
+    action: InstanceAction,
   ): Promise<Result<CloudInstance, ProviderError>> {
-    return unsupported('instance lifecycle actions');
+    try {
+      const command =
+        action === 'start'
+          ? new StartInstancesCommand({ InstanceIds: [instanceId] })
+          : action === 'stop'
+            ? new StopInstancesCommand({ InstanceIds: [instanceId] })
+            : new RebootInstancesCommand({ InstanceIds: [instanceId] });
+      await this.clients.ec2.send(command);
+      const output = (await this.clients.ec2.send(
+        new DescribeInstancesCommand({ InstanceIds: [instanceId] }),
+      )) as InstancesOutput;
+      const instance = mapInstances(output, this.config.region)[0];
+      if (!instance) return err(new ProviderError('AWS did not return the updated EC2 instance'));
+      return ok(instance);
+    } catch (error) {
+      return err(awsError(`${action} the EC2 instance`, error));
+    }
   }
 
-  listResources(): Promise<Result<CloudResource[], ProviderError>> {
-    return unsupported('infrastructure resource discovery');
+  async listResources(): Promise<Result<CloudResource[], ProviderError>> {
+    try {
+      const [vpcs, subnets, gateways, volumes] = (await Promise.all([
+        this.clients.ec2.send(new DescribeVpcsCommand({})),
+        this.clients.ec2.send(new DescribeSubnetsCommand({})),
+        this.clients.ec2.send(new DescribeInternetGatewaysCommand({})),
+        this.clients.ec2.send(new DescribeVolumesCommand({})),
+      ])) as [ResourcesOutput, ResourcesOutput, ResourcesOutput, ResourcesOutput];
+      return ok([
+        ...(vpcs.Vpcs ?? []).flatMap((item) =>
+          item.VpcId
+            ? [
+                cloudResource(
+                  item.VpcId,
+                  item.Tags,
+                  'vcn',
+                  item.State,
+                  this.config.region,
+                  item.CidrBlock,
+                ),
+              ]
+            : [],
+        ),
+        ...(subnets.Subnets ?? []).flatMap((item) =>
+          item.SubnetId
+            ? [
+                cloudResource(
+                  item.SubnetId,
+                  item.Tags,
+                  'subnet',
+                  item.State,
+                  this.config.region,
+                  item.CidrBlock,
+                ),
+              ]
+            : [],
+        ),
+        ...(gateways.InternetGateways ?? []).flatMap((item) =>
+          item.InternetGatewayId
+            ? [
+                cloudResource(
+                  item.InternetGatewayId,
+                  item.Tags,
+                  'internet-gateway',
+                  item.Attachments?.[0]?.State,
+                  this.config.region,
+                ),
+              ]
+            : [],
+        ),
+        ...(volumes.Volumes ?? []).flatMap((item) =>
+          item.VolumeId
+            ? [
+                cloudResource(
+                  item.VolumeId,
+                  item.Tags,
+                  'volume',
+                  item.State,
+                  this.config.region,
+                  item.Size === undefined ? undefined : `${item.Size} GB`,
+                ),
+              ]
+            : [],
+        ),
+      ]);
+    } catch (error) {
+      return err(awsError('list AWS infrastructure resources', error));
+    }
   }
 }
 
@@ -286,10 +438,46 @@ function createClients(config: AwsConfig): AwsClientSet {
   };
 }
 
-function unsupported<T>(capability: string): Promise<Result<T, ProviderError>> {
-  return Promise.resolve(
-    err(new ProviderError(`AWS ${capability} is not enabled in this milestone increment`)),
+function mapInstances(output: InstancesOutput, region: string): CloudInstance[] {
+  return (output.Reservations ?? []).flatMap((reservation) =>
+    (reservation.Instances ?? []).flatMap((instance) =>
+      instance.InstanceId
+        ? [
+            {
+              id: instance.InstanceId,
+              name: tagName(instance.Tags) ?? instance.InstanceId,
+              state: instance.State?.Name ?? 'unknown',
+              shape: instance.InstanceType ?? 'unknown',
+              availabilityDomain: instance.Placement?.AvailabilityZone ?? 'unknown',
+              region,
+              ...(instance.LaunchTime ? { createdAt: instance.LaunchTime.toISOString() } : {}),
+            },
+          ]
+        : [],
+    ),
   );
+}
+
+function cloudResource(
+  id: string,
+  tags: readonly AwsTag[] | undefined,
+  type: CloudResource['type'],
+  state: string | undefined,
+  region: string,
+  details?: string,
+): CloudResource {
+  return {
+    id,
+    name: tagName(tags) ?? id,
+    type,
+    state: state ?? 'available',
+    region,
+    ...(details ? { details } : {}),
+  };
+}
+
+function tagName(tags: readonly AwsTag[] | undefined): string | undefined {
+  return tags?.find((tag) => tag.Key === 'Name')?.Value;
 }
 
 function principalName(arn: string | undefined, userId: string | undefined): string {

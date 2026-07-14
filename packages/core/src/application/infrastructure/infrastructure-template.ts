@@ -1,4 +1,5 @@
 import type { InfrastructurePlan, ResourceSpec } from './infrastructure-plan.js';
+import type { ProvisioningProviderKind } from '../../domain/provider/provider-kind.js';
 
 /** Inputs a template may weave into the generated plan. */
 export interface InfraTemplateContext {
@@ -12,6 +13,7 @@ export interface InfrastructureTemplate {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  readonly providerKind: ProvisioningProviderKind;
   readonly category: 'compute' | 'data' | 'ai' | 'network';
   readonly build: (context: InfraTemplateContext) => InfrastructurePlan;
 }
@@ -65,6 +67,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
     id: 'oci-always-free-arm',
     name: 'OCI Always Free ARM VPS',
+    providerKind: 'oracle',
     description:
       'Ubuntu 24.04 ARM64: A1 Flex, 2 OCPUs, 12 GB RAM and a 200 GB boot disk. Uses the current documented Always Free compute and storage allowances; verify tenancy usage.',
     category: 'compute',
@@ -93,6 +96,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
     id: 'web-server',
     name: 'Web Server',
+    providerKind: 'oracle',
     description: 'A public VM with HTTP/HTTPS open — ideal for a Docker host.',
     category: 'compute',
     build: (ctx) => ({
@@ -109,6 +113,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
     id: 'ai-server',
     name: 'AI Server',
+    providerKind: 'oracle',
     description: 'A larger VM exposing the Ollama port for model serving.',
     category: 'ai',
     build: (ctx) => ({
@@ -125,6 +130,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
     id: 'database',
     name: 'Database Host',
+    providerKind: 'oracle',
     description: 'A VM with an attached block volume and Postgres port open.',
     category: 'data',
     build: (ctx) => ({
@@ -142,6 +148,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
   {
     id: 'k8s-node',
     name: 'Kubernetes Node',
+    providerKind: 'oracle',
     description: 'A VM prepared to join a Kubernetes cluster.',
     category: 'compute',
     build: (ctx) => ({
@@ -152,6 +159,33 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
         subnet(true),
         firewall([22, 6443, 10250]),
         compute(ctx.shape ?? 'VM.Standard.E4.Flex', ctx),
+      ],
+    }),
+  },
+  {
+    id: 'aws-ec2-web-server',
+    name: 'AWS EC2 Web Server',
+    providerKind: 'aws',
+    description:
+      'Ubuntu 24.04 on a public t3.micro EC2 instance with SSH, HTTP and HTTPS access. AWS charges depend on account eligibility and region.',
+    category: 'compute',
+    build: (ctx) => ({
+      providerKind: 'aws',
+      ...base(ctx),
+      resources: [
+        network(),
+        subnet(true),
+        firewall([22, 80, 443]),
+        {
+          kind: 'compute',
+          name: 'aws-web-server',
+          shape: ctx.shape ?? 't3.micro',
+          image: 'ubuntu-24.04',
+          subnetName: 'subnet',
+          sshPublicKey: ctx.sshPublicKey ?? '',
+          assignPublicIp: true,
+          bootVolumeGb: 30,
+        },
       ],
     }),
   },
@@ -167,15 +201,17 @@ export interface InfrastructureTemplateSummary {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  readonly providerKind: ProvisioningProviderKind;
   readonly category: InfrastructureTemplate['category'];
 }
 
 /** List infrastructure templates as transport-safe summaries. */
 export function listInfrastructureTemplateSummaries(): InfrastructureTemplateSummary[] {
-  return INFRASTRUCTURE_TEMPLATES.map(({ id, name, description, category }) => ({
+  return INFRASTRUCTURE_TEMPLATES.map(({ id, name, description, providerKind, category }) => ({
     id,
     name,
     description,
+    providerKind,
     category,
   }));
 }

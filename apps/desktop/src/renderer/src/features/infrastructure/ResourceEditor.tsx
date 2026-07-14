@@ -21,6 +21,7 @@ import type {
   Shape,
   SubnetResource,
   VolumeResource,
+  ProviderKind,
 } from '@cloudforge/core';
 import { FirewallRulesEditor } from './FirewallRulesEditor.js';
 
@@ -34,6 +35,7 @@ export interface EditorContext {
   readonly shapes: readonly Shape[];
   readonly availabilityDomains: readonly AvailabilityDomain[];
   readonly liveLoading: boolean;
+  readonly providerKind: ProviderKind;
 }
 
 interface ResourceEditorProps {
@@ -51,14 +53,16 @@ const FALLBACK_SHAPES = [
   'VM.Standard.E4.Flex',
   'VM.Standard.E5.Flex',
 ];
+const AWS_FALLBACK_SHAPES = ['t3.micro', 't3.small', 't4g.micro', 't4g.small'];
 const OS_IMAGES = [
   'ubuntu-22.04',
   'ubuntu-24.04',
   'ubuntu-20.04',
   'oracle-linux-9',
   'oracle-linux-8',
+  'amazon-linux-2023',
 ];
-const OCID_OPTION = '__ocid__';
+const CUSTOM_IMAGE_OPTION = '__custom_image__';
 
 /** OCI-aware editor for a single resource, dispatching on its kind. */
 export function ResourceEditor({
@@ -195,10 +199,15 @@ function ComputeFields({
   const matched = context.shapes.find((s) => s.id === resource.shape);
   const shapeOptions = unique([
     ...context.shapes.map((s) => s.id),
-    ...(context.shapes.length === 0 ? FALLBACK_SHAPES : []),
+    ...(context.shapes.length === 0
+      ? context.providerKind === 'aws'
+        ? AWS_FALLBACK_SHAPES
+        : FALLBACK_SHAPES
+      : []),
     resource.shape,
   ]);
-  const usingOcid = resource.image.trim().startsWith('ocid1.image');
+  const usingCustomImage =
+    resource.image.trim().startsWith('ocid1.image') || resource.image.trim().startsWith('ami-');
 
   return (
     <div className="space-y-3">
@@ -247,33 +256,40 @@ function ComputeFields({
 
         <Field label="Operating system / image">
           <Select
-            value={usingOcid ? OCID_OPTION : resource.image}
+            value={usingCustomImage ? CUSTOM_IMAGE_OPTION : resource.image}
             onChange={(event) =>
-              patch({ image: event.target.value === OCID_OPTION ? '' : event.target.value })
+              patch({ image: event.target.value === CUSTOM_IMAGE_OPTION ? '' : event.target.value })
             }
           >
-            {unique([...OS_IMAGES, ...(usingOcid ? [] : [resource.image])]).map((image) => (
+            {unique([...OS_IMAGES, ...(usingCustomImage ? [] : [resource.image])]).map((image) => (
               <option key={image} value={image}>
                 {image}
               </option>
             ))}
-            <option value={OCID_OPTION}>Custom image OCID…</option>
+            <option value={CUSTOM_IMAGE_OPTION}>
+              Custom {context.providerKind === 'aws' ? 'AMI ID' : 'image OCID'}…
+            </option>
           </Select>
         </Field>
-        {usingOcid ? (
-          <Field label="Image OCID">
+        {usingCustomImage ? (
+          <Field label={context.providerKind === 'aws' ? 'AMI ID' : 'Image OCID'}>
             <Input
-              placeholder="ocid1.image.oc1..."
+              placeholder={
+                context.providerKind === 'aws' ? 'ami-0123456789abcdef0' : 'ocid1.image.oc1...'
+              }
               value={resource.image}
               onChange={(event) => patch({ image: event.target.value })}
             />
           </Field>
         ) : null}
 
-        <Field label="Boot volume (GB)" hint="Blank uses the image default (~47 GB)">
+        <Field
+          label="Boot volume (GB)"
+          hint={`Blank uses the image default (${context.providerKind === 'aws' ? '~8 GB' : '~47 GB'})`}
+        >
           <Input
             type="number"
-            min={47}
+            min={context.providerKind === 'aws' ? 8 : 47}
             value={numText(resource.bootVolumeGb)}
             onChange={(event) => patch({ bootVolumeGb: toNumber(event.target.value) })}
           />

@@ -17,36 +17,40 @@ const initialPlan: InfrastructurePlan = {
 function fixture(): {
   service: InfrastructureService;
   setPlan(plan: InfrastructurePlan): void;
+  setCredentialProvider(providerKind: 'oracle' | 'aws'): void;
+  preview: ReturnType<typeof vi.fn>;
   apply: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   deletePlan: ReturnType<typeof vi.fn>;
 } {
   let plan: InfrastructurePlan | null = initialPlan;
+  let credentialProvider: 'oracle' | 'aws' = 'oracle';
   const apply = vi.fn().mockResolvedValue(ok({ outputs: {}, summary: 'succeeded' }));
   const destroy = vi.fn().mockResolvedValue(ok(undefined));
   const deletePlan = vi.fn().mockImplementation(() => {
     plan = null;
     return Promise.resolve(ok(undefined));
   });
+  const preview = vi.fn().mockResolvedValue(
+    ok({
+      changes: { update: 1 },
+      resources: [
+        {
+          urn: 'urn::network',
+          name: 'network',
+          type: 'Vcn',
+          operation: 'update',
+          destructive: false,
+          changedProperties: ['cidrBlocks'],
+          replacementProperties: [],
+        },
+      ],
+      hasReplacements: false,
+      hasDeletes: false,
+    }),
+  );
   const engine = {
-    preview: vi.fn().mockResolvedValue(
-      ok({
-        changes: { update: 1 },
-        resources: [
-          {
-            urn: 'urn::network',
-            name: 'network',
-            type: 'Vcn',
-            operation: 'update',
-            destructive: false,
-            changedProperties: ['cidrBlocks'],
-            replacementProperties: [],
-          },
-        ],
-        hasReplacements: false,
-        hasDeletes: false,
-      }),
-    ),
+    preview,
     apply,
     destroy,
   } as unknown as InfrastructureEngine;
@@ -59,7 +63,17 @@ function fixture(): {
     delete: deletePlan,
   } as unknown as PlanStore;
   const credentials = {
-    forProject: vi.fn().mockResolvedValue(ok({ region: 'eu-frankfurt-1' })),
+    forProject: vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        ok({
+          providerKind: credentialProvider,
+          data:
+            credentialProvider === 'aws'
+              ? { accessKeyId: 'AKIA_TEST', secretAccessKey: 'secret', region: 'eu-west-1' }
+              : { region: 'eu-frankfurt-1' },
+        }),
+      ),
+    ),
   } as ProviderCredentialResolver;
   const templates = {} as TemplateStore;
   return {
@@ -67,6 +81,10 @@ function fixture(): {
     setPlan: (next) => {
       plan = next;
     },
+    setCredentialProvider: (next) => {
+      credentialProvider = next;
+    },
+    preview,
     apply,
     destroy,
     deletePlan,
@@ -102,6 +120,42 @@ describe('InfrastructureService safe apply', () => {
 
     expect(result.ok).toBe(false);
     expect(subject.apply.mock.calls).toHaveLength(0);
+  });
+
+  it('rejects a plan whose provider does not match the linked credential', async () => {
+    const subject = fixture();
+    subject.setPlan({ ...initialPlan, providerKind: 'aws' });
+
+    const result = await subject.service.preview(ref, 'project-id');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('linked to oracle');
+  });
+
+  it('previews and applies an AWS plan with only the linked AWS credential data', async () => {
+    const subject = fixture();
+    const awsPlan = { ...initialPlan, providerKind: 'aws' };
+    subject.setPlan(awsPlan);
+    subject.setCredentialProvider('aws');
+
+    const preview = await subject.service.preview(ref, 'project-id');
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(subject.preview).toHaveBeenCalledWith(
+      ref,
+      awsPlan,
+      { accessKeyId: 'AKIA_TEST', secretAccessKey: 'secret', region: 'eu-west-1' },
+      undefined,
+    );
+
+    const applied = await subject.service.apply(ref, 'project-id', preview.value.previewToken);
+    expect(applied.ok).toBe(true);
+    expect(subject.apply).toHaveBeenCalledWith(
+      ref,
+      awsPlan,
+      { accessKeyId: 'AKIA_TEST', secretAccessKey: 'secret', region: 'eu-west-1' },
+      undefined,
+    );
   });
 });
 

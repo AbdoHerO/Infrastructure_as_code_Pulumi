@@ -4,6 +4,7 @@ import { Boxes, Plus, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Label, Select, toast } from '@cloudforge/ui';
 import { isProvisioningProviderKind, PROVIDER_LABELS, type ProjectDto } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { CreateProjectForm } from './CreateProjectForm.js';
 import { statusVariant } from './project-status.js';
@@ -118,7 +119,8 @@ function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
       {
         onSuccess: () =>
           toast.success(providerId ? 'Cloud provider linked' : 'Cloud provider unlinked'),
-        onError: () => toast.error('Failed to update project'),
+        onError: (error) =>
+          toast.error(error instanceof IpcCallError ? error.message : 'Failed to update project'),
       },
     );
   };

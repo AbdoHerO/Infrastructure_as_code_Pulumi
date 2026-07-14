@@ -255,8 +255,9 @@ function toManagedResource(resource: {
 }): ManagedResourceSummary {
   const urnParts = (resource.urn ?? '').split('::');
   const rawType = resource.type ?? 'unknown';
-  const provider =
-    rawType === 'pulumi:providers:oci' ? 'oci' : (rawType.split(':')[0] ?? 'unknown');
+  const provider = rawType.startsWith('pulumi:providers:')
+    ? (rawType.split(':').at(-1) ?? 'unknown')
+    : (rawType.split(':')[0] ?? 'unknown');
   return {
     name: urnParts.at(-1) ?? 'unknown',
     type: friendlyResourceType(rawType),
@@ -265,7 +266,7 @@ function toManagedResource(resource: {
 }
 
 function friendlyResourceType(type: string): string {
-  if (type === 'pulumi:providers:oci') return 'Provider';
+  if (type.startsWith('pulumi:providers:')) return 'Provider';
   const token = type.split(':').at(-1) ?? type;
   return token.split('/').at(-1) ?? token;
 }

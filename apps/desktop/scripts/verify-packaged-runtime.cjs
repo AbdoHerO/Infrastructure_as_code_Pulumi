@@ -108,7 +108,7 @@ exports.default = function verifyPackagedRuntime(context) {
     );
   }
 
-  const awsPackages = ['@aws-sdk/client-ec2', '@aws-sdk/client-sts'];
+  const awsPackages = ['@aws-sdk/client-ec2', '@aws-sdk/client-sts', '@pulumi/aws'];
   const missingAwsPackages = awsPackages.filter(
     (name) => !existsSync(join(app, 'node_modules', ...name.split('/'), 'package.json')),
   );
@@ -118,6 +118,9 @@ exports.default = function verifyPackagedRuntime(context) {
 
   if (!directoryContains(join(app, 'out', 'main'), 'Connected to AWS account')) {
     throw new Error('Packaged main process does not contain the AWS provider implementation');
+  }
+  if (!directoryContains(join(app, 'out', 'main'), 'CloudForge firewall')) {
+    throw new Error('Packaged main process does not contain the AWS Pulumi resource program');
   }
 
   const packageCount = verifyDependencyClosure(app);

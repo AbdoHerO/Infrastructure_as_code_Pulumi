@@ -1,5 +1,11 @@
 import type { InfrastructureError, Result } from '@cloudforge/shared';
+import type { ProvisioningProviderKind } from '../../domain/provider/provider-kind.js';
 import type { ProviderCredentials } from './provider-factory.js';
+
+export interface ResolvedProviderCredentials {
+  readonly providerKind: ProvisioningProviderKind;
+  readonly data: ProviderCredentials;
+}
 
 /**
  * Port that resolves the decrypted cloud-provider credentials a project's
@@ -13,5 +19,5 @@ export interface ProviderCredentialResolver {
    * The decrypted credentials for the provider linked to `projectId`, or an
    * {@link InfrastructureError} if no provider is linked or it cannot be loaded.
    */
-  forProject(projectId: string): Promise<Result<ProviderCredentials, InfrastructureError>>;
+  forProject(projectId: string): Promise<Result<ResolvedProviderCredentials, InfrastructureError>>;
 }

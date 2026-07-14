@@ -53,6 +53,45 @@ function clients(): AwsClientSet {
                 },
               ],
             });
+          case 'DescribeInstancesCommand':
+            return Promise.resolve({
+              Reservations: [
+                {
+                  Instances: [
+                    {
+                      InstanceId: 'i-123',
+                      InstanceType: 't3.micro',
+                      State: { Name: 'running' },
+                      Placement: { AvailabilityZone: 'eu-west-1a' },
+                      LaunchTime: new Date('2026-07-14T00:00:00.000Z'),
+                      Tags: [{ Key: 'Name', Value: 'web-server' }],
+                    },
+                  ],
+                },
+              ],
+            });
+          case 'DescribeVpcsCommand':
+            return Promise.resolve({
+              Vpcs: [
+                {
+                  VpcId: 'vpc-123',
+                  State: 'available',
+                  CidrBlock: '10.0.0.0/16',
+                  Tags: [{ Key: 'Name', Value: 'network' }],
+                },
+              ],
+            });
+          case 'DescribeSubnetsCommand':
+            return Promise.resolve({ Subnets: [] });
+          case 'DescribeInternetGatewaysCommand':
+            return Promise.resolve({ InternetGateways: [] });
+          case 'DescribeVolumesCommand':
+            return Promise.resolve({ Volumes: [] });
+          case 'StartInstancesCommand':
+          case 'StopInstancesCommand':
+          case 'RebootInstancesCommand':
+          case 'TerminateInstancesCommand':
+            return Promise.resolve({});
           default:
             return Promise.reject(new Error('Unexpected AWS command'));
         }
@@ -112,9 +151,29 @@ describe('AwsProvider', () => {
     });
   });
 
-  it('keeps AWS mutation capabilities disabled in the discovery increment', async () => {
-    const result = await provider().terminateInstance('i-123');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain('not enabled');
+  it('discovers and controls EC2 instances without leaking credentials', async () => {
+    const aws = provider();
+    const instances = await aws.listInstances();
+    const started = await aws.instanceAction('i-123', 'start');
+    const terminated = await aws.terminateInstance('i-123');
+
+    expect(instances.ok && instances.value[0]).toMatchObject({
+      id: 'i-123',
+      name: 'web-server',
+      state: 'running',
+      shape: 't3.micro',
+    });
+    expect(started.ok && started.value.id).toBe('i-123');
+    expect(terminated.ok).toBe(true);
+  });
+
+  it('discovers AWS network and storage resources', async () => {
+    const result = await provider().listResources();
+    expect(result.ok && result.value[0]).toMatchObject({
+      id: 'vpc-123',
+      name: 'network',
+      type: 'vcn',
+      details: '10.0.0.0/16',
+    });
   });
 });

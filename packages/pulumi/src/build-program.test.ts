@@ -34,4 +34,11 @@ describe('buildProgram', () => {
     const outputs = (await program()) as { resourceCount: number };
     expect(outputs.resourceCount).toBe(2);
   });
+
+  it('falls back to metadata when AWS credentials are incomplete', async () => {
+    const awsPlan = { ...plan, providerKind: 'aws' };
+    const program = buildProgram(awsPlan, { accessKeyId: 'AKIA', region: 'eu-west-1' });
+    const outputs = (await program()) as { providerKind: string; resourceCount: number };
+    expect(outputs).toMatchObject({ providerKind: 'aws', resourceCount: 2 });
+  });
 });

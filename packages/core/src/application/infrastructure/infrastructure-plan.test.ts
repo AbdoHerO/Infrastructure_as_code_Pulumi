@@ -75,3 +75,20 @@ describe('OCI Always Free ARM template', () => {
     expect(validatePlan(plan)).toEqual([]);
   });
 });
+
+describe('AWS EC2 template', () => {
+  it('builds a real AWS-targeted public web-server plan', () => {
+    const template = findInfrastructureTemplate('aws-ec2-web-server');
+    const plan = template!.build({ region: 'eu-west-3', sshPublicKey: 'ssh-ed25519 AAA' });
+    expect(plan.providerKind).toBe('aws');
+    expect(plan.resources.find((resource) => resource.kind === 'compute')).toMatchObject({
+      name: 'aws-web-server',
+      shape: 't3.micro',
+      image: 'ubuntu-24.04',
+      bootVolumeGb: 30,
+      sshPublicKey: 'ssh-ed25519 AAA',
+      assignPublicIp: true,
+    });
+    expect(validatePlan(plan)).toEqual([]);
+  });
+});
