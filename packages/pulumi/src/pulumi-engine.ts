@@ -18,7 +18,8 @@ import type {
   InfrastructurePlan,
   ManagedResourceSummary,
   ManagedStackSummary,
-  PreviewResult,
+  PreviewAnalysis,
+  PreviewResourceChange,
   ProviderCredentials,
   StackReference,
 } from '@cloudforge/core';
@@ -91,14 +92,21 @@ export class PulumiEngine implements InfrastructureEngine {
     plan: InfrastructurePlan,
     credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
-  ): Promise<Result<PreviewResult, InfrastructureError>> {
+  ): Promise<Result<PreviewAnalysis, InfrastructureError>> {
     return this.withStack(ref, plan, credentials, true, onEvent, async (stack) => {
-      const result = await stack.preview(outputOpts(onEvent, 'preview'));
+      const resourceChanges = new Map<string, PreviewResourceChange>();
+      const result = await stack.preview(outputOpts(onEvent, 'preview', resourceChanges));
       const changes: Record<string, number> = {};
       for (const [op, count] of Object.entries(result.changeSummary)) {
         if (typeof count === 'number') changes[op] = count;
       }
-      return { changes };
+      const resources = [...resourceChanges.values()].sort((a, b) => a.name.localeCompare(b.name));
+      return {
+        changes,
+        resources,
+        hasReplacements: resources.some((resource) => resource.operation === 'replace'),
+        hasDeletes: resources.some((resource) => resource.operation === 'delete'),
+      };
     });
   }
 
@@ -277,21 +285,85 @@ type InfrastructureOperation = 'preview' | 'apply' | 'refresh' | 'destroy';
 function outputOpts(
   onEvent: EngineEventSink | undefined,
   operation: InfrastructureOperation,
+  previewChanges?: Map<string, PreviewResourceChange>,
 ): {
   onOutput?: (out: string) => void;
   onEvent?: (event: PulumiEngineEvent) => void;
 } {
-  if (!onEvent) return {};
+  if (!onEvent && !previewChanges) return {};
   let failed = false;
   return {
-    onOutput: (out: string) => onEvent({ stream: 'stdout', message: out }),
+    ...(onEvent ? { onOutput: (out: string) => onEvent({ stream: 'stdout', message: out }) } : {}),
     onEvent: (event: PulumiEngineEvent) => {
+      capturePreviewChange(event, previewChanges);
       const mapped = toProgressEvent(event, failed, operation);
       if (!mapped) return;
       if (mapped.progress?.status === 'failed') failed = true;
-      onEvent(mapped);
+      onEvent?.(mapped);
     },
   };
+}
+
+/** Capture the real Pulumi planned operations without leaking provider types. */
+export function capturePreviewChange(
+  event: PulumiEngineEvent,
+  changes: Map<string, PreviewResourceChange> | undefined,
+): void {
+  const resourceEvent = event.resourcePreEvent;
+  if (!changes || !resourceEvent?.planning) return;
+  const metadata = resourceEvent.metadata;
+  if (metadata.type === 'pulumi:pulumi:Stack' || metadata.op === 'same') return;
+  const resource = resourceFromMetadata(metadata);
+  const operation = previewOperation(metadata.op);
+  const detailed = metadata.detailedDiff ?? {};
+  const changedProperties = [...new Set([...(metadata.diffs ?? []), ...Object.keys(detailed)])];
+  const replacementProperties = [
+    ...new Set([
+      ...(metadata.keys ?? []),
+      ...Object.entries(detailed)
+        .filter(([, diff]) => diff.diffKind.endsWith('-replace'))
+        .map(([property]) => property),
+    ]),
+  ];
+  const existing = changes.get(metadata.urn);
+  const strongest = strongerOperation(existing?.operation, operation);
+  changes.set(metadata.urn, {
+    urn: metadata.urn,
+    ...resource,
+    operation: strongest,
+    destructive: strongest === 'replace' || strongest === 'delete',
+    changedProperties: [...new Set([...(existing?.changedProperties ?? []), ...changedProperties])],
+    replacementProperties: [
+      ...new Set([...(existing?.replacementProperties ?? []), ...replacementProperties]),
+    ],
+  });
+}
+
+function previewOperation(operation: string): PreviewResourceChange['operation'] {
+  if (operation === 'update') return 'update';
+  if (operation === 'delete') return 'delete';
+  if (
+    operation.includes('replacement') ||
+    operation.includes('replaced') ||
+    operation === 'replace'
+  )
+    return 'replace';
+  if (operation === 'same') return 'same';
+  return 'create';
+}
+
+function strongerOperation(
+  current: PreviewResourceChange['operation'] | undefined,
+  next: PreviewResourceChange['operation'],
+): PreviewResourceChange['operation'] {
+  const weight: Record<PreviewResourceChange['operation'], number> = {
+    same: 0,
+    update: 1,
+    create: 2,
+    delete: 3,
+    replace: 4,
+  };
+  return current && weight[current] >= weight[next] ? current : next;
 }
 
 /** Translate Pulumi's structured events into provider-independent UI progress. */

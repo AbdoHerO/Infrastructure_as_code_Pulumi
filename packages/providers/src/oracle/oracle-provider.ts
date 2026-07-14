@@ -10,6 +10,8 @@ import type {
   Region,
   Shape,
   InstanceAction,
+  LiveFirewallRule,
+  InstanceFirewall,
 } from '@cloudforge/core';
 import { ociRequest, ociRequestPage } from './oci-client.js';
 
@@ -61,6 +63,42 @@ interface OciVolumeResource {
   displayName: string;
   lifecycleState: string;
   sizeInGBs?: number;
+}
+interface OciVnicAttachment {
+  vnicId: string;
+  lifecycleState: string;
+}
+interface OciVnic {
+  id: string;
+  subnetId: string;
+  publicIp?: string;
+  privateIp?: string;
+  displayName?: string;
+}
+interface OciSubnet {
+  id: string;
+  displayName: string;
+  securityListIds: string[];
+}
+interface OciPortRange {
+  min: number;
+  max: number;
+}
+interface OciSecurityRule {
+  isStateless?: boolean;
+  protocol: string;
+  source?: string;
+  destination?: string;
+  description?: string;
+  tcpOptions?: { destinationPortRange?: OciPortRange };
+  udpOptions?: { destinationPortRange?: OciPortRange };
+  icmpOptions?: { type: number; code?: number };
+}
+interface OciSecurityList {
+  id: string;
+  displayName: string;
+  ingressSecurityRules: OciSecurityRule[];
+  egressSecurityRules: OciSecurityRule[];
 }
 
 const TERMINATION_POLL_MS = 3_000;
@@ -139,6 +177,16 @@ export class OracleProvider implements CloudProvider {
   private post(url: string, body = ''): Promise<Result<void, ProviderError>> {
     return ociRequest<void>({
       method: 'POST',
+      url,
+      keyId: this.keyId,
+      privateKeyPem: this.config.privateKey,
+      body,
+    });
+  }
+
+  private put<T>(url: string, body: string): Promise<Result<T, ProviderError>> {
+    return ociRequest<T>({
+      method: 'PUT',
       url,
       keyId: this.keyId,
       privateKeyPem: this.config.privateKey,
@@ -315,6 +363,90 @@ export class OracleProvider implements CloudProvider {
     ]);
   }
 
+  async getInstanceFirewall(instanceId: string): Promise<Result<InstanceFirewall, ProviderError>> {
+    const context = await this.firewallContext(instanceId);
+    if (!context.ok) return context;
+    const { instance, vnic, subnet, securityList } = context.value;
+    return ok({
+      provider: this.kind,
+      instanceId,
+      instanceName: instance.displayName,
+      state: instance.lifecycleState,
+      subnetId: subnet.id,
+      subnetName: subnet.displayName,
+      securityListId: securityList.id,
+      publicIp: vnic.publicIp ?? null,
+      privateIp: vnic.privateIp ?? null,
+      rules: [
+        ...securityList.ingressSecurityRules.map((rule, index) =>
+          mapOciRule(rule, 'ingress', index),
+        ),
+        ...securityList.egressSecurityRules.map((rule, index) => mapOciRule(rule, 'egress', index)),
+      ],
+    });
+  }
+
+  async updateInstanceFirewall(
+    instanceId: string,
+    rules: readonly LiveFirewallRule[],
+  ): Promise<Result<InstanceFirewall, ProviderError>> {
+    const context = await this.firewallContext(instanceId);
+    if (!context.ok) return context;
+    const { securityList } = context.value;
+    const body = JSON.stringify({
+      displayName: securityList.displayName,
+      ingressSecurityRules: rules.filter((rule) => rule.direction === 'ingress').map(toOciRule),
+      egressSecurityRules: rules.filter((rule) => rule.direction === 'egress').map(toOciRule),
+    });
+    const updated = await this.put<OciSecurityList>(
+      this.iaas(`/20160918/securityLists/${encodeURIComponent(securityList.id)}`),
+      body,
+    );
+    if (!updated.ok) return updated;
+    return this.getInstanceFirewall(instanceId);
+  }
+
+  private async firewallContext(
+    instanceId: string,
+  ): Promise<
+    Result<
+      { instance: OciInstance; vnic: OciVnic; subnet: OciSubnet; securityList: OciSecurityList },
+      ProviderError
+    >
+  > {
+    const instance = await this.get<OciInstance>(
+      this.iaas(`/20160918/instances/${encodeURIComponent(instanceId)}`),
+    );
+    if (!instance.ok) return instance;
+    const params = new URLSearchParams({ compartmentId: this.config.compartmentOcid, instanceId });
+    const attachments = await this.getAll<OciVnicAttachment>(
+      this.iaas(`/20160918/vnicAttachments?${params.toString()}`),
+    );
+    if (!attachments.ok) return attachments;
+    const attachment = attachments.value.find((item) => item.lifecycleState === 'ATTACHED');
+    if (!attachment) return err(new ProviderError('The instance has no attached VNIC'));
+    const vnic = await this.get<OciVnic>(
+      this.iaas(`/20160918/vnics/${encodeURIComponent(attachment.vnicId)}`),
+    );
+    if (!vnic.ok) return vnic;
+    const subnet = await this.get<OciSubnet>(
+      this.iaas(`/20160918/subnets/${encodeURIComponent(vnic.value.subnetId)}`),
+    );
+    if (!subnet.ok) return subnet;
+    const securityListId = subnet.value.securityListIds[0];
+    if (!securityListId) return err(new ProviderError('The instance subnet has no security list'));
+    const securityList = await this.get<OciSecurityList>(
+      this.iaas(`/20160918/securityLists/${encodeURIComponent(securityListId)}`),
+    );
+    if (!securityList.ok) return securityList;
+    return ok({
+      instance: instance.value,
+      vnic: vnic.value,
+      subnet: subnet.value,
+      securityList: securityList.value,
+    });
+  }
+
   private mapInstance(instance: OciInstance): CloudInstance {
     return {
       id: instance.id,
@@ -341,6 +473,53 @@ export class OracleProvider implements CloudProvider {
       ...(details ? { details } : {}),
     };
   }
+}
+
+function mapOciRule(
+  rule: OciSecurityRule,
+  direction: LiveFirewallRule['direction'],
+  index: number,
+): LiveFirewallRule {
+  const range = rule.tcpOptions?.destinationPortRange ?? rule.udpOptions?.destinationPortRange;
+  return {
+    id: `${direction}-${index}`,
+    direction,
+    protocol:
+      rule.protocol === '6'
+        ? 'tcp'
+        : rule.protocol === '17'
+          ? 'udp'
+          : rule.protocol === '1' || rule.protocol === '58'
+            ? 'icmp'
+            : 'all',
+    cidr: (direction === 'ingress' ? rule.source : rule.destination) ?? '0.0.0.0/0',
+    portFrom: range?.min ?? null,
+    portTo: range?.max ?? null,
+    description: rule.description ?? '',
+    stateless: rule.isStateless ?? false,
+  };
+}
+function toOciRule(rule: LiveFirewallRule): OciSecurityRule {
+  const protocol =
+    rule.protocol === 'tcp'
+      ? '6'
+      : rule.protocol === 'udp'
+        ? '17'
+        : rule.protocol === 'icmp'
+          ? '1'
+          : 'all';
+  const ports =
+    rule.portFrom !== null && rule.portTo !== null
+      ? { destinationPortRange: { min: rule.portFrom, max: rule.portTo } }
+      : undefined;
+  return {
+    protocol,
+    isStateless: rule.stateless,
+    description: rule.description,
+    ...(rule.direction === 'ingress' ? { source: rule.cidr } : { destination: rule.cidr }),
+    ...(rule.protocol === 'tcp' && ports ? { tcpOptions: ports } : {}),
+    ...(rule.protocol === 'udp' && ports ? { udpOptions: ports } : {}),
+  };
 }
 
 function delay(milliseconds: number): Promise<void> {

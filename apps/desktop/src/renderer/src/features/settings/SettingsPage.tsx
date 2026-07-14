@@ -68,6 +68,7 @@ export function SettingsPage(): JSX.Element {
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="deployment">Deployment</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
+          <TabsTrigger value="ssl">SSL</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -211,6 +212,52 @@ export function SettingsPage(): JSX.Element {
                   </p>
                 </div>
               ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ssl">
+          <Card>
+            <CardContent className="divide-border/60 divide-y py-2">
+              <Row
+                title="Automatic renewal"
+                description="Check managed certificates and renew them before expiry."
+              >
+                <Switch
+                  checked={settings?.ssl.autoRenew ?? true}
+                  onCheckedChange={(autoRenew) => update.mutate({ ssl: { autoRenew } })}
+                />
+              </Row>
+              <Row
+                title="Renew before"
+                description="Number of remaining days that triggers renewal (1–90)."
+              >
+                <Input
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={90}
+                  defaultValue={settings?.ssl.renewBeforeDays ?? 30}
+                  onBlur={(event) =>
+                    update.mutate({ ssl: { renewBeforeDays: Number(event.target.value) || 30 } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Check interval"
+                description="Hours between background certificate checks (1–168)."
+              >
+                <Input
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={168}
+                  defaultValue={settings?.ssl.checkIntervalHours ?? 24}
+                  onBlur={(event) =>
+                    update.mutate({ ssl: { checkIntervalHours: Number(event.target.value) || 24 } })
+                  }
+                />
+              </Row>
             </CardContent>
           </Card>
         </TabsContent>

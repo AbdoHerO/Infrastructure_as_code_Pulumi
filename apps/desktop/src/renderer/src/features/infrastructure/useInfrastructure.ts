@@ -53,12 +53,16 @@ export function usePreview(): ReturnType<
 
 /** Apply (provision) a project's infrastructure. */
 export function useApply(): ReturnType<
-  typeof useMutation<ApplyResult, Error, { projectId: string; streamId: string }>
+  typeof useMutation<
+    ApplyResult,
+    Error,
+    { projectId: string; streamId: string; previewToken: string }
+  >
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, streamId }: { projectId: string; streamId: string }) =>
-      invoke('infra:apply', { projectId, streamId }),
+    mutationFn: ({ projectId, streamId, previewToken }) =>
+      invoke('infra:apply', { projectId, streamId, previewToken }),
     onSuccess: (_result, variables) => {
       void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
       void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', variables.projectId] });

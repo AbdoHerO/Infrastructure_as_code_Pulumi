@@ -15,6 +15,9 @@ import { AboutPage } from '../features/about/AboutPage.js';
 import { SshKeysPage } from '../features/ssh-keys/SshKeysPage.js';
 import { ContainersPage } from '../features/containers/ContainersPage.js';
 import { AnsiblePage } from '../features/ansible/AnsiblePage.js';
+import { NginxPage } from '../features/nginx/NginxPage.js';
+import { FirewallPage } from '../features/firewall/FirewallPage.js';
+import { SslPage } from '../features/ssl/SslPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -32,6 +35,9 @@ export const router = createHashRouter([
       { path: 'deployments', element: <DeploymentsPage /> },
       { path: 'containers', element: <ContainersPage /> },
       { path: 'ansible', element: <AnsiblePage /> },
+      { path: 'nginx', element: <NginxPage /> },
+      { path: 'firewall', element: <FirewallPage /> },
+      { path: 'ssl', element: <SslPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

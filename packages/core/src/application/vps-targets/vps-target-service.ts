@@ -52,6 +52,13 @@ export class VpsTargetService {
     return result.ok ? ok(result.value.map(toDto)) : result;
   }
 
+  async get(id: string): Promise<Result<VpsTargetDto, VpsTargetServiceError>> {
+    const found = await this.targets.get(id);
+    if (!found.ok) return found;
+    if (!found.value) return err(new NotFoundError(`VPS target "${id}" was not found`));
+    return ok(toDto(found.value));
+  }
+
   async create(input: SaveVpsTargetInput): Promise<Result<VpsTargetDto, VpsTargetServiceError>> {
     const validated = validate(input);
     if (!validated.ok) return validated;

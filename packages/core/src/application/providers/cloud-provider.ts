@@ -44,6 +44,31 @@ export interface CloudResource {
   readonly details?: string;
 }
 
+export type FirewallProtocol = 'tcp' | 'udp' | 'icmp' | 'all';
+export type FirewallDirection = 'ingress' | 'egress';
+export interface LiveFirewallRule {
+  readonly id: string;
+  readonly direction: FirewallDirection;
+  readonly protocol: FirewallProtocol;
+  readonly cidr: string;
+  readonly portFrom: number | null;
+  readonly portTo: number | null;
+  readonly description: string;
+  readonly stateless: boolean;
+}
+export interface InstanceFirewall {
+  readonly provider: ProviderKind;
+  readonly instanceId: string;
+  readonly instanceName: string;
+  readonly state: string;
+  readonly subnetId: string;
+  readonly subnetName: string;
+  readonly securityListId: string;
+  readonly publicIp: string | null;
+  readonly privateIp: string | null;
+  readonly rules: readonly LiveFirewallRule[];
+}
+
 /** Basic account/tenancy information shown after a successful connection. */
 export interface AccountInfo {
   readonly accountId: string;
@@ -99,4 +124,11 @@ export interface CloudProvider {
 
   /** Discover supported non-compute resources in the configured compartment. */
   listResources(): Promise<Result<CloudResource[], ProviderError>>;
+
+  /** Optional provider capability for in-place instance firewall management. */
+  getInstanceFirewall?(instanceId: string): Promise<Result<InstanceFirewall, ProviderError>>;
+  updateInstanceFirewall?(
+    instanceId: string,
+    rules: readonly LiveFirewallRule[],
+  ): Promise<Result<InstanceFirewall, ProviderError>>;
 }

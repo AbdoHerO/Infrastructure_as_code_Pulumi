@@ -42,10 +42,15 @@ export function registerInfraHandlers(): void {
     );
   });
 
-  registerHandler('infra:apply', async ({ projectId, streamId }) => {
+  registerHandler('infra:apply', async ({ projectId, streamId, previewToken }) => {
     const ref = await stackRef(projectId);
     const result = orThrow(
-      await getContainer().infrastructureService.apply(ref, projectId, sink(streamId)),
+      await getContainer().infrastructureService.apply(
+        ref,
+        projectId,
+        previewToken,
+        sink(streamId),
+      ),
     );
     getContainer().activityService.recordSafe({
       type: 'infrastructure.applied',

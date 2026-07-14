@@ -2,7 +2,9 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PulumiEngine, toProgressEvent } from './pulumi-engine.js';
+import { DiffKind } from '@pulumi/pulumi/automation';
+import { capturePreviewChange, PulumiEngine, toProgressEvent } from './pulumi-engine.js';
+import type { PreviewResourceChange } from '@cloudforge/core';
 
 const created: string[] = [];
 
@@ -75,6 +77,35 @@ describe('PulumiEngine structured progress', () => {
       status: 'failed',
     });
     expect(successfulDestroy?.progress?.label).toBe('Infrastructure destroyed in 1m 15s');
+  });
+
+  it('captures replacement properties from the real preview event', () => {
+    const changes = new Map<string, PreviewResourceChange>();
+    capturePreviewChange(
+      {
+        sequence: 5,
+        timestamp: 5,
+        resourcePreEvent: {
+          planning: true,
+          metadata: {
+            ...metadata,
+            op: 'replace',
+            keys: ['availabilityDomain'],
+            diffs: ['shapeConfig.ocpus'],
+            detailedDiff: {
+              availabilityDomain: { diffKind: DiffKind.updateReplace, inputDiff: true },
+            },
+          },
+        },
+      },
+      changes,
+    );
+
+    expect(changes.get(metadata.urn)).toMatchObject({
+      operation: 'replace',
+      destructive: true,
+      replacementProperties: ['availabilityDomain'],
+    });
   });
 });
 

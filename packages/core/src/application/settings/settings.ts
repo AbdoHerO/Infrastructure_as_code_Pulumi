@@ -17,6 +17,18 @@ export interface AppSettings {
     readonly checkOnStartup: boolean;
     readonly autoDownload: boolean;
   };
+  readonly ssl: {
+    readonly autoRenew: boolean;
+    readonly renewBeforeDays: number;
+    readonly checkIntervalHours: number;
+    readonly managed: readonly {
+      readonly targetId: string;
+      readonly domain: string;
+      readonly email: string;
+      readonly certificateVolume: string;
+      readonly webrootVolume: string;
+    }[];
+  };
 }
 
 /** Immutable default settings applied when no stored value exists. */
@@ -25,6 +37,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   deployment: { confirmDestructive: true, defaultRegion: '' },
   logs: { retentionDays: 30 },
   updates: { checkOnStartup: true, autoDownload: false },
+  ssl: { autoRenew: true, renewBeforeDays: 30, checkIntervalHours: 24, managed: [] },
 };
 
 /** A deep-partial patch for updating settings. */

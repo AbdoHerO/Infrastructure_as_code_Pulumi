@@ -40,4 +40,32 @@ export function registerProviderHandlers(): void {
       message: `Terminated cloud instance ${instanceId}`,
     });
   });
+  registerHandler('firewall:get', async ({ credentialId, instanceId }) =>
+    orThrow(await getContainer().providerService.getInstanceFirewall(credentialId, instanceId)),
+  );
+  registerHandler('firewall:update', async ({ credentialId, instanceId, expectedRules, rules }) => {
+    const container = getContainer();
+    const previous = orThrow(
+      await container.providerService.getInstanceFirewall(credentialId, instanceId),
+    );
+    if (JSON.stringify(previous.rules) !== JSON.stringify(expectedRules))
+      throw new Error(
+        'The cloud firewall changed since it was loaded. Refresh and review before applying.',
+      );
+    const updated = orThrow(
+      await container.providerService.updateInstanceFirewall(credentialId, instanceId, rules),
+    );
+    container.activityService.recordSafe({
+      type: 'firewall.rules.updated',
+      message: `Updated firewall rules for ${updated.instanceName}`,
+      metadata: {
+        instanceId,
+        securityListId: updated.securityListId,
+        before: previous.rules,
+        after: updated.rules,
+        actor: 'local-user',
+      },
+    });
+    return updated;
+  });
 }

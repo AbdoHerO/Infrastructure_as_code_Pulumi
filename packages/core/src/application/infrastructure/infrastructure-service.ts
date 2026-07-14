@@ -13,6 +13,7 @@ import type {
   EngineEventSink,
   InfrastructureEngine,
   ManagedStackSummary,
+  PreviewAnalysis,
   PreviewResult,
   StackReference,
 } from '../ports/infrastructure-engine.js';
@@ -37,6 +38,8 @@ import {
  * destroy / outputs). The renderer only ever talks to this service via IPC.
  */
 export class InfrastructureService {
+  private readonly previews = new Map<string, { token: string; planFingerprint: string }>();
+
   constructor(
     private readonly engine: InfrastructureEngine,
     private readonly plans: PlanStore,
@@ -161,19 +164,40 @@ export class InfrastructureService {
     if (!plan.ok) return plan;
     const credentials = await this.credentials.forProject(projectId);
     if (!credentials.ok) return credentials;
-    return this.engine.preview(ref, plan.value, credentials.value, onEvent);
+    const preview = await this.engine.preview(ref, plan.value, credentials.value, onEvent);
+    if (!preview.ok) return preview;
+    const token = newUuid();
+    this.previews.set(stackKey(ref), { token, planFingerprint: fingerprint(plan.value) });
+    return ok(toPreviewResult(preview.value, token));
   }
 
   async apply(
     ref: StackReference,
     projectId: string,
+    previewToken: string,
     onEvent?: EngineEventSink,
-  ): Promise<Result<ApplyResult, InfrastructureError | PersistenceError | NotFoundError>> {
+  ): Promise<
+    Result<ApplyResult, InfrastructureError | PersistenceError | NotFoundError | ValidationError>
+  > {
     const plan = await this.requirePlan(projectId);
     if (!plan.ok) return plan;
+    const approved = this.previews.get(stackKey(ref));
+    if (
+      !previewToken ||
+      approved?.token !== previewToken ||
+      approved?.planFingerprint !== fingerprint(plan.value)
+    ) {
+      return err(
+        new ValidationError(
+          'Run Preview for the current saved plan before Apply. The plan changed or the preview expired.',
+        ),
+      );
+    }
     const credentials = await this.credentials.forProject(projectId);
     if (!credentials.ok) return credentials;
-    return this.engine.apply(ref, plan.value, credentials.value, onEvent);
+    const applied = await this.engine.apply(ref, plan.value, credentials.value, onEvent);
+    if (applied.ok) this.previews.delete(stackKey(ref));
+    return applied;
   }
 
   destroy(
@@ -206,4 +230,16 @@ export class InfrastructureService {
     }
     return ok(plan.value);
   }
+}
+
+function stackKey(ref: StackReference): string {
+  return `${ref.project}/${ref.stack}`;
+}
+
+function fingerprint(plan: InfrastructurePlan): string {
+  return JSON.stringify(plan);
+}
+
+function toPreviewResult(analysis: PreviewAnalysis, previewToken: string): PreviewResult {
+  return { ...analysis, previewToken };
 }

@@ -1,12 +1,24 @@
 import { copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { app } from 'electron';
-import { err, InfrastructureError, ok, type Result, unwrap } from '@cloudforge/shared';
+import {
+  DeploymentError,
+  err,
+  InfrastructureError,
+  ok,
+  type Result,
+  unwrap,
+} from '@cloudforge/shared';
 import {
   ActivityService,
   CredentialService,
   type ContainerManager,
   type AnsibleManager,
+  NginxService,
+  SslService,
+  type DomainResolver,
+  type RemoteTargetResolver,
   DeploymentService,
   InfrastructureService,
   PluginService,
@@ -24,6 +36,8 @@ import {
   SshAnsibleManager,
   SshContainerManager,
   SshDeployer,
+  SshNginxManager,
+  SshCertificateManager,
 } from '@cloudforge/deployment';
 import {
   createPrismaClient,
@@ -62,6 +76,8 @@ export interface AppContainer {
   readonly containerManager: ContainerManager;
   readonly ansibleManager: AnsibleManager;
   readonly vpsTargetService: VpsTargetService;
+  readonly nginxService: NginxService;
+  readonly sslService: SslService;
   readonly secretsBackedByOsKeychain: boolean;
   snapshotDatabase(destination: string): Promise<void>;
   dispose(): Promise<void>;
@@ -165,6 +181,71 @@ export async function initContainer(): Promise<AppContainer> {
   const containerManager = new SshContainerManager();
   const ansibleManager = new SshAnsibleManager();
   const vpsTargetService = new VpsTargetService(new PrismaVpsTargetRepository(db));
+  const remoteTargetResolver: RemoteTargetResolver = {
+    async resolve(targetId) {
+      const saved = await vpsTargetService.get(targetId);
+      if (!saved.ok)
+        return err(new DeploymentError('Could not load the VPS target', { cause: saved.error }));
+      if (!saved.value.sshCredentialId)
+        return err(new DeploymentError('The VPS target has no SSH credential'));
+      const revealed = await credentialService.reveal(saved.value.sshCredentialId);
+      if (!revealed.ok)
+        return err(
+          new DeploymentError('Could not decrypt the VPS SSH credential', {
+            cause: revealed.error,
+          }),
+        );
+      if (revealed.value.kind !== 'ssh' && revealed.value.kind !== 'ssh-password')
+        return err(new DeploymentError('The VPS target credential is not an SSH credential'));
+      const { privateKey, password, passphrase } = revealed.value.data;
+      if (!privateKey && !password)
+        return err(new DeploymentError('The VPS SSH credential is empty'));
+      return ok({
+        host: saved.value.host,
+        port: saved.value.port,
+        username: saved.value.username,
+        hostKeySha256: saved.value.hostKeySha256,
+        ...(privateKey ? { privateKey } : {}),
+        ...(password ? { password } : {}),
+        ...(passphrase ? { passphrase } : {}),
+      });
+    },
+  };
+  const nginxService = new NginxService(
+    remoteTargetResolver,
+    new SshNginxManager(),
+    activityService,
+  );
+  const domainResolver: DomainResolver = {
+    async resolve(domain) {
+      try {
+        const [ipv4, ipv6] = await Promise.all([
+          resolve4(domain).catch(() => []),
+          resolve6(domain).catch(() => []),
+        ]);
+        const addresses = [...ipv4, ...ipv6];
+        return addresses.length > 0
+          ? ok(addresses)
+          : err(new DeploymentError(`DNS has no A or AAAA record for ${domain}`));
+      } catch (cause) {
+        return err(new DeploymentError(`Could not resolve DNS for ${domain}`, { cause }));
+      }
+    },
+  };
+  const sslService = new SslService(
+    remoteTargetResolver,
+    domainResolver,
+    new SshCertificateManager(),
+    activityService,
+    settingsService,
+    nginxService,
+  );
+  const sslRenewalTimer = setInterval(
+    () => void sslService.renewDue(),
+    appSettings.ssl.checkIntervalHours * 60 * 60_000,
+  );
+  sslRenewalTimer.unref();
+  setTimeout(() => void sslService.renewDue(), 30_000).unref();
 
   container = {
     projectService,
@@ -179,11 +260,14 @@ export async function initContainer(): Promise<AppContainer> {
     containerManager,
     ansibleManager,
     vpsTargetService,
+    nginxService,
+    sslService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
     },
     dispose: async () => {
+      clearInterval(sslRenewalTimer);
       await db.$disconnect();
       container = null;
     },

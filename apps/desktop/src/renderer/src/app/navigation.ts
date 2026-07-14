@@ -15,6 +15,9 @@ import {
   Settings,
   ShieldCheck,
   Workflow,
+  Globe2,
+  Shield,
+  LockKeyhole,
 } from 'lucide-react';
 
 /** A single navigable module in the sidebar. */
@@ -47,6 +50,9 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Deployments', path: '/deployments', icon: Rocket },
       { label: 'Containers', path: '/containers', icon: Container },
       { label: 'Ansible', path: '/ansible', icon: Workflow },
+      { label: 'Nginx', path: '/nginx', icon: Globe2 },
+      { label: 'Firewall', path: '/firewall', icon: Shield },
+      { label: 'SSL & Domains', path: '/ssl', icon: LockKeyhole },
     ],
   },
   {

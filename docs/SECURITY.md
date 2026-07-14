@@ -102,6 +102,13 @@ the Logs module — a lightweight, exportable audit log.
   Jobs use localhost mode on the verified VPS, temporary inputs are mode `0600`,
   variables are JSON, and privileged actions require root or `sudo -n`. Managed
   Nginx paths derive from validated domains and syntax failure rolls back.
+- **Dedicated Nginx/SSL IPC uses target IDs** — plaintext SSH credentials remain
+  in main. Nginx custom fields are validated; every mutation is backed up and
+  must pass `nginx -t` before reload.
+- **SSL issuance is DNS-gated** — A/AAAA records must match the selected VPS.
+  Private-key export is explicit and its bytes never enter logs or Activity.
+- **Firewall writes are optimistic** — the expected live snapshot accompanies
+  each update, so concurrent cloud-side changes cannot be silently overwritten.
 - **Plugin execution is intentionally out of scope** — the marketplace manages
   trusted declarative contributions only; it does not evaluate third-party code.
 - **Code signing / notarization** for distributables is configured via

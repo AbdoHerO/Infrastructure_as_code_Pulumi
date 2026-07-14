@@ -205,6 +205,19 @@ from the [composition root](../apps/desktop/src/main/container.ts) via
 `getContainer()` and unwraps service `Result`s with `orThrow` (which re-throws a
 typed `AppError` for the registry to serialize).
 
+## Dedicated operations modules
+
+| Channels                                                                                  | Purpose                                                      |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `nginx:inspect`, `nginx:listSites`, `nginx:liveStatus`                                    | Read per-target Nginx state without exposing SSH credentials |
+| `nginx:saveSite`, `nginx:removeSite`, `nginx:saveConfig`, `nginx:reload`, `nginx:restore` | Backup, validate, mutate, reload, and rollback Nginx         |
+| `nginx:logs`, `nginx:backups`, `nginx:readConfig`                                         | Read bounded operational data                                |
+| `firewall:get`, `firewall:update`                                                         | Read, drift-check, and update a provider firewall in place   |
+| `ssl:verifyDns`, `ssl:list`, `ssl:issue`, `ssl:export`                                    | DNS-gated certificate operations                             |
+
+`nginx:log` and `ssl:log` are correlated streams. Firewall updates include the
+previously observed rules and fail if the provider changed concurrently.
+
 ## Adding a channel (checklist)
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,

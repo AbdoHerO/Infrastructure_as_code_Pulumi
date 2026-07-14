@@ -227,7 +227,10 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
           displayName: spec.name,
           preserveBootVolume: false,
         },
-        { ...opts, replaceOnChanges: ['sourceDetails', 'metadata'] },
+        // Let the OCI provider schema decide update vs replacement. Shape,
+        // shapeConfig and metadata are OCI-updatable and must not be made
+        // destructive by CloudForge-level replaceOnChanges rules.
+        opts,
       );
       instances.set(spec.name, instance);
       outputs[`${spec.name}PublicIp`] = instance.publicIp;

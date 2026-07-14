@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  AlertTriangle,
   BookmarkPlus,
   CheckCircle2,
   Eye,
@@ -29,6 +30,7 @@ import {
 import {
   type InfrastructurePlan,
   type ManagedStackSummary,
+  type PreviewResult,
   type ProjectDto,
   type ResourceKind,
   type ResourceSpec,
@@ -67,6 +69,10 @@ export function InfrastructurePage(): JSX.Element {
   const [config, setConfig] = useState<Record<string, string>>({});
   const [streamId] = useState(() => crypto.randomUUID());
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [approvedPreview, setApprovedPreview] = useState<{
+    fingerprint: string;
+    result: PreviewResult;
+  } | null>(null);
 
   const credentialId = projects?.find((p) => p.id === projectId)?.providerId ?? null;
   const shapes = useShapes(credentialId);
@@ -108,6 +114,9 @@ export function InfrastructurePage(): JSX.Element {
     () => ({ providerKind: plan?.providerKind ?? 'oracle', config, resources }),
     [plan?.providerKind, config, resources],
   );
+  const planFingerprint = useMemo(() => JSON.stringify(currentPlan), [currentPlan]);
+  const currentPreview =
+    approvedPreview?.fingerprint === planFingerprint ? approvedPreview.result : null;
   const issues = useMemo(() => validatePlan(currentPlan), [currentPlan]);
   const busy =
     preview.isPending ||
@@ -196,21 +205,54 @@ export function InfrastructurePage(): JSX.Element {
     }
     clear();
     if (operation !== 'destroy' && operation !== 'refresh' && !(await persist())) return;
-    const mutation =
-      operation === 'preview'
-        ? preview
-        : operation === 'apply'
-          ? apply
-          : operation === 'refresh'
-            ? refresh
-            : destroy;
-    mutation.mutate(
+    const onError = (error: Error): void => {
+      toast.error(error instanceof IpcCallError ? error.message : `${operation} failed`);
+    };
+    if (operation === 'preview') {
+      preview.mutate(
+        { projectId, streamId },
+        {
+          onSuccess: (result) => {
+            setApprovedPreview({ fingerprint: planFingerprint, result });
+            toast.success('Preview complete');
+          },
+          onError,
+        },
+      );
+      return;
+    }
+    if (operation === 'apply') {
+      if (!currentPreview) {
+        toast.error('Run Preview for the current plan before Apply.');
+        return;
+      }
+      if (
+        (currentPreview.hasReplacements || currentPreview.hasDeletes) &&
+        !confirmDestructivePreview(currentPreview)
+      )
+        return;
+      apply.mutate(
+        { projectId, streamId, previewToken: currentPreview.previewToken },
+        {
+          onSuccess: () => {
+            setApprovedPreview(null);
+            toast.success('Apply complete');
+          },
+          onError,
+        },
+      );
+      return;
+    }
+    if (operation === 'refresh') {
+      refresh.mutate(
+        { projectId, streamId },
+        { onSuccess: () => toast.success('Refresh complete'), onError },
+      );
+      return;
+    }
+    destroy.mutate(
       { projectId, streamId },
-      {
-        onSuccess: () => toast.success(`${operation} complete`),
-        onError: (error) =>
-          toast.error(error instanceof IpcCallError ? error.message : `${operation} failed`),
-      },
+      { onSuccess: () => toast.success('Destroy complete'), onError },
     );
   };
 
@@ -269,7 +311,10 @@ export function InfrastructurePage(): JSX.Element {
           )}
           Preview
         </Button>
-        <Button disabled={busy || issues.length > 0} onClick={() => void runOperation('apply')}>
+        <Button
+          disabled={busy || issues.length > 0 || !currentPreview}
+          onClick={() => void runOperation('apply')}
+        >
           {apply.isPending ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
@@ -333,6 +378,7 @@ export function InfrastructurePage(): JSX.Element {
         </div>
 
         <div className="space-y-2">
+          <PreviewPanel preview={currentPreview} />
           <InfrastructureProgress progress={progress} resources={resourceProgress} />
           <p className="text-sm font-medium">Engine output</p>
           <LogTerminal lines={lines} emptyMessage="Run a preview or apply to see engine output." />
@@ -378,6 +424,71 @@ export function InfrastructurePage(): JSX.Element {
         plan={currentPlan}
       />
     </>
+  );
+}
+
+function PreviewPanel({ preview }: { preview: PreviewResult | null }): JSX.Element | null {
+  if (!preview) return null;
+  const destructive = preview.hasReplacements || preview.hasDeletes;
+  return (
+    <Card className={destructive ? 'border-destructive/50' : 'border-success/40'}>
+      <CardContent className="space-y-3 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-medium">Preview changes</p>
+            <p className="text-muted-foreground text-xs">
+              This exact preview authorizes the next Apply. Editing the plan requires a new preview.
+            </p>
+          </div>
+          <Badge variant={destructive ? 'destructive' : 'success'}>
+            {destructive ? 'Destructive changes' : 'Safe to review'}
+          </Badge>
+        </div>
+        {destructive ? (
+          <div className="bg-destructive/10 text-destructive flex gap-2 rounded-md p-3 text-xs">
+            <AlertTriangle className="size-4 shrink-0" />
+            Replaced or deleted resources may lose data and public IP addresses.
+          </div>
+        ) : null}
+        <div className="space-y-1.5">
+          {preview.resources.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No changes.</p>
+          ) : (
+            preview.resources.map((change) => (
+              <div
+                key={change.urn}
+                className="bg-secondary/50 flex items-start justify-between gap-3 rounded-md px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {change.type} · {change.name}
+                  </p>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {(change.replacementProperties.length
+                      ? change.replacementProperties
+                      : change.changedProperties
+                    ).join(', ') || 'resource lifecycle'}
+                  </p>
+                </div>
+                <Badge variant={change.destructive ? 'destructive' : 'secondary'}>
+                  {change.operation}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function confirmDestructivePreview(preview: PreviewResult): boolean {
+  const destructive = preview.resources
+    .filter((resource) => resource.destructive)
+    .map((resource) => `${resource.operation.toUpperCase()}: ${resource.type} ${resource.name}`)
+    .join('\n');
+  return window.confirm(
+    `This plan contains destructive infrastructure changes:\n\n${destructive}\n\nReplaced resources may be destroyed, public IPs may change, and data may be lost. Continue with this exact preview?`,
   );
 }
 

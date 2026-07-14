@@ -154,6 +154,17 @@ Product/branding information (name, subtitle, tagline, version).
 
 ---
 
+## Dedicated operations modules
+
+- **Nginx** — per-target dashboard, all-site discovery, rich managed-site
+  editor, raw config, validated reload, status, logs, backups, and restore.
+- **Firewall** — live instance rules, templates, warnings, drift-safe in-place
+  provider apply, Activity snapshots, and reviewed rollback.
+- **SSL & Domains** — DNS verification, configured Docker Certbot issuance,
+  certificate inspection/export, Nginx integration, and scheduled renewal.
+
+The legacy Ansible Nginx routes remain available for backward compatibility.
+
 ## Cross-cutting UI
 
 - **App shell** (`app/layout/`) — resizable sidebar rail + draggable titlebar +

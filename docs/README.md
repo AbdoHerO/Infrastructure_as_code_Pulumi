@@ -13,23 +13,27 @@ backup/restore and the packaged update workflow are implemented.
 
 ## Table of contents
 
-| Document                                        | What it covers                                                                                                    |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [Getting Started](GETTING-STARTED.md)           | **Run, test and use** the app end to end, plus troubleshooting                                                    |
-| [First OCI Instance](FIRST-INSTANCE.md)         | Provision, SSH into, discover, and safely delete OCI instances entirely from CloudForge                           |
-| [Ansible & Nginx](ANSIBLE.md)                   | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
-| [Configuration & Credentials](CONFIGURATION.md) | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
-| [Overview](OVERVIEW.md)                         | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
-| [Architecture](ARCHITECTURE.md)                 | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
-| [Packages](PACKAGES.md)                         | Every workspace package: purpose, public exports, key files                                                       |
-| [Modules](MODULES.md)                           | Every UI module: behaviour and data flow                                                                          |
-| [IPC Reference](IPC.md)                         | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
-| [Data Model](DATA-MODEL.md)                     | The Prisma/SQLite schema — all 12 tables and conventions                                                          |
-| [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
-| [Development](DEVELOPMENT.md)                   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
-| [Packaging](PACKAGING.md)                       | Building distributables and runtime prerequisites                                                                 |
-| [Move State & Release](MOVING-AND-RELEASING.md) | Transfer the database safely and publish tested Windows installers from Git tags                                  |
-| [Completion Report](ROADMAP.md)                 | Implemented phases, verification evidence and external release requirements                                       |
+| Document                                            | What it covers                                                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [Getting Started](GETTING-STARTED.md)               | **Run, test and use** the app end to end, plus troubleshooting                                                    |
+| [First OCI Instance](FIRST-INSTANCE.md)             | Provision, SSH into, discover, and safely delete OCI instances entirely from CloudForge                           |
+| [Ansible & Nginx](ANSIBLE.md)                       | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
+| [Nginx Manager](NGINX-MANAGER.md)                   | Dedicated per-target Nginx dashboard, editor, logs, backups, validation, reload, and rollback                     |
+| [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
+| [SSL & Domains](SSL-DOMAINS.md)                     | DNS-gated Certbot issuance, certificate inspection, Nginx integration, and automatic renewal                      |
+| [Infrastructure updates](INFRASTRUCTURE-UPDATES.md) | Pulumi identity, update/replace behavior, destructive previews, and mandatory preview approval                    |
+| [Configuration & Credentials](CONFIGURATION.md)     | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
+| [Overview](OVERVIEW.md)                             | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
+| [Architecture](ARCHITECTURE.md)                     | Clean Architecture layers, dependency rules, the Electron process model, the secure IPC contract, error handling  |
+| [Packages](PACKAGES.md)                             | Every workspace package: purpose, public exports, key files                                                       |
+| [Modules](MODULES.md)                               | Every UI module: behaviour and data flow                                                                          |
+| [IPC Reference](IPC.md)                             | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
+| [Data Model](DATA-MODEL.md)                         | The Prisma/SQLite schema — all 12 tables and conventions                                                          |
+| [Security](SECURITY.md)                             | The security model: encryption, keychain, hardening, threat notes                                                 |
+| [Development](DEVELOPMENT.md)                       | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
+| [Packaging](PACKAGING.md)                           | Building distributables and runtime prerequisites                                                                 |
+| [Move State & Release](MOVING-AND-RELEASING.md)     | Transfer the database safely and publish tested Windows installers from Git tags                                  |
+| [Completion Report](ROADMAP.md)                     | Implemented phases, verification evidence and external release requirements                                       |
 
 Project-level entry points: the top-level [README](../README.md) and the
 [CHANGELOG](../CHANGELOG.md) (a phase-by-phase build history).

@@ -8,3 +8,5 @@ export { SshDeployer } from './ssh-deployer.js';
 export { NodeSshKeyGenerator } from './node-ssh-key-generator.js';
 export { SshContainerManager } from './ssh-container-manager.js';
 export { SshAnsibleManager } from './ssh-ansible-manager.js';
+export { SshNginxManager } from './ssh-nginx-manager.js';
+export { SshCertificateManager } from './ssh-certificate-manager.js';

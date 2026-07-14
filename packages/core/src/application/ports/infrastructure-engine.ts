@@ -30,9 +30,30 @@ export interface EngineProgress {
 /** Callback receiving streamed engine output line by line. */
 export type EngineEventSink = (event: EngineEvent) => void;
 
-/** Summary of a preview: how many resources would change. */
-export interface PreviewResult {
+export type PreviewOperation = 'create' | 'update' | 'replace' | 'delete' | 'same';
+
+/** One provider-independent resource operation reported by the IaC engine. */
+export interface PreviewResourceChange {
+  readonly urn: string;
+  readonly name: string;
+  readonly type: string;
+  readonly operation: PreviewOperation;
+  readonly destructive: boolean;
+  readonly changedProperties: readonly string[];
+  readonly replacementProperties: readonly string[];
+}
+
+/** Engine-produced preview analysis before Application-layer authorization. */
+export interface PreviewAnalysis {
   readonly changes: Readonly<Record<string, number>>;
+  readonly resources: readonly PreviewResourceChange[];
+  readonly hasReplacements: boolean;
+  readonly hasDeletes: boolean;
+}
+
+/** Preview returned to Presentation with a one-use safe-apply authorization. */
+export interface PreviewResult extends PreviewAnalysis {
+  readonly previewToken: string;
 }
 
 /** Result of an apply: the stack's outputs. */
@@ -77,7 +98,7 @@ export interface InfrastructureEngine {
     plan: InfrastructurePlan,
     credentials: ProviderCredentials,
     onEvent?: EngineEventSink,
-  ): Promise<Result<PreviewResult, InfrastructureError>>;
+  ): Promise<Result<PreviewAnalysis, InfrastructureError>>;
 
   /**
    * Apply a plan, provisioning or updating real cloud infrastructure. Provider

@@ -27,6 +27,13 @@ import type {
   InstanceAction,
   ManagedStackSummary,
   NginxSite,
+  ManagedNginxSite,
+  NginxBackup,
+  NginxEvent,
+  NginxLiveStatus,
+  NginxLogQuery,
+  NginxOperationOutcome,
+  NginxOverview,
   PlanIssue,
   PluginListItem,
   PluginManifest,
@@ -42,6 +49,11 @@ import type {
   UpdateProjectInput,
   VpsPreflightReport,
   VpsTargetDto,
+  InstanceFirewall,
+  LiveFirewallRule,
+  CertificateDetails,
+  CertificateEvent,
+  CertificateIssueConfig,
 } from '@cloudforge/core';
 
 /**
@@ -106,6 +118,19 @@ export interface IpcContract {
     request: { credentialId: string; instanceId: string };
     response: void;
   };
+  'firewall:get': {
+    request: { credentialId: string; instanceId: string };
+    response: InstanceFirewall;
+  };
+  'firewall:update': {
+    request: {
+      credentialId: string;
+      instanceId: string;
+      expectedRules: LiveFirewallRule[];
+      rules: LiveFirewallRule[];
+    };
+    response: InstanceFirewall;
+  };
 
   'infra:engineStatus': { request: void; response: { available: boolean } };
   'infra:getPlan': { request: { projectId: string }; response: InfrastructurePlan | null };
@@ -115,7 +140,10 @@ export interface IpcContract {
     request: { projectId: string; streamId: string };
     response: PreviewResult;
   };
-  'infra:apply': { request: { projectId: string; streamId: string }; response: ApplyResult };
+  'infra:apply': {
+    request: { projectId: string; streamId: string; previewToken: string };
+    response: ApplyResult;
+  };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
   'infra:refresh': { request: { projectId: string; streamId: string }; response: void };
   'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
@@ -215,6 +243,61 @@ export interface IpcContract {
     response: AnsibleOutcome;
   };
 
+  'nginx:inspect': { request: { targetId: string }; response: NginxOverview };
+  'nginx:listSites': { request: { targetId: string }; response: ManagedNginxSite[] };
+  'nginx:saveSite': {
+    request: { targetId: string; site: ManagedNginxSite; streamId: string };
+    response: NginxOperationOutcome;
+  };
+  'nginx:removeSite': {
+    request: { targetId: string; domain: string; streamId: string };
+    response: NginxOperationOutcome;
+  };
+  'nginx:readConfig': { request: { targetId: string }; response: { content: string } };
+  'nginx:saveConfig': {
+    request: { targetId: string; content: string; streamId: string };
+    response: NginxOperationOutcome;
+  };
+  'nginx:reload': {
+    request: { targetId: string; streamId: string };
+    response: NginxOperationOutcome;
+  };
+  'nginx:liveStatus': { request: { targetId: string }; response: NginxLiveStatus };
+  'nginx:logs': {
+    request: { targetId: string; query: NginxLogQuery };
+    response: { lines: string[] };
+  };
+  'nginx:backups': { request: { targetId: string }; response: NginxBackup[] };
+  'nginx:readBackupConfig': {
+    request: { targetId: string; backupId: string };
+    response: { content: string };
+  };
+  'nginx:restore': {
+    request: { targetId: string; backupId: string; streamId: string };
+    response: NginxOperationOutcome;
+  };
+  'ssl:verifyDns': {
+    request: { targetId: string; domain: string };
+    response: { domainIps: readonly string[]; targetIps: readonly string[]; matches: boolean };
+  };
+  'ssl:list': {
+    request: { targetId: string; certificateVolume: string };
+    response: CertificateDetails[];
+  };
+  'ssl:issue': {
+    request: { targetId: string; config: CertificateIssueConfig; streamId: string };
+    response: CertificateDetails;
+  };
+  'ssl:export': {
+    request: {
+      targetId: string;
+      certificateVolume: string;
+      domain: string;
+      format: 'pem' | 'crt' | 'key' | 'zip';
+    };
+    response: { name: string; contentBase64: string };
+  };
+
   'activity:list': { request: { limit?: number }; response: ActivityDto[] };
 
   'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
@@ -266,6 +349,8 @@ export interface IpcEventContract {
   'engine:log': { streamId: string; event: EngineEvent };
   'deploy:log': { streamId: string; event: DeployEvent };
   'ansible:log': { streamId: string; event: AnsibleEvent };
+  'nginx:log': { streamId: string; event: NginxEvent };
+  'ssl:log': { streamId: string; event: CertificateEvent };
   'updates:state': UpdateState;
 }
 
@@ -277,6 +362,8 @@ export const IPC_EVENT_CHANNELS = [
   'engine:log',
   'deploy:log',
   'ansible:log',
+  'nginx:log',
+  'ssl:log',
   'updates:state',
 ] as const satisfies readonly IpcEventChannel[];
 
@@ -368,6 +455,8 @@ export const IPC_CHANNELS = [
   'providers:listResources',
   'providers:instanceAction',
   'providers:terminateInstance',
+  'firewall:get',
+  'firewall:update',
   'infra:engineStatus',
   'infra:getPlan',
   'infra:savePlan',
@@ -405,6 +494,22 @@ export const IPC_CHANNELS = [
   'ansible:nginxSites',
   'ansible:nginxUpsert',
   'ansible:nginxRemove',
+  'nginx:inspect',
+  'nginx:listSites',
+  'nginx:saveSite',
+  'nginx:removeSite',
+  'nginx:readConfig',
+  'nginx:saveConfig',
+  'nginx:reload',
+  'nginx:liveStatus',
+  'nginx:logs',
+  'nginx:backups',
+  'nginx:readBackupConfig',
+  'nginx:restore',
+  'ssl:verifyDns',
+  'ssl:list',
+  'ssl:issue',
+  'ssl:export',
   'activity:list',
   'infra:templates',
   'infra:applyTemplate',

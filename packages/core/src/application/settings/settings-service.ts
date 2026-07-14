@@ -45,6 +45,7 @@ function merge(base: AppSettings, patch: SettingsPatch): AppSettings {
     deployment: { ...base.deployment, ...patch.deployment },
     logs: { ...base.logs, ...patch.logs },
     updates: { ...base.updates, ...patch.updates },
+    ssl: { ...base.ssl, ...patch.ssl },
   };
 }
 
@@ -57,6 +58,15 @@ function normalize(settings: AppSettings): AppSettings {
     },
     logs: {
       retentionDays: Math.min(365, Math.max(1, Math.trunc(settings.logs.retentionDays) || 30)),
+    },
+    ssl: {
+      ...settings.ssl,
+      renewBeforeDays: Math.min(90, Math.max(1, Math.trunc(settings.ssl.renewBeforeDays) || 30)),
+      checkIntervalHours: Math.min(
+        168,
+        Math.max(1, Math.trunc(settings.ssl.checkIntervalHours) || 24),
+      ),
+      managed: settings.ssl.managed.slice(0, 500),
     },
   };
 }
