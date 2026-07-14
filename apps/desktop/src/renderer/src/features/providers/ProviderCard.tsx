@@ -1,12 +1,27 @@
-import { CheckCircle2, Cpu, Globe, Loader2, PlugZap, Server, Trash2, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  CircleStop,
+  Cpu,
+  Globe,
+  HardDrive,
+  Loader2,
+  Play,
+  PlugZap,
+  RotateCw,
+  Server,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import { Badge, Button, Card, CardContent, Separator } from '@cloudforge/ui';
 import { type CredentialSummaryDto, PROVIDER_LABELS, type ProviderKind } from '@cloudforge/core';
 import {
   useLoadInstances,
   useLoadRegions,
+  useLoadResources,
   useLoadShapes,
   useTerminateInstance,
   useTestConnection,
+  useInstanceAction,
 } from './useProviders.js';
 
 /** A single provider connection: test it and discover regions/shapes. */
@@ -16,6 +31,8 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
   const shapes = useLoadShapes();
   const instances = useLoadInstances();
   const terminate = useTerminateInstance();
+  const resources = useLoadResources();
+  const instanceAction = useInstanceAction();
 
   const result = test.data;
 
@@ -71,6 +88,19 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
               >
                 <Globe className="size-4" />
                 {regions.data ? `${regions.data.length} regions` : 'Load regions'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={resources.isPending}
+                onClick={() => resources.mutate(credential.id)}
+              >
+                {resources.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <HardDrive className="size-4" />
+                )}
+                {resources.data ? `${resources.data.length} resources` : 'Load cloud resources'}
               </Button>
               <Button
                 variant="ghost"
@@ -153,9 +183,82 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                         )}
                         Terminate
                       </Button>
+                      <div className="flex gap-1">
+                        {instance.state === 'STOPPED' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={instanceAction.isPending}
+                            onClick={() =>
+                              instanceAction.mutate(
+                                {
+                                  credentialId: credential.id,
+                                  instanceId: instance.id,
+                                  action: 'start',
+                                },
+                                { onSuccess: () => instances.mutate(credential.id) },
+                              )
+                            }
+                          >
+                            <Play className="size-3.5" /> Start
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={instanceAction.isPending}
+                            onClick={() =>
+                              instanceAction.mutate(
+                                {
+                                  credentialId: credential.id,
+                                  instanceId: instance.id,
+                                  action: 'stop',
+                                },
+                                { onSuccess: () => instances.mutate(credential.id) },
+                              )
+                            }
+                          >
+                            <CircleStop className="size-3.5" /> Stop
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={instanceAction.isPending || instance.state !== 'RUNNING'}
+                          onClick={() =>
+                            instanceAction.mutate(
+                              {
+                                credentialId: credential.id,
+                                instanceId: instance.id,
+                                action: 'reboot',
+                              },
+                              { onSuccess: () => instances.mutate(credential.id) },
+                            )
+                          }
+                        >
+                          <RotateCw className="size-3.5" /> Reboot
+                        </Button>
+                      </div>
                     </div>
                   ))
                 )}
+              </div>
+            ) : null}
+            {resources.data ? (
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Compartment resources</p>
+                {resources.data.map((resource) => (
+                  <div
+                    key={resource.id}
+                    className="bg-secondary/40 flex items-center gap-2 rounded-md px-3 py-2 text-xs"
+                  >
+                    <Badge variant="secondary">{resource.type}</Badge>
+                    <span className="min-w-0 flex-1 truncate">{resource.name}</span>
+                    <span className="text-muted-foreground">
+                      {resource.details ?? resource.state}
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : null}
           </>

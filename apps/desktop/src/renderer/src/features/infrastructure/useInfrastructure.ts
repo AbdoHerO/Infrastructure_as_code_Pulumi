@@ -81,6 +81,19 @@ export function useDestroy(): ReturnType<
   });
 }
 
+export function useRefresh(): ReturnType<
+  typeof useMutation<void, Error, { projectId: string; streamId: string }>
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, streamId }) => invoke('infra:refresh', { projectId, streamId }),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
+      void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
+    },
+  });
+}
+
 /** Read the current stack outputs, including instance public/private IPs. */
 export function useOutputs(
   projectId: string | null,

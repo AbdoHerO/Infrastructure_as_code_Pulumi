@@ -6,9 +6,10 @@
 
 </div>
 
-This is the complete documentation for CloudForge, a production-grade Electron
-desktop application for provisioning, configuring, deploying and managing cloud
-infrastructure without touching the command line.
+This documentation describes CloudForge, a local-first Electron desktop
+application for provisioning, configuring, deploying and managing cloud
+infrastructure. OCI provisioning, SSH deployments, SSH keys, remote containers,
+backup/restore and the packaged update workflow are implemented.
 
 ## Table of contents
 
@@ -26,6 +27,7 @@ infrastructure without touching the command line.
 | [Security](SECURITY.md)                         | The security model: encryption, keychain, hardening, threat notes                                                 |
 | [Development](DEVELOPMENT.md)                   | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
 | [Packaging](PACKAGING.md)                       | Building distributables and runtime prerequisites                                                                 |
+| [Completion Report](ROADMAP.md)                 | Implemented phases, verification evidence and external release requirements                                       |
 
 Project-level entry points: the top-level [README](../README.md) and the
 [CHANGELOG](../CHANGELOG.md) (a phase-by-phase build history).
@@ -35,14 +37,14 @@ Project-level entry points: the top-level [README](../README.md) and the
 |                            |                                                                            |
 | -------------------------- | -------------------------------------------------------------------------- |
 | **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                       |
-| **Shell**                  | Electron 33 · electron-vite · React 18 · TypeScript (strict)               |
+| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)               |
 | **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand |
 | **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                |
 | **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)            |
 | **Configuration engine**   | SSH (`ssh2`) executing idempotent deployment steps                         |
 | **First cloud provider**   | Oracle Cloud (OCI REST APIs with hand-rolled request signing)              |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app  |
-| **Tests**                  | 49 unit tests (Vitest); `pnpm test:coverage` for a V8 report               |
+| **Tests**                  | 62 unit tests (Vitest), including SSH key generation and safety paths      |
 | **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`           |
 
 ## Reading order
@@ -56,3 +58,4 @@ Project-level entry points: the top-level [README](../README.md) and the
 - **Integrating / extending?** See [IPC Reference](IPC.md) and the "recipes" in
   [Development](DEVELOPMENT.md) (add a provider, module, IPC channel).
 - **Shipping?** See [Packaging](PACKAGING.md) and [Security](SECURITY.md).
+- **Checking completion and release requirements?** See [Completion Report](ROADMAP.md).

@@ -3,10 +3,12 @@ import {
   type AvailabilityDomain,
   type ConnectionTestResult,
   type CloudInstance,
+  type CloudResource,
   type CredentialSummaryDto,
   isProviderKind,
   type Region,
   type Shape,
+  type InstanceAction,
 } from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
@@ -58,6 +60,20 @@ export function useLoadInstances(): UseMutationResult<CloudInstance[], Error, st
   return useMutation({
     mutationFn: (credentialId: string) => invoke('providers:listInstances', { credentialId }),
   });
+}
+
+export function useLoadResources(): UseMutationResult<CloudResource[], Error, string> {
+  return useMutation({
+    mutationFn: (credentialId: string) => invoke('providers:listResources', { credentialId }),
+  });
+}
+
+export function useInstanceAction(): UseMutationResult<
+  CloudInstance,
+  Error,
+  { credentialId: string; instanceId: string; action: InstanceAction }
+> {
+  return useMutation({ mutationFn: (request) => invoke('providers:instanceAction', request) });
 }
 
 /** Permanently terminate a provider instance and its boot volume. */

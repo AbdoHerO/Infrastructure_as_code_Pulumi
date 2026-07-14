@@ -7,6 +7,7 @@ import {
   Hammer,
   Loader2,
   Plus,
+  RefreshCw,
   Save,
   ServerCog,
   Trash,
@@ -36,6 +37,7 @@ import {
 import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
+import { useSettings } from '../settings/useSettings.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
 import { ADDABLE_KINDS, createResource, uniqueName } from './resource-templates.js';
@@ -49,6 +51,7 @@ import {
   useOutputs,
   usePlan,
   usePreview,
+  useRefresh,
   useSavePlan,
   useShapes,
   type InfrastructureProgressState,
@@ -58,6 +61,7 @@ import {
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
 export function InfrastructurePage(): JSX.Element {
   const { data: projects } = useProjects();
+  const { data: settings } = useSettings();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [resources, setResources] = useState<ResourceSpec[]>([]);
   const [config, setConfig] = useState<Record<string, string>>({});
@@ -73,6 +77,7 @@ export function InfrastructurePage(): JSX.Element {
   const preview = usePreview();
   const apply = useApply();
   const destroy = useDestroy();
+  const refresh = useRefresh();
   const destroyManagedStack = useDestroyManagedStack();
   const managedStacks = useManagedStacks();
   const currentProject = projects?.find((project) => project.id === projectId);
@@ -108,6 +113,7 @@ export function InfrastructurePage(): JSX.Element {
     preview.isPending ||
     apply.isPending ||
     destroy.isPending ||
+    refresh.isPending ||
     destroyManagedStack.isPending ||
     savePlan.isPending;
 
@@ -177,17 +183,27 @@ export function InfrastructurePage(): JSX.Element {
     }
   };
 
-  const runOperation = async (operation: 'preview' | 'apply' | 'destroy'): Promise<void> => {
+  const runOperation = async (
+    operation: 'preview' | 'apply' | 'destroy' | 'refresh',
+  ): Promise<void> => {
     if (!projectId) return;
     if (
       operation === 'destroy' &&
+      (settings?.deployment.confirmDestructive ?? true) &&
       !window.confirm('Destroy every cloud resource in this project stack? This cannot be undone.')
     ) {
       return;
     }
     clear();
-    if (operation !== 'destroy' && !(await persist())) return;
-    const mutation = operation === 'preview' ? preview : operation === 'apply' ? apply : destroy;
+    if (operation !== 'destroy' && operation !== 'refresh' && !(await persist())) return;
+    const mutation =
+      operation === 'preview'
+        ? preview
+        : operation === 'apply'
+          ? apply
+          : operation === 'refresh'
+            ? refresh
+            : destroy;
     mutation.mutate(
       { projectId, streamId },
       {
@@ -263,6 +279,18 @@ export function InfrastructurePage(): JSX.Element {
         </Button>
         <Button variant="destructive" disabled={busy} onClick={() => void runOperation('destroy')}>
           <Trash className="size-4" /> Destroy
+        </Button>
+        <Button
+          variant="outline"
+          disabled={busy || !currentStackExists}
+          onClick={() => void runOperation('refresh')}
+        >
+          {refresh.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <RefreshCw className="size-4" />
+          )}
+          Refresh / detect drift
         </Button>
       </div>
 

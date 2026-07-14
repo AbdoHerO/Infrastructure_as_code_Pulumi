@@ -61,6 +61,20 @@ export class PrismaDeploymentRepository implements DeploymentRepository {
   async countAll(): Promise<Result<number, PersistenceError>> {
     return guard('count deployments', () => this.db.deployment.count());
   }
+
+  async failRunning(reason: string, finishedAt: string): Promise<Result<number, PersistenceError>> {
+    return guard('recover interrupted deployments', async () => {
+      const result = await this.db.deployment.updateMany({
+        where: { status: 'running' },
+        data: {
+          status: 'failed',
+          outputs: JSON.stringify({ error: reason, interrupted: true }),
+          finishedAt: new Date(finishedAt),
+        },
+      });
+      return result.count;
+    });
+  }
 }
 
 function toRecord(row: PrismaDeployment): DeploymentRecord {

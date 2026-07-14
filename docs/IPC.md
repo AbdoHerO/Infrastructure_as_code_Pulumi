@@ -39,10 +39,11 @@ logs), the main process **pushes** events to the renderer. Channels are
 - **Renderer** calls `subscribe(channel, listener)` → returns an unsubscribe fn.
 - Payloads carry a **`streamId`** so a caller can correlate a specific run.
 
-| Event channel | Payload                                                                  |
-| ------------- | ------------------------------------------------------------------------ |
-| `engine:log`  | `{ streamId, event: EngineEvent }` — Pulumi preview/apply/destroy output |
-| `deploy:log`  | `{ streamId, event: DeployEvent }` — SSH deployment output (per step)    |
+| Event channel   | Payload                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `engine:log`    | `{ streamId, event: EngineEvent }` — text plus optional structured operation/resource progress |
+| `deploy:log`    | `{ streamId, event: DeployEvent }` — SSH deployment output (per step)                          |
+| `updates:state` | `UpdateState` — check/download/install status and download percentage                          |
 
 ## Channel catalogue
 
@@ -85,65 +86,94 @@ All request/response channels, grouped by feature. `void` means no payload.
 
 ### Cloud providers
 
-| Channel                             | Request            | Response               |
-| ----------------------------------- | ------------------ | ---------------------- |
-| `providers:test`                    | `{ credentialId }` | `ConnectionTestResult` |
-| `providers:listRegions`             | `{ credentialId }` | `Region[]`             |
-| `providers:listShapes`              | `{ credentialId }` | `Shape[]`              |
-| `providers:listAvailabilityDomains` | `{ credentialId }` | `AvailabilityDomain[]` |
+| Channel                             | Request                                | Response               |
+| ----------------------------------- | -------------------------------------- | ---------------------- |
+| `providers:test`                    | `{ credentialId }`                     | `ConnectionTestResult` |
+| `providers:listRegions`             | `{ credentialId }`                     | `Region[]`             |
+| `providers:listShapes`              | `{ credentialId }`                     | `Shape[]`              |
+| `providers:listAvailabilityDomains` | `{ credentialId }`                     | `AvailabilityDomain[]` |
+| `providers:listInstances`           | `{ credentialId }`                     | `CloudInstance[]`      |
+| `providers:listResources`           | `{ credentialId }`                     | `CloudResource[]`      |
+| `providers:instanceAction`          | `{ credentialId, instanceId, action }` | `CloudInstance`        |
+| `providers:terminateInstance`       | `{ credentialId, instanceId }`         | `void`                 |
 
 ### Infrastructure
 
-| Channel               | Request                                             | Response                               |
-| --------------------- | --------------------------------------------------- | -------------------------------------- |
-| `infra:engineStatus`  | `void`                                              | `{ available: boolean }`               |
-| `infra:getPlan`       | `{ projectId }`                                     | `InfrastructurePlan \| null`           |
-| `infra:savePlan`      | `{ projectId, plan }`                               | `void`                                 |
-| `infra:validate`      | `{ plan }`                                          | `PlanIssue[]`                          |
-| `infra:preview`       | `{ projectId, streamId }`                           | `PreviewResult` — streams `engine:log` |
-| `infra:apply`         | `{ projectId, streamId }`                           | `ApplyResult` — streams `engine:log`   |
-| `infra:destroy`       | `{ projectId, streamId }`                           | `void` — streams `engine:log`          |
-| `infra:outputs`       | `{ projectId }`                                     | `Record<string, unknown>`              |
-| `infra:templates`     | `void`                                              | `InfrastructureTemplateSummary[]`      |
-| `infra:applyTemplate` | `{ projectId, templateId, sshPublicKey?, region? }` | `InfrastructurePlan`                   |
-| `infra:customTemplates`     | `void`                          | `CustomTemplateSummary[]` (user-saved templates) |
-| `infra:saveTemplate`        | `{ name, description?, plan }`  | `CustomTemplateSummary` (save current plan)      |
-| `infra:deleteTemplate`      | `{ id }`                        | `void`                                           |
-| `infra:applyCustomTemplate` | `{ projectId, templateId }`     | `InfrastructurePlan`                             |
+| Channel                     | Request                                             | Response                                         |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------ |
+| `infra:engineStatus`        | `void`                                              | `{ available: boolean }`                         |
+| `infra:getPlan`             | `{ projectId }`                                     | `InfrastructurePlan \| null`                     |
+| `infra:savePlan`            | `{ projectId, plan }`                               | `void`                                           |
+| `infra:validate`            | `{ plan }`                                          | `PlanIssue[]`                                    |
+| `infra:preview`             | `{ projectId, streamId }`                           | `PreviewResult` — streams `engine:log`           |
+| `infra:apply`               | `{ projectId, streamId }`                           | `ApplyResult` — streams `engine:log`             |
+| `infra:destroy`             | `{ projectId, streamId }`                           | `void` — streams `engine:log`                    |
+| `infra:refresh`             | `{ projectId, streamId }`                           | `void` — streams `engine:log`                    |
+| `infra:outputs`             | `{ projectId }`                                     | `Record<string, unknown>`                        |
+| `infra:managedStacks`       | `void`                                              | `ManagedStackSummary[]`                          |
+| `infra:destroyStack`        | `{ ref, streamId }`                                 | `void` — streams `engine:log`                    |
+| `infra:templates`           | `void`                                              | `InfrastructureTemplateSummary[]`                |
+| `infra:applyTemplate`       | `{ projectId, templateId, sshPublicKey?, region? }` | `InfrastructurePlan`                             |
+| `infra:customTemplates`     | `void`                                              | `CustomTemplateSummary[]` (user-saved templates) |
+| `infra:saveTemplate`        | `{ name, description?, plan }`                      | `CustomTemplateSummary` (save current plan)      |
+| `infra:deleteTemplate`      | `{ id }`                                            | `void`                                           |
+| `infra:applyCustomTemplate` | `{ projectId, templateId }`                         | `InfrastructurePlan`                             |
 
 `infra:preview` / `infra:apply` require the project to have a **linked provider
 credential**; the service resolves it (via `ProviderCredentialResolver`) and the
 engine builds the cloud provider from it. A missing link surfaces as a typed
 `InfrastructureError` telling the user to link one.
 
+`EngineEvent.progress`, when present, is provider-independent structured state:
+operation/resource scope, `preparing | in-progress | ready | failed`, a human
+label, and optional resource name/type and operation. It is translated from
+Pulumi's structured engine events; ordinary text output remains available in the
+same stream.
+
 ### Deployments
 
-| Channel            | Request                                                                                          | Response                               |
-| ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| `deploy:templates` | `void`                                                                                           | `DeploymentTemplateSummary[]`          |
-| `deploy:list`      | `{ projectId }`                                                                                  | `DeploymentDto[]`                      |
-| `deploy:count`     | `void`                                                                                           | `number`                               |
-| `deploy:run`       | `{ projectId, templateId, host, port, username, sshCredentialId, appImage?, domain?, streamId }` | `DeploymentDto` — streams `deploy:log` |
+| Channel                 | Request                                                                                                         | Response                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `deploy:templates`      | `void`                                                                                                          | `DeploymentTemplateSummary[]`          |
+| `deploy:list`           | `{ projectId }`                                                                                                 | `DeploymentDto[]`                      |
+| `deploy:count`          | `void`                                                                                                          | `number`                               |
+| `deploy:inspectHostKey` | `{ host, port }`                                                                                                | `{ fingerprint }`                      |
+| `deploy:cancel`         | `{ streamId }`                                                                                                  | `void`                                 |
+| `deploy:run`            | `{ projectId, templateId, host, port, username, sshCredentialId, hostKeySha256, appImage?, domain?, streamId }` | `DeploymentDto` — streams `deploy:log` |
 
 ### Activity, plugins, updates
 
-| Channel              | Request           | Response                        |
-| -------------------- | ----------------- | ------------------------------- |
-| `activity:list`      | `{ limit? }`      | `ActivityDto[]`                 |
-| `plugins:list`       | `void`            | `PluginListItem[]`              |
-| `plugins:install`    | `{ id }`          | `void`                          |
-| `plugins:setEnabled` | `{ id, enabled }` | `void`                          |
-| `plugins:uninstall`  | `{ id }`          | `void`                          |
-| `updates:check`      | `void`            | `{ current, latest, upToDate }` |
+| Channel              | Request           | Response           |
+| -------------------- | ----------------- | ------------------ |
+| `activity:list`      | `{ limit? }`      | `ActivityDto[]`    |
+| `plugins:list`       | `void`            | `PluginListItem[]` |
+| `plugins:active`     | `void`            | `PluginManifest[]` |
+| `plugins:install`    | `{ id }`          | `void`             |
+| `plugins:setEnabled` | `{ id, enabled }` | `void`             |
+| `plugins:uninstall`  | `{ id }`          | `void`             |
+| `updates:state`      | `void`            | `UpdateState`      |
+| `updates:check`      | `void`            | `UpdateState`      |
+| `updates:download`   | `void`            | `UpdateState`      |
+| `updates:install`    | `void`            | `void`             |
+
+### SSH keys, containers and backup
+
+| Channel                    | Purpose                                                |
+| -------------------------- | ------------------------------------------------------ |
+| `sshKeys:*`                | List, generate, import, reveal and delete SSH keys     |
+| `containers:list/action`   | Inventory and lifecycle over verified SSH              |
+| `containers:logs/stats`    | Remote logs and resource usage                         |
+| `containers:deployCompose` | Validate and deploy a Compose project                  |
+| `backup:create/restore`    | Export or safely restore database, key and Pulumi data |
 
 ### Logs (application log file)
 
-| Channel            | Request                             | Response              |
-| ------------------ | ----------------------------------- | --------------------- |
-| `logs:info`        | `void`                              | `{ path, dir }`       |
-| `logs:tail`        | `{ lines? }`                        | `string[]` (last N)   |
-| `logs:openFolder`  | `void`                              | `void`                |
-| `logs:report`      | `{ level, message, stack?, source? }` | `void` — renderer errors forwarded to the log file |
+| Channel           | Request                               | Response                                           |
+| ----------------- | ------------------------------------- | -------------------------------------------------- |
+| `logs:info`       | `void`                                | `{ path, dir }`                                    |
+| `logs:tail`       | `{ lines? }`                          | `string[]` (last N)                                |
+| `logs:openFolder` | `void`                                | `void`                                             |
+| `logs:report`     | `{ level, message, stack?, source? }` | `void` — renderer errors forwarded to the log file |
 
 ## How a call flows
 

@@ -65,6 +65,16 @@ export function registerInfraHandlers(): void {
     });
   });
 
+  registerHandler('infra:refresh', async ({ projectId, streamId }) => {
+    const ref = await stackRef(projectId);
+    orThrow(await getContainer().infrastructureService.refresh(ref, sink(streamId)));
+    getContainer().activityService.recordSafe({
+      type: 'infrastructure.refreshed',
+      message: 'Refreshed infrastructure state and detected drift',
+      projectId,
+    });
+  });
+
   registerHandler('infra:outputs', async ({ projectId }) => {
     const ref = await stackRef(projectId);
     return orThrow(await getContainer().infrastructureService.outputs(ref));

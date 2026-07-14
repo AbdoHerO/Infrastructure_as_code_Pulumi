@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   Card,
   CardContent,
+  Button,
   Input,
   Select,
   Switch,
@@ -15,6 +16,8 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useThemeStore } from '../../app/theme/theme-store.js';
 import { useSecurityStatus } from '../secrets/useCredentials.js';
 import { useSettings, useUpdateSettings } from './useSettings.js';
+import { invoke } from '../../lib/ipc.js';
+import { toast } from '@cloudforge/ui';
 
 /** The Settings module with grouped, tabbed sections. */
 export function SettingsPage(): JSX.Element {
@@ -39,15 +42,6 @@ export function SettingsPage(): JSX.Element {
         <TabsContent value="general">
           <Card>
             <CardContent className="divide-border/60 divide-y py-2">
-              <Row
-                title="Usage analytics"
-                description="Send anonymous usage data to improve CloudForge."
-              >
-                <Switch
-                  checked={settings?.telemetry.enabled ?? false}
-                  onCheckedChange={(enabled) => update.mutate({ telemetry: { enabled } })}
-                />
-              </Row>
               <Row title="Log retention" description="How many days to keep deployment logs.">
                 <Input
                   type="number"
@@ -126,6 +120,37 @@ export function SettingsPage(): JSX.Element {
                 <span className="text-sm font-medium">
                   {security?.backedByOsKeychain ? 'OS keychain' : 'Local encrypted key'}
                 </span>
+              </Row>
+              <Row
+                title="Backup"
+                description="Export the database, encryption key and Pulumi state."
+              >
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void invoke('backup:create', undefined).then(({ path }) => {
+                      if (path) toast.success(`Backup created: ${path}`);
+                    })
+                  }
+                >
+                  Create backup
+                </Button>
+              </Row>
+              <Row title="Restore" description="Restore a backup and restart CloudForge.">
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        'Restore a CloudForge backup? Current data is safety-backed-up and the app will restart.',
+                      )
+                    )
+                      return;
+                    void invoke('backup:restore', undefined);
+                  }}
+                >
+                  Restore backup
+                </Button>
               </Row>
             </CardContent>
           </Card>

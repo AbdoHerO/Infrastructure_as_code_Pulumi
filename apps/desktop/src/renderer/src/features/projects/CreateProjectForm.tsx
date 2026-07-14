@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { ENVIRONMENTS, isProviderKind, PROVIDER_LABELS } from '@cloudforge/core'
 import { IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { useCreateProject } from './useProjects.js';
+import { useSettings } from '../settings/useSettings.js';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(100, 'Name is too long'),
@@ -27,16 +28,23 @@ interface CreateProjectFormProps {
 export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProps): JSX.Element {
   const createProject = useCreateProject();
   const { data: credentials } = useCredentials();
+  const { data: settings } = useSettings();
   const providerCredentials = (credentials ?? []).filter((c) => isProviderKind(c.kind));
   const {
     register,
     handleSubmit,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { environment: 'development' },
   });
+  useEffect(() => {
+    if (settings?.deployment.defaultRegion) {
+      setValue('region', settings.deployment.defaultRegion, { shouldValidate: true });
+    }
+  }, [settings?.deployment.defaultRegion, setValue]);
 
   const onSubmit = handleSubmit(async (values) => {
     try {
@@ -87,14 +95,15 @@ export function CreateProjectForm({ onCreated, onCancel }: CreateProjectFormProp
                 </option>
                 {providerCredentials.map((credential) => (
                   <option key={credential.id} value={credential.id}>
-                    {credential.name} ({PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
+                    {credential.name} (
+                    {PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
                   </option>
                 ))}
               </Select>
               {providerCredentials.length === 0 ? (
                 <p className="text-muted-foreground text-xs">
-                  Add one under <span className="font-medium">Cloud Providers</span> first, then link
-                  it here (or on the project row). Required before Preview / Apply.
+                  Add one under <span className="font-medium">Cloud Providers</span> first, then
+                  link it here (or on the project row). Required before Preview / Apply.
                 </p>
               ) : null}
             </Field>

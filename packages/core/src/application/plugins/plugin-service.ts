@@ -20,8 +20,8 @@ export type PluginServiceError = PersistenceError | NotFoundError;
 
 /**
  * Merges the marketplace catalog with locally-persisted installation state and
- * manages install / enable / uninstall. Executing plugin code is intentionally
- * out of scope here — this service governs discovery and lifecycle metadata.
+ * manages install / enable / uninstall. Extensions are declarative and bundled;
+ * arbitrary third-party code is never loaded into the Electron process.
  */
 export class PluginService {
   constructor(private readonly plugins: PluginRepository) {}
@@ -44,6 +44,15 @@ export class PluginService {
     const manifest = findManifest(id);
     if (!manifest) return err(new NotFoundError(`Unknown plugin: ${id}`));
     return this.plugins.upsert(id, true, JSON.stringify(manifest));
+  }
+
+  async active(): Promise<Result<PluginManifest[], PersistenceError>> {
+    const installed = await this.plugins.listInstalled();
+    if (!installed.ok) return installed;
+    const enabled = new Set(
+      installed.value.filter((plugin) => plugin.enabled).map((plugin) => plugin.id),
+    );
+    return ok(PLUGIN_CATALOG.filter((manifest) => enabled.has(manifest.id)));
   }
 
   async setEnabled(id: string, enabled: boolean): Promise<Result<void, PluginServiceError>> {

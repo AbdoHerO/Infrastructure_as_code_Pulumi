@@ -6,6 +6,9 @@ import type {
   ApplyResult,
   ConnectionTestResult,
   CloudInstance,
+  CloudResource,
+  ContainerAction,
+  ContainerStats,
   CreateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
@@ -16,15 +19,20 @@ import type {
   EngineEvent,
   InfrastructurePlan,
   InfrastructureTemplateSummary,
+  InstanceAction,
   ManagedStackSummary,
   PlanIssue,
   PluginListItem,
+  PluginManifest,
   PreviewResult,
   ProjectDto,
   Region,
+  RemoteContainer,
   RevealedCredentialDto,
   SettingsPatch,
   Shape,
+  SshKeyAlgorithm,
+  SshKeySummary,
   UpdateProjectInput,
 } from '@cloudforge/core';
 
@@ -58,6 +66,20 @@ export interface IpcContract {
   'settings:update': { request: SettingsPatch; response: AppSettings };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
+  'backup:create': { request: void; response: { path: string | null } };
+  'backup:restore': { request: void; response: { restored: boolean } };
+
+  'sshKeys:list': { request: void; response: SshKeySummary[] };
+  'sshKeys:generate': {
+    request: { name: string; algorithm: SshKeyAlgorithm; passphrase?: string };
+    response: SshKeySummary;
+  };
+  'sshKeys:import': {
+    request: { name: string; privateKey: string; passphrase?: string };
+    response: SshKeySummary;
+  };
+  'sshKeys:revealPrivate': { request: { id: string }; response: { privateKey: string } };
+  'sshKeys:delete': { request: { id: string }; response: void };
 
   'providers:test': { request: { credentialId: string }; response: ConnectionTestResult };
   'providers:listRegions': { request: { credentialId: string }; response: Region[] };
@@ -67,6 +89,11 @@ export interface IpcContract {
     response: AvailabilityDomain[];
   };
   'providers:listInstances': { request: { credentialId: string }; response: CloudInstance[] };
+  'providers:listResources': { request: { credentialId: string }; response: CloudResource[] };
+  'providers:instanceAction': {
+    request: { credentialId: string; instanceId: string; action: InstanceAction };
+    response: CloudInstance;
+  };
   'providers:terminateInstance': {
     request: { credentialId: string; instanceId: string };
     response: void;
@@ -82,6 +109,7 @@ export interface IpcContract {
   };
   'infra:apply': { request: { projectId: string; streamId: string }; response: ApplyResult };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
+  'infra:refresh': { request: { projectId: string; streamId: string }; response: void };
   'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
   'infra:managedStacks': { request: void; response: ManagedStackSummary[] };
   'infra:destroyStack': {
@@ -92,6 +120,11 @@ export interface IpcContract {
   'deploy:templates': { request: void; response: DeploymentTemplateSummary[] };
   'deploy:list': { request: { projectId: string }; response: DeploymentDto[] };
   'deploy:count': { request: void; response: number };
+  'deploy:inspectHostKey': {
+    request: { host: string; port: number };
+    response: { fingerprint: string };
+  };
+  'deploy:cancel': { request: { streamId: string }; response: void };
   'deploy:run': {
     request: {
       projectId: string;
@@ -100,11 +133,30 @@ export interface IpcContract {
       port: number;
       username: string;
       sshCredentialId: string;
+      hostKeySha256: string;
       appImage?: string;
       domain?: string;
       streamId: string;
     };
     response: DeploymentDto;
+  };
+
+  'containers:list': { request: ContainerTargetRequest; response: RemoteContainer[] };
+  'containers:action': {
+    request: ContainerTargetRequest & { containerId: string; action: ContainerAction };
+    response: void;
+  };
+  'containers:logs': {
+    request: ContainerTargetRequest & { containerId: string; lines?: number };
+    response: { text: string };
+  };
+  'containers:stats': {
+    request: ContainerTargetRequest & { containerId: string };
+    response: ContainerStats;
+  };
+  'containers:deployCompose': {
+    request: ContainerTargetRequest & { projectName: string; composeYaml: string };
+    response: void;
   };
 
   'activity:list': { request: { limit?: number }; response: ActivityDto[] };
@@ -126,14 +178,15 @@ export interface IpcContract {
   };
 
   'plugins:list': { request: void; response: PluginListItem[] };
+  'plugins:active': { request: void; response: PluginManifest[] };
   'plugins:install': { request: { id: string }; response: void };
   'plugins:setEnabled': { request: { id: string; enabled: boolean }; response: void };
   'plugins:uninstall': { request: { id: string }; response: void };
 
-  'updates:check': {
-    request: void;
-    response: { current: string; latest: string; upToDate: boolean };
-  };
+  'updates:state': { request: void; response: UpdateState };
+  'updates:check': { request: void; response: UpdateState };
+  'updates:download': { request: void; response: UpdateState };
+  'updates:install': { request: void; response: void };
 
   'logs:info': { request: void; response: { path: string; dir: string } };
   'logs:tail': { request: { lines?: number }; response: string[] };
@@ -156,6 +209,7 @@ export interface IpcContract {
 export interface IpcEventContract {
   'engine:log': { streamId: string; event: EngineEvent };
   'deploy:log': { streamId: string; event: DeployEvent };
+  'updates:state': UpdateState;
 }
 
 export type IpcEventChannel = keyof IpcEventContract;
@@ -165,6 +219,7 @@ export type IpcEventPayload<C extends IpcEventChannel> = IpcEventContract[C];
 export const IPC_EVENT_CHANNELS = [
   'engine:log',
   'deploy:log',
+  'updates:state',
 ] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */
@@ -183,6 +238,25 @@ export type IpcResponse<C extends IpcChannel> = IpcContract[C]['response'];
 export type IpcResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: SerializedAppError };
+
+export interface ContainerTargetRequest {
+  readonly host: string;
+  readonly port: number;
+  readonly username: string;
+  readonly sshCredentialId: string;
+  readonly hostKeySha256: string;
+}
+
+export type UpdateStatus =
+  'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+
+export interface UpdateState {
+  readonly status: UpdateStatus;
+  readonly current: string;
+  readonly latest: string | null;
+  readonly progress?: number;
+  readonly message?: string;
+}
 
 /** Runtime information about the running application and host. */
 export interface AppInfo {
@@ -215,11 +289,20 @@ export const IPC_CHANNELS = [
   'settings:get',
   'settings:update',
   'security:status',
+  'backup:create',
+  'backup:restore',
+  'sshKeys:list',
+  'sshKeys:generate',
+  'sshKeys:import',
+  'sshKeys:revealPrivate',
+  'sshKeys:delete',
   'providers:test',
   'providers:listRegions',
   'providers:listShapes',
   'providers:listAvailabilityDomains',
   'providers:listInstances',
+  'providers:listResources',
+  'providers:instanceAction',
   'providers:terminateInstance',
   'infra:engineStatus',
   'infra:getPlan',
@@ -228,13 +311,21 @@ export const IPC_CHANNELS = [
   'infra:preview',
   'infra:apply',
   'infra:destroy',
+  'infra:refresh',
   'infra:outputs',
   'infra:managedStacks',
   'infra:destroyStack',
   'deploy:templates',
   'deploy:list',
   'deploy:count',
+  'deploy:inspectHostKey',
+  'deploy:cancel',
   'deploy:run',
+  'containers:list',
+  'containers:action',
+  'containers:logs',
+  'containers:stats',
+  'containers:deployCompose',
   'activity:list',
   'infra:templates',
   'infra:applyTemplate',
@@ -243,10 +334,14 @@ export const IPC_CHANNELS = [
   'infra:deleteTemplate',
   'infra:applyCustomTemplate',
   'plugins:list',
+  'plugins:active',
   'plugins:install',
   'plugins:setEnabled',
   'plugins:uninstall',
   'updates:check',
+  'updates:state',
+  'updates:download',
+  'updates:install',
   'logs:info',
   'logs:tail',
   'logs:openFolder',

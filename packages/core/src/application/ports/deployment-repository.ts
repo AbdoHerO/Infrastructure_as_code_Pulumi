@@ -30,4 +30,6 @@ export interface DeploymentRepository {
   update(id: string, patch: DeploymentUpdate): Promise<Result<void, PersistenceError>>;
   listByProject(projectId: string): Promise<Result<DeploymentRecord[], PersistenceError>>;
   countAll(): Promise<Result<number, PersistenceError>>;
+  /** Mark runs left active by a previous process as interrupted/failed. */
+  failRunning(reason: string, finishedAt: string): Promise<Result<number, PersistenceError>>;
 }

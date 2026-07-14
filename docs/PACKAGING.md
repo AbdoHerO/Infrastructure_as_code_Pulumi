@@ -49,21 +49,24 @@ CloudForge orchestrates external engines that must be installed on the host:
   The app uses a local file backend under the user data directory and a
   locally-generated passphrase; no Pulumi account is required.
 - **SSH access** — the Deployment module connects over SSH using a key stored in
-  the Credential Manager. Ansible/Docker steps run as shell commands on the
-  target host.
+  the Credential Manager. Deployment-template and Docker installation commands
+  run as shell steps on the target host.
 
 The dashboard surfaces engine availability ("IaC engine: Pulumi ready / not
 installed") so users know when a prerequisite is missing.
 
 ## Auto-updates
 
-`updates:check` is wired through IPC and the Updates module. Enabling real
-auto-updates is a packaging-time concern: add `electron-updater`, publish
-releases to a provider (GitHub Releases, S3, …), and call `autoUpdater` from the
-main process. The UI contract is already in place.
+The main process uses `electron-updater` with the GitHub Releases publisher in
+`electron-builder.yml`. The Updates page checks the feed, downloads with real
+percentage progress, and installs after explicit confirmation. Update checks are
+disabled in unpackaged development builds. Publishing must include the generated
+`latest*.yml` metadata beside signed artifacts.
 
 ## Code signing
 
-Signing/notarization is configured through electron-builder environment
-variables (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, …) in CI. It is
-intentionally not committed.
+`.github/workflows/release.yml` packages all three platforms, creates a CycloneDX
+SBOM and build provenance, and supplies signing/notarization values through
+repository secrets. Add `WIN_CSC_LINK`/`MAC_CSC_LINK`, certificate passwords,
+`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`; private keys are
+intentionally never committed.

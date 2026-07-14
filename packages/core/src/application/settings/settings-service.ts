@@ -21,7 +21,7 @@ export class SettingsService {
     const current = await this.get();
     if (!current.ok) return current;
 
-    const next = merge(current.value, patch);
+    const next = normalize(merge(current.value, patch));
     const saved = await this.repository.set(SETTINGS_KEY, JSON.stringify(next));
     if (!saved.ok) return saved;
     return ok(next);
@@ -44,6 +44,18 @@ function merge(base: AppSettings, patch: SettingsPatch): AppSettings {
     appearance: { ...base.appearance, ...patch.appearance },
     deployment: { ...base.deployment, ...patch.deployment },
     logs: { ...base.logs, ...patch.logs },
-    telemetry: { ...base.telemetry, ...patch.telemetry },
+  };
+}
+
+function normalize(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    deployment: {
+      ...settings.deployment,
+      defaultRegion: settings.deployment.defaultRegion.trim().slice(0, 100),
+    },
+    logs: {
+      retentionDays: Math.min(365, Math.max(1, Math.trunc(settings.logs.retentionDays) || 30)),
+    },
   };
 }

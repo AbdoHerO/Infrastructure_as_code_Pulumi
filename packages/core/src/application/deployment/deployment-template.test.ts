@@ -17,7 +17,8 @@ describe('deployment templates', () => {
     expect(template).toBeDefined();
     const steps = template!.build({});
     const commands = steps.map((s) => s.command).join('\n');
-    expect(commands).toContain('get.docker.com');
+    expect(commands).toContain('apt-get install -y docker.io');
+    expect(commands).not.toContain('curl -fsSL');
     expect(commands).toContain('docker-ce.repo');
     expect(commands).toContain('command -v dnf');
     expect(commands).toContain('systemctl enable --now docker');

@@ -60,7 +60,9 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
   );
   if (tables.length === 0) return false; // Fresh DB — ensureSchema built it correctly.
 
-  const foreignKeys = await db.$queryRawUnsafe<ForeignKeyRow[]>('PRAGMA foreign_key_list("Project")');
+  const foreignKeys = await db.$queryRawUnsafe<ForeignKeyRow[]>(
+    'PRAGMA foreign_key_list("Project")',
+  );
   const providerFk = foreignKeys.find((fk) => fk.from === 'providerId');
   if (providerFk?.table !== 'Provider') return false; // Already correct (or no FK).
 

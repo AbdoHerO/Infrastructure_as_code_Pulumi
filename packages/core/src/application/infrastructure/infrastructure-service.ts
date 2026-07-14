@@ -183,6 +183,13 @@ export class InfrastructureService {
     return this.engine.destroy(ref, onEvent);
   }
 
+  refresh(
+    ref: StackReference,
+    onEvent?: EngineEventSink,
+  ): Promise<Result<void, InfrastructureError>> {
+    return this.engine.refresh(ref, onEvent);
+  }
+
   outputs(ref: StackReference): Promise<Result<Record<string, unknown>, InfrastructureError>> {
     return this.engine.outputs(ref);
   }

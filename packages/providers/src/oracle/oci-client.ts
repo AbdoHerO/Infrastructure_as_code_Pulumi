@@ -6,6 +6,18 @@ const REQUEST_TIMEOUT_MS = 20_000;
 
 /** Perform a signed OCI REST request and parse the JSON response. */
 export function ociRequest<T>(options: SignableRequest): Promise<Result<T, ProviderError>> {
+  return ociRequestPage<T>(options).then((result) => (result.ok ? ok(result.value.data) : result));
+}
+
+export interface OciResponsePage<T> {
+  readonly data: T;
+  readonly nextPage?: string;
+}
+
+/** Perform a signed request and retain OCI pagination metadata. */
+export function ociRequestPage<T>(
+  options: SignableRequest,
+): Promise<Result<OciResponsePage<T>, ProviderError>> {
   let headers;
   try {
     headers = signRequest(options);
@@ -17,6 +29,12 @@ export function ociRequest<T>(options: SignableRequest): Promise<Result<T, Provi
 
   const url = new URL(options.url);
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: Result<OciResponsePage<T>, ProviderError>): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
     const req = httpsRequest(
       {
         method: options.method,
@@ -33,12 +51,15 @@ export function ociRequest<T>(options: SignableRequest): Promise<Result<T, Provi
           const status = res.statusCode ?? 0;
           if (status >= 200 && status < 300) {
             try {
-              resolve(ok(text ? (JSON.parse(text) as T) : (undefined as T)));
+              const data = text ? (JSON.parse(text) as T) : (undefined as T);
+              const rawNext = res.headers['opc-next-page'];
+              const nextPage = Array.isArray(rawNext) ? rawNext[0] : rawNext;
+              finish(ok({ data, ...(nextPage ? { nextPage } : {}) }));
             } catch (cause) {
-              resolve(err(new ProviderError('Received malformed JSON from OCI', { cause })));
+              finish(err(new ProviderError('Received malformed JSON from OCI', { cause })));
             }
           } else {
-            resolve(
+            finish(
               err(
                 new ProviderError(`OCI request failed with status ${status}`, {
                   context: { status, body: text.slice(0, 400) },
@@ -52,9 +73,9 @@ export function ociRequest<T>(options: SignableRequest): Promise<Result<T, Provi
 
     req.on('timeout', () => {
       req.destroy();
-      resolve(err(new ProviderError('OCI request timed out')));
+      finish(err(new ProviderError('OCI request timed out')));
     });
-    req.on('error', (cause) => resolve(err(new ProviderError('OCI request failed', { cause }))));
+    req.on('error', (cause) => finish(err(new ProviderError('OCI request failed', { cause }))));
 
     if (options.body) req.write(options.body);
     req.end();

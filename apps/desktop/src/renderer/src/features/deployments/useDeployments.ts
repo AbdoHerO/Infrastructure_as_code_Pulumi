@@ -45,8 +45,23 @@ export interface RunDeploymentArgs {
   port: number;
   username: string;
   sshCredentialId: string;
+  hostKeySha256: string;
   streamId: string;
   appImage?: string;
+}
+
+export function useInspectHostKey(): UseMutationResult<
+  { fingerprint: string },
+  Error,
+  { host: string; port: number }
+> {
+  return useMutation({ mutationFn: (args) => invoke('deploy:inspectHostKey', args) });
+}
+
+export function useCancelDeployment(): UseMutationResult<void, Error, string> {
+  return useMutation({
+    mutationFn: (streamId: string) => invoke('deploy:cancel', { streamId }),
+  });
 }
 
 /** Launch a deployment. */

@@ -10,6 +10,7 @@ Configured in [`main/window.ts`](../apps/desktop/src/main/window.ts) and
 
 - **`contextIsolation: true`** — the renderer and preload run in isolated worlds.
 - **`nodeIntegration: false`** — the renderer has no Node access.
+- **`sandbox: true`** — the renderer and preload use Chromium process sandboxing.
 - **`webSecurity: true`**.
 - **Strict Content-Security-Policy** — applied to every response _and_ declared
   in the renderer HTML: `default-src 'self'`, `script-src 'self'`, no remote
@@ -94,9 +95,10 @@ the Logs module — a lightweight, exportable audit log.
 - **The fallback cipher key is on disk** — prefer running on a platform with an
   OS keychain. The banner tells users which mode is active.
 - **Deployment steps run as shell commands** on the target host over SSH; treat
-  templates and any user-supplied container images as trusted input.
+  templates as privileged input. Host fingerprints are pinned, shell-derived
+  values are validated, and container image references reject shell metacharacters.
 - **Plugin execution is intentionally out of scope** — the marketplace manages
-  install/enable metadata only; it does not evaluate third-party code.
+  trusted declarative contributions only; it does not evaluate third-party code.
 - **Code signing / notarization** for distributables is configured via
   electron-builder environment variables in CI (not committed). See
   [Packaging](PACKAGING.md).

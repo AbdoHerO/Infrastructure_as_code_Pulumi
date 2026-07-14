@@ -1,4 +1,14 @@
-import { closeSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
 import pino, { type Logger } from 'pino';
@@ -17,6 +27,7 @@ import pino, { type Logger } from 'pino';
 let logger: Logger | undefined;
 let logFilePath = '';
 let logDir = '';
+const MAX_ACTIVE_LOG_BYTES = 10 * 1024 * 1024;
 
 /** Absolute path to the log directory (safe to call before init). */
 export function getLogDir(): string {
@@ -35,6 +46,7 @@ export function initLogger(): Logger {
   logDir = join(app.getPath('userData'), 'logs');
   mkdirSync(logDir, { recursive: true });
   logFilePath = join(logDir, 'cloudforge.log');
+  rotateActiveLog();
 
   const fileStream = pino.destination({ dest: logFilePath, sync: false, mkdir: true });
 
@@ -67,6 +79,34 @@ export function initLogger(): Logger {
 
   logger.info({ event: 'log.init', logFilePath }, 'Logging initialised');
   return logger;
+}
+
+function rotateActiveLog(): void {
+  try {
+    if (!existsSync(logFilePath) || statSync(logFilePath).size < MAX_ACTIVE_LOG_BYTES) return;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    renameSync(logFilePath, join(logDir, `cloudforge-${timestamp}.log`));
+  } catch {
+    // Logging must remain available even if rotation cannot be performed.
+  }
+}
+
+/** Remove rotated logs older than the configured retention period. */
+export function pruneLogs(retentionDays: number): number {
+  const cutoff = Date.now() - Math.max(1, retentionDays) * 86_400_000;
+  let removed = 0;
+  try {
+    for (const name of readdirSync(getLogDir())) {
+      if (!/^cloudforge-.+\.log$/.test(name)) continue;
+      const path = join(getLogDir(), name);
+      if (statSync(path).mtimeMs >= cutoff) continue;
+      unlinkSync(path);
+      removed += 1;
+    }
+  } catch {
+    // Retention cleanup is best-effort and must not prevent startup.
+  }
+  return removed;
 }
 
 /** The active logger (lazily initialised). */

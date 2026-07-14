@@ -73,16 +73,16 @@ infrastructure templates.
 
 ### Application — services (`src/application/…`)
 
-| Service                     | Responsibility                                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ProjectService`            | Project CRUD use-cases (create / list / get / update / remove / count).                                       |
-| `CredentialService`         | Encrypt-on-write / decrypt-on-reveal credentials; metadata-only listing.                                      |
-| `SettingsService`           | Typed `AppSettings` merged over defaults, JSON-persisted.                                                     |
-| `ProviderConnectionService` | Decrypt a credential → build a `CloudProvider` via `ProviderFactory` → run a capability.                      |
+| Service                     | Responsibility                                                                                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ProjectService`            | Project CRUD use-cases (create / list / get / update / remove / count).                                                                                                                                     |
+| `CredentialService`         | Encrypt-on-write / decrypt-on-reveal credentials; metadata-only listing.                                                                                                                                    |
+| `SettingsService`           | Typed `AppSettings` merged over defaults, JSON-persisted.                                                                                                                                                   |
+| `ProviderConnectionService` | Decrypt a credential → build a `CloudProvider` via `ProviderFactory` → run a capability.                                                                                                                    |
 | `InfrastructureService`     | Persist a plan (`PlanStore`), validate it, resolve the project's credential and run preview/apply/destroy/outputs; apply built-in templates; save/list/delete/apply **custom** templates (`TemplateStore`). |
-| `DeploymentService`         | Build steps from a deployment template → run via `Deployer` → record the deployment.                          |
-| `ActivityService`           | Record and read the audit/activity feed.                                                                      |
-| `PluginService`             | Merge the marketplace catalog with local install/enable state.                                                |
+| `DeploymentService`         | Build steps from a deployment template → run via `Deployer` → record the deployment.                                                                                                                        |
+| `ActivityService`           | Record and read the audit/activity feed.                                                                                                                                                                    |
+| `PluginService`             | Merge the marketplace catalog with local install/enable state.                                                                                                                                              |
 
 ### Application — templates & catalogs
 
@@ -146,7 +146,8 @@ Implements `core`'s `CloudProvider` contract.
   `node:crypto` (no heavyweight SDK). Unit-tested end-to-end (sign → verify).
 - `oracle/oci-client.ts` — a signed HTTPS request helper.
 - `oracle/oracle-provider.ts` — `OracleProvider`: `testConnection`,
-  `getAccountInfo`, `listRegions`, `listAvailabilityDomains`, `listShapes`.
+  `getAccountInfo`, `listRegions`, `listAvailabilityDomains`, `listShapes`,
+  `listInstances`, and `terminateInstance`.
 - `registry.ts` — `DefaultProviderFactory` (registering a provider = one `case`
   - an implementation).
 
@@ -159,8 +160,10 @@ API**. Pulumi is fully encapsulated here; no other layer references it.
 
 - `pulumi-engine.ts` — `PulumiEngine` (inline programs, local file backend,
   encrypted stack secrets): `isAvailable`, `preview`, `apply`, `refresh`,
-  `destroy`, `outputs`, with a streamed event sink. `preview`/`apply` receive the
-  provider credentials and pass them to the program.
+  `destroy`, `outputs`, managed-stack discovery, and a streamed event sink.
+  Pulumi text output is accompanied by provider-independent structured progress
+  translated from resource start/output/failure/summary events. `preview`/`apply`
+  receive the provider credentials and pass them to the program.
 - `build-program.ts` — `buildProgram(plan, credentials?)` dispatches on
   `providerKind`; without credentials it falls back to a metadata-only program
   (offline validation / unit tests).
@@ -177,11 +180,14 @@ automatically on the first preview/apply.
 
 ## `@cloudforge/deployment` — the deployment engine adapter
 
-Implements `core`'s `Deployer` port over SSH.
+Implements `core`'s deployment, SSH-key and container ports.
 
-- `ssh-deployer.ts` — `SshDeployer` (`ssh2`): connects, runs steps sequentially,
-  streams stdout/stderr per step, stops on the first non-zero exit. An
-  Ansible-playbook deployer could be added behind the same port.
+- `ssh-deployer.ts` — verified host fingerprint, cancellation/timeouts, streamed
+  output and strict exit-status handling.
+- `node-ssh-key-generator.ts` — Ed25519/RSA generation, encrypted PKCS#8 import
+  and OpenSSH SHA-256 fingerprints.
+- `ssh-container-manager.ts` — Docker lifecycle, logs/stats and Compose over
+  verified SSH transport.
 
 Runtime dep `ssh2` stays **external** (optional native binding).
 

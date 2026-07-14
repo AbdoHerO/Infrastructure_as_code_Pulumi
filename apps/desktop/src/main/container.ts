@@ -5,6 +5,7 @@ import { err, InfrastructureError, ok, type Result, unwrap } from '@cloudforge/s
 import {
   ActivityService,
   CredentialService,
+  type ContainerManager,
   DeploymentService,
   InfrastructureService,
   PluginService,
@@ -13,9 +14,10 @@ import {
   type ProviderCredentials,
   ProviderConnectionService,
   SettingsService,
+  SshKeyService,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
-import { SshDeployer } from '@cloudforge/deployment';
+import { NodeSshKeyGenerator, SshContainerManager, SshDeployer } from '@cloudforge/deployment';
 import {
   createPrismaClient,
   type Db,
@@ -32,7 +34,7 @@ import {
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
-import { log } from './logging/logger.js';
+import { log, pruneLogs } from './logging/logger.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -48,6 +50,8 @@ export interface AppContainer {
   readonly deploymentService: DeploymentService;
   readonly activityService: ActivityService;
   readonly pluginService: PluginService;
+  readonly sshKeyService: SshKeyService;
+  readonly containerManager: ContainerManager;
   readonly secretsBackedByOsKeychain: boolean;
   dispose(): Promise<void>;
 }
@@ -94,6 +98,9 @@ export async function initContainer(): Promise<AppContainer> {
   const projectService = new ProjectService(new PrismaProjectRepository(db));
   const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
   const settingsService = new SettingsService(new PrismaSettingsRepository(db));
+  const appSettings = unwrap(await settingsService.get());
+  const prunedLogs = pruneLogs(appSettings.logs.retentionDays);
+  if (prunedLogs > 0) log().info({ event: 'logs.pruned', count: prunedLogs }, 'Pruned old logs');
   const providerService = new ProviderConnectionService(
     credentialService,
     new DefaultProviderFactory(),
@@ -137,8 +144,17 @@ export async function initContainer(): Promise<AppContainer> {
     new SshDeployer(),
     new PrismaDeploymentRepository(db),
   );
+  const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
+  if (recoveredDeployments > 0) {
+    log().warn(
+      { event: 'deploy.recovered', count: recoveredDeployments },
+      'Marked interrupted deployments as failed',
+    );
+  }
   const activityService = new ActivityService(new PrismaActivityRepository(db));
   const pluginService = new PluginService(new PrismaPluginRepository(db));
+  const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
+  const containerManager = new SshContainerManager();
 
   container = {
     projectService,
@@ -149,6 +165,8 @@ export async function initContainer(): Promise<AppContainer> {
     deploymentService,
     activityService,
     pluginService,
+    sshKeyService,
+    containerManager,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     dispose: async () => {
       await db.$disconnect();

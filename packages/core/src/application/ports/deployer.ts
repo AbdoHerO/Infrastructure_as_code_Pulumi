@@ -8,6 +8,13 @@ export interface DeploymentTarget {
   readonly username: string;
   readonly privateKey: string;
   readonly passphrase?: string | undefined;
+  /** Trusted SHA-256 host-key fingerprint (base64, with or without SHA256: prefix). */
+  readonly hostKeySha256: string;
+}
+
+export interface DeploymentOptions {
+  readonly signal?: AbortSignal;
+  readonly stepTimeoutMs?: number;
 }
 
 /** A streamed event emitted during a deployment. */
@@ -31,9 +38,13 @@ export interface DeploymentOutcome {
  * playbook runner can be added behind the same port.
  */
 export interface Deployer {
+  /** Read the server's presented host key without authenticating or trusting it. */
+  inspectHostKey(host: string, port: number): Promise<Result<string, DeploymentError>>;
+
   deploy(
     target: DeploymentTarget,
     steps: readonly DeploymentStep[],
     onEvent?: DeployEventSink,
+    options?: DeploymentOptions,
   ): Promise<Result<DeploymentOutcome, DeploymentError>>;
 }

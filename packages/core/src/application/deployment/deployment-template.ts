@@ -37,11 +37,11 @@ function dockerBase(): DeploymentStep[] {
     ),
     step(
       'Install prerequisites',
-      'if command -v apt-get >/dev/null; then sudo apt-get install -y ca-certificates curl git gnupg ufw fail2ban; else sudo dnf install -y ca-certificates curl git dnf-utils firewalld; fi',
+      'if command -v apt-get >/dev/null; then sudo apt-get install -y ca-certificates git gnupg ufw fail2ban; else sudo dnf install -y ca-certificates git dnf-utils firewalld; fi',
     ),
     step(
       'Install Docker',
-      'if command -v apt-get >/dev/null; then curl -fsSL https://get.docker.com | sudo sh; else sudo dnf remove -y --noautoremove oci-oke-node-minimal cri-o runc || true; sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y --allowerasing docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi',
+      'if command -v apt-get >/dev/null; then sudo apt-get install -y docker.io docker-compose-v2 || sudo apt-get install -y docker.io docker-compose; else sudo dnf remove -y --noautoremove oci-oke-node-minimal cri-o runc || true; sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo && sudo dnf install -y --allowerasing docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi',
     ),
     step('Enable Docker', 'sudo systemctl enable --now docker'),
     step('Grant Docker access', 'sudo usermod -aG docker "$USER"'),

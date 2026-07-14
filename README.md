@@ -6,8 +6,9 @@
 
 **Provision. Configure. Deploy. Manage.**
 
-A production-grade desktop application to provision, configure, deploy and manage
-cloud infrastructure through a modern graphical interface — no command line required.
+A local-first desktop application for provisioning, configuring, deploying and
+managing cloud infrastructure through a modern graphical interface. The OCI,
+SSH deployment, key-management and remote Docker workflows are functional.
 
 </div>
 
@@ -20,7 +21,7 @@ DevOps engineers and small teams manage real cloud infrastructure end to end fro
 beautiful desktop app.
 
 Under the hood it uses the **Pulumi Automation API** as its infrastructure engine and
-**Ansible** for post-provisioning configuration — but users never touch either
+an **SSH deployment engine** for post-provisioning configuration — but users never touch either
 directly. The application is the product; the tooling is an implementation detail.
 
 ### Core principles
@@ -37,7 +38,7 @@ Everything is **reproducible**, **configurable**, **versioned**, **extensible** 
 | State / data   | Zustand, TanStack Query, React Hook Form, Zod                    |
 | Backend (main) | Node.js, TypeScript, Prisma + SQLite, Pino                       |
 | Infra engine   | Pulumi Automation API                                            |
-| Configuration  | Ansible, SSH, Docker SDK                                         |
+| Configuration  | SSH (`ssh2`) and idempotent deployment templates                 |
 
 ## Monorepo layout
 
@@ -72,16 +73,17 @@ Full documentation lives in [`docs/`](docs/README.md):
   [Packages](docs/PACKAGES.md) · [Modules](docs/MODULES.md)
 - [IPC Reference](docs/IPC.md) · [Data Model](docs/DATA-MODEL.md) ·
   [Security](docs/SECURITY.md)
-- [Development](docs/DEVELOPMENT.md) · [Packaging](docs/PACKAGING.md)
+- [Development](docs/DEVELOPMENT.md) · [Packaging](docs/PACKAGING.md) ·
+  **[Completion Report](docs/ROADMAP.md)**
 
 ## Getting started
 
-**Prerequisites:** Node.js ≥ 20.18 and pnpm ≥ 9.
+**Prerequisites:** Node.js ≥ 20.18 and Corepack (included with Node.js).
 
 ```bash
-pnpm install                                          # install the workspace
-pnpm --filter @cloudforge/database prisma:generate    # generate the Prisma client
-pnpm desktop                                          # run the desktop app in development
+corepack pnpm install
+corepack pnpm --filter @cloudforge/database prisma:generate
+corepack pnpm desktop
 ```
 
 Then follow the [Getting Started guide](docs/GETTING-STARTED.md) to use the app,
@@ -115,11 +117,19 @@ build) before the next begins.
 | **7**  | ✅ Infrastructure module (plan editor, live provisioning)            |
 | **8**  | ✅ Deployment pipeline (SSH) + deployment templates                  |
 | **9**  | ✅ Live logs, activity timeline, dashboard charts                    |
-| **10** | ✅ Templates, plugin system, marketplace, updates                    |
+| **10** | ✅ Templates, trusted extensions and signed-update client            |
 | **11** | ✅ Hardening, coverage, packaging (electron-builder)                 |
+| **12** | ✅ SSH trust, validation, cancellation and lifecycle polling         |
+| **13** | ✅ Regression suite and focused coverage configuration               |
+| **14** | ✅ Dedicated SSH Keys module                                         |
+| **15** | ✅ Remote Containers and Compose module                              |
+| **16** | ✅ OCI lifecycle, resource inventory and Pulumi refresh              |
+| **17** | ✅ Enforced settings, log rotation, backup and restore               |
+| **18** | ✅ Update workflow, sandbox, CI, SBOM and release automation         |
+| **19** | ✅ Safe bundled declarative extension runtime                        |
 
-All fourteen modules are implemented. See [docs/PACKAGING.md](docs/PACKAGING.md)
-for building distributables and the runtime prerequisites (Pulumi CLI, Ansible).
+See the [Completion Report](docs/ROADMAP.md) for the implemented scope and the
+external credentials required to publish signed installers.
 
 ## License
 

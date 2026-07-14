@@ -19,6 +19,26 @@ credential. Oracle Console is not required for normal provisioning or deletion.
 8. Select **Apply**. Wait for success, then copy the public IP from **Stack outputs**.
 9. Connect with the image's default user: `opc` for Oracle Linux or `ubuntu` for Ubuntu.
 
+## Understand the creation progress
+
+CloudForge does not display a fabricated percentage. While Preview, Apply or
+Destroy is running, an indeterminate progress panel listens to Pulumi's
+structured engine events and shows real operations such as:
+
+```text
+Preparing infrastructure engine
+Creating Vcn “network”
+Vcn “network” ready
+Creating Instance “hanoutplus-server”
+Instance “hanoutplus-server” ready
+Infrastructure ready in 2m 15s
+```
+
+A failed resource is marked **Failed** and the final operation cannot become
+**Ready** after a failure. The OCI provider waits for the cloud operation before
+Pulumi emits resource completion. If the app is interrupted, stale deployment
+records are reconciled to **Failed** at the next startup instead of remaining stuck.
+
 ## HanoutPlusApp created on this workstation
 
 - Project: `HanoutPlusApp`

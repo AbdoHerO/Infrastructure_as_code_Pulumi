@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Rocket } from 'lucide-react';
+import { Fingerprint, Loader2, Rocket, Square } from 'lucide-react';
 import {
   Badge,
   type BadgeProps,
@@ -27,6 +27,8 @@ import {
   useDeployLogs,
   useDeployments,
   useDeploymentTemplates,
+  useInspectHostKey,
+  useCancelDeployment,
   useRunDeployment,
   useSshCredentials,
 } from './useDeployments.js';
@@ -50,6 +52,8 @@ export function DeploymentsPage(): JSX.Element {
   const { data: templates } = useDeploymentTemplates();
   const sshCredentials = useSshCredentials();
   const run = useRunDeployment();
+  const inspectHostKey = useInspectHostKey();
+  const cancel = useCancelDeployment();
   const [streamId] = useState(() => crypto.randomUUID());
   const { lines, clear } = useDeployLogs(streamId);
 
@@ -60,6 +64,7 @@ export function DeploymentsPage(): JSX.Element {
   const [port, setPort] = useState(22);
   const [sshCredentialId, setSshCredentialId] = useState('');
   const [appImage, setAppImage] = useState('');
+  const [hostKeySha256, setHostKeySha256] = useState('');
 
   const { data: history } = useDeployments(projectId || null);
 
@@ -82,7 +87,14 @@ export function DeploymentsPage(): JSX.Element {
     );
   }
 
-  const canRun = projectId && templateId && host && username && sshCredentialId && !run.isPending;
+  const canRun =
+    projectId &&
+    templateId &&
+    host &&
+    username &&
+    sshCredentialId &&
+    hostKeySha256 &&
+    !run.isPending;
 
   const launch = (): void => {
     clear();
@@ -94,6 +106,7 @@ export function DeploymentsPage(): JSX.Element {
         port,
         username,
         sshCredentialId,
+        hostKeySha256,
         streamId,
         ...(appImage ? { appImage } : {}),
       },
@@ -148,14 +161,20 @@ export function DeploymentsPage(): JSX.Element {
                 <Input
                   placeholder="203.0.113.10"
                   value={host}
-                  onChange={(e) => setHost(e.target.value)}
+                  onChange={(e) => {
+                    setHost(e.target.value);
+                    setHostKeySha256('');
+                  }}
                 />
               </Field>
               <Field label="Port">
                 <Input
                   type="number"
                   value={port}
-                  onChange={(e) => setPort(Number(e.target.value) || 22)}
+                  onChange={(e) => {
+                    setPort(Number(e.target.value) || 22);
+                    setHostKeySha256('');
+                  }}
                 />
               </Field>
               <Field label="SSH user">
@@ -181,14 +200,57 @@ export function DeploymentsPage(): JSX.Element {
                 onChange={(e) => setAppImage(e.target.value)}
               />
             </Field>
-            <Button className="w-full" disabled={!canRun} onClick={launch}>
+            <Field label="Trusted SSH host fingerprint">
+              <div className="flex gap-2">
+                <Input value={hostKeySha256} readOnly placeholder="Inspect the host first" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!host || inspectHostKey.isPending || run.isPending}
+                  onClick={() =>
+                    inspectHostKey.mutate(
+                      { host, port },
+                      {
+                        onSuccess: ({ fingerprint }) => setHostKeySha256(fingerprint),
+                        onError: (error) => toast.error(error.message),
+                      },
+                    )
+                  }
+                >
+                  {inspectHostKey.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Fingerprint className="size-4" />
+                  )}
+                  Inspect
+                </Button>
+              </div>
+              {hostKeySha256 ? (
+                <p className="text-warning text-xs">
+                  Verify this fingerprint with your server/provider before deploying.
+                </p>
+              ) : null}
+            </Field>
+            <div className="flex gap-2">
+              <Button className="flex-1" disabled={!canRun} onClick={launch}>
+                {run.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Rocket className="size-4" />
+                )}
+                Deploy
+              </Button>
               {run.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Rocket className="size-4" />
-              )}
-              Deploy
-            </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => cancel.mutate(streamId)}
+                  disabled={cancel.isPending}
+                >
+                  <Square className="size-4" />
+                  Cancel
+                </Button>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
 

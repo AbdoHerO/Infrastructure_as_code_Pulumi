@@ -34,9 +34,11 @@ confirmed via toast feedback. Channels: `projects:*`.
 ## Cloud Providers (`/providers`)
 
 Lists credentials whose kind is a cloud provider. Per card: **Test connection**
-(shows account info) and on-demand **region/shape discovery**. Backed by the
-`ProviderConnectionService` → `OracleProvider`. Channels: `providers:*` +
-`credentials:list`.
+(shows account info), on-demand **region/shape discovery**, and OCI account
+instance inventory. Unmanaged instances can be terminated after exact-name
+confirmation; managed instances should be removed from their Pulumi stack.
+Backed by the `ProviderConnectionService` → `OracleProvider`. Channels:
+`providers:*` + `credentials:list`.
 
 ## Templates (`/templates`)
 
@@ -60,10 +62,16 @@ shapes and availability domains are populated **live from the linked account**
 a curated OS list or a specific image OCID, and network/subnet/instance
 references are dropdowns of the plan's own resources. **Save as template** stores
 the current plan for reuse. Client-side `validatePlan` surfaces issues. Actions
-**Save plan / Preview / Apply / Destroy** run against the Pulumi engine with a
-live, streamed `LogTerminal`; preview/apply require a linked provider credential.
-Channels: `infra:getPlan`, `infra:savePlan`, `infra:preview`, `infra:apply`,
-`infra:destroy`, `infra:outputs`, `infra:saveTemplate`; event `engine:log`.
+**Save plan / Preview / Apply / Destroy** run against the Pulumi engine with both
+a live `LogTerminal` and structured progress. The progress panel is
+indeterminate—Oracle does not expose a reliable percentage—and shows the current
+real resource operation, per-resource Ready/Failed states, and distinct final
+states for Preview, Apply, Refresh and Destroy. Preview/apply require a linked
+provider credential. Managed stacks can be discovered and destroyed even when
+their project row no longer exists. Channels: `infra:getPlan`, `infra:savePlan`,
+`infra:preview`, `infra:apply`, `infra:destroy`, `infra:outputs`,
+`infra:managedStacks`, `infra:destroyStack`, `infra:saveTemplate`; event
+`engine:log`.
 
 ## Deployments (`/deployments`)
 
@@ -76,8 +84,10 @@ never sends it back to the renderer. Channels: `deploy:templates`, `deploy:run`,
 
 ## Containers (`/containers`)
 
-Placeholder. Intended for Docker container/Compose management via the Docker SDK;
-implement following the same module pattern.
+Manage a Docker host through verified SSH transport. The module inventories
+containers, starts/stops/restarts/removes them, reads logs and live stats, and
+deploys validated Compose YAML. The Docker API is never exposed over an
+unauthenticated TCP socket. Channels: `containers:*`.
 
 ## Logs (`/logs`)
 
@@ -99,29 +109,32 @@ Channels: `credentials:*`, `security:status`.
 
 ## SSH Keys (`/ssh-keys`)
 
-Placeholder nav item; SSH keys are stored as an `ssh` credential kind in the
-Credential Manager (used by Deployments).
+Generate encrypted Ed25519 or RSA-3072 key pairs, import PEM private keys,
+validate passphrases, show OpenSSH public keys and SHA-256 fingerprints, and
+perform protected private-key reveal/delete actions. The encrypted Credential
+record is the single source of truth. Channels: `sshKeys:*`.
 
 ## Settings (`/settings`)
 
-Tabbed, live-persisted configuration: **General** (usage analytics, log
-retention), **Appearance** (theme mode via the Zustand store, reduced motion),
+Tabbed, live-persisted configuration: **General** (log retention),
+**Appearance** (theme mode via the Zustand store, reduced motion),
 **Deployment** (confirm destructive actions, default region), **Security**
-(where secrets are encrypted). Channels: `settings:get`, `settings:update`,
-`security:status`.
+(encryption status plus database/Pulumi-state backup and restore). Channels:
+`settings:*`, `security:status`, `backup:*`.
 
-## Plugin Marketplace (`/plugins`)
+## Built-in Extensions (`/plugins`)
 
-Discover, **install** and **enable/disable** extensions from the marketplace
-catalog (providers, templates, widgets, themes, ansible-roles). Install/enable
-state is persisted; executing plugin code is out of scope by design. Channels:
-`plugins:*`.
+Install and enable trusted, bundled declarative contributions. Active
+contributions affect the running renderer (for example the Nord theme). The
+module deliberately does not download or execute third-party JavaScript.
+Channels: `plugins:*`.
 
 ## Updates (`/updates`)
 
-Shows the current version and update status; "Check for updates" calls
-`updates:check`. Real auto-update wiring (electron-updater) is enabled at
-packaging time. Channel: `updates:check`.
+Uses `electron-updater` against the configured GitHub Releases feed and exposes
+checking, available, downloading percentage, downloaded, error and
+restart-to-install states. Packaged builds receive events over `updates:state`;
+development builds clearly report that update checks require packaging.
 
 ## About (`/about`)
 

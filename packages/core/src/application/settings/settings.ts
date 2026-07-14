@@ -13,9 +13,6 @@ export interface AppSettings {
   readonly logs: {
     readonly retentionDays: number;
   };
-  readonly telemetry: {
-    readonly enabled: boolean;
-  };
 }
 
 /** Immutable default settings applied when no stored value exists. */
@@ -23,7 +20,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: { reducedMotion: false },
   deployment: { confirmDestructive: true, defaultRegion: '' },
   logs: { retentionDays: 30 },
-  telemetry: { enabled: false },
 };
 
 /** A deep-partial patch for updating settings. */

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Blocks, Cloud, FileCode2, Palette, Puzzle, Server } from 'lucide-react';
+import { Blocks, Cloud, FileCode2, Palette, Puzzle, Server, Trash2 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Switch, toast } from '@cloudforge/ui';
 import type { PluginListItem } from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
@@ -22,7 +22,10 @@ export function MarketplacePage(): JSX.Element {
   });
 
   const refresh = (): Promise<void> =>
-    queryClient.invalidateQueries({ queryKey: ['plugins', 'list'] }).then(() => undefined);
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['plugins', 'list'] }),
+      queryClient.invalidateQueries({ queryKey: ['plugins', 'active'] }),
+    ]).then(() => undefined);
 
   const install = useMutation({
     mutationFn: (id: string) => invoke('plugins:install', { id }),
@@ -32,12 +35,16 @@ export function MarketplacePage(): JSX.Element {
     mutationFn: (args: { id: string; enabled: boolean }) => invoke('plugins:setEnabled', args),
     onSuccess: refresh,
   });
+  const uninstall = useMutation({
+    mutationFn: (id: string) => invoke('plugins:uninstall', { id }),
+    onSuccess: refresh,
+  });
 
   return (
     <>
       <PageHeader
-        title="Plugin Marketplace"
-        description="Extend CloudForge with providers, templates, widgets and themes."
+        title="Built-in Extensions"
+        description="Trusted declarative capabilities bundled with CloudForge; extensions never execute downloaded code."
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -52,6 +59,7 @@ export function MarketplacePage(): JSX.Element {
               })
             }
             onToggle={(enabled) => setEnabled.mutate({ id: plugin.id, enabled })}
+            onUninstall={() => uninstall.mutate(plugin.id)}
           />
         ))}
       </div>
@@ -64,11 +72,13 @@ function PluginCard({
   installing,
   onInstall,
   onToggle,
+  onUninstall,
 }: {
   plugin: PluginListItem;
   installing: boolean;
   onInstall: () => void;
   onToggle: (enabled: boolean) => void;
+  onUninstall: () => void;
 }): JSX.Element {
   const Icon = KIND_ICON[plugin.kind] ?? Puzzle;
   return (
@@ -92,6 +102,9 @@ function PluginCard({
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-xs">Enabled</span>
               <Switch checked={plugin.enabled} onCheckedChange={onToggle} />
+              <Button size="icon" variant="ghost" title="Uninstall" onClick={onUninstall}>
+                <Trash2 className="size-4" />
+              </Button>
             </div>
           ) : (
             <Button size="sm" variant="outline" disabled={installing} onClick={onInstall}>

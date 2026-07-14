@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="120" y1="80" x2="890" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+    <linearGradient id="forge" x1="410" y1="360" x2="650" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#background)"/>
+  <path d="M270 671c-78 0-142-63-142-141 0-70 51-128 118-139 29-109 128-189 246-189 100 0 187 58 228 142 96 4 172 82 172 179 0 81-54 149-128 171H270Z" fill="#ffffff" fill-opacity=".23"/>
+  <path d="M355 689c-74 0-134-59-134-132 0-66 49-122 113-130 26-91 110-157 209-157 87 0 163 50 199 123 79 6 141 71 141 151 0 83-68 150-152 150H355Z" fill="#ffffff"/>
+  <path d="m538 354 119 119-62 62 75 75-132 132-132-132 75-75-62-62 119-119Z" fill="url(#forge)" stroke="#4338ca" stroke-width="30" stroke-linejoin="round"/>
+  <path d="m538 432 54 54-54 54-54-54 54-54Zm0 164 54 54-54 54-54-54 54-54Z" fill="#4f46e5"/>
+</svg>

@@ -150,3 +150,36 @@
     transform: translateX(420%);
   }
 }
+
+html[data-reduced-motion] *,
+html[data-reduced-motion] *::before,
+html[data-reduced-motion] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+html[data-theme-nord] {
+  --background: 220 16% 18%;
+  --foreground: 218 27% 92%;
+  --card: 220 17% 21%;
+  --card-foreground: 218 27% 92%;
+  --popover: 220 17% 21%;
+  --popover-foreground: 218 27% 92%;
+  --primary: 193 43% 67%;
+  --primary-foreground: 220 16% 18%;
+  --secondary: 220 16% 26%;
+  --secondary-foreground: 218 27% 92%;
+  --muted: 220 16% 26%;
+  --muted-foreground: 219 28% 75%;
+  --accent: 213 32% 52%;
+  --accent-foreground: 218 27% 94%;
+  --border: 220 16% 31%;
+  --input: 220 16% 31%;
+  --ring: 193 43% 67%;
+  --sidebar: 220 17% 15%;
+  --sidebar-foreground: 218 27% 92%;
+  --sidebar-border: 220 16% 26%;
+  --sidebar-accent: 220 16% 26%;
+}

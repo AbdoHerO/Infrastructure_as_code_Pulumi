@@ -30,6 +30,8 @@ export * from './application/ports/deployer.js';
 export * from './application/ports/deployment-repository.js';
 export * from './application/ports/activity-repository.js';
 export * from './application/ports/plugin-repository.js';
+export * from './application/ports/ssh-key-generator.js';
+export * from './application/ports/container-manager.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -51,3 +53,4 @@ export * from './application/deployment/deployment-service.js';
 export * from './application/activity/activity-service.js';
 export * from './application/plugins/plugin-catalog.js';
 export * from './application/plugins/plugin-service.js';
+export * from './application/ssh-keys/ssh-key-service.js';

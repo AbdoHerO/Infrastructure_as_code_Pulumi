@@ -12,17 +12,17 @@
   "packageManager": "pnpm@9.12.0",
   "type": "module",
   "scripts": {
-    "build": "turbo run build",
+    "build": "corepack pnpm -r --if-present build",
     "dev": "turbo run dev",
-    "desktop": "pnpm --filter @cloudforge/desktop dev",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "lint:fix": "turbo run lint -- --fix",
-    "test": "turbo run test",
+    "desktop": "corepack pnpm --filter @cloudforge/desktop dev",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "lint": "corepack pnpm -r --if-present lint",
+    "lint:fix": "corepack pnpm -r --if-present lint -- --fix",
+    "test": "corepack pnpm -r --if-present test",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
-    "clean": "turbo run clean && rimraf node_modules"
+    "clean": "corepack pnpm -r --if-present clean && rimraf node_modules"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

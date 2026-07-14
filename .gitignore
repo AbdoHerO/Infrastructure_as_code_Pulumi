@@ -6,6 +6,10 @@ node_modules/
 dist/
 out/
 build/
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/icon.svg
+!apps/desktop/build/icon.png
 *.tsbuildinfo
 .turbo/
 

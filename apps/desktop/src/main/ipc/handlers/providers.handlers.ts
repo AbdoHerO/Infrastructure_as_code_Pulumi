@@ -24,6 +24,14 @@ export function registerProviderHandlers(): void {
     orThrow(await getContainer().providerService.listInstances(credentialId)),
   );
 
+  registerHandler('providers:listResources', async ({ credentialId }) =>
+    orThrow(await getContainer().providerService.listResources(credentialId)),
+  );
+
+  registerHandler('providers:instanceAction', async ({ credentialId, instanceId, action }) =>
+    orThrow(await getContainer().providerService.instanceAction(credentialId, instanceId, action)),
+  );
+
   registerHandler('providers:terminateInstance', async ({ credentialId, instanceId }) => {
     const container = getContainer();
     orThrow(await container.providerService.terminateInstance(credentialId, instanceId));

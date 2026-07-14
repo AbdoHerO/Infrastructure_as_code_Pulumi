@@ -24,6 +24,12 @@ asarUnpack:
 
 npmRebuild: true
 
+publish:
+  provider: github
+  owner: AbdoHerO
+  repo: Infrastructure_as_code_Pulumi
+  releaseType: release
+
 win:
   target:
     - nsis

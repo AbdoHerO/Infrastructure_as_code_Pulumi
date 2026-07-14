@@ -33,6 +33,17 @@ export interface CloudInstance {
   readonly createdAt?: string;
 }
 
+export type InstanceAction = 'start' | 'stop' | 'reboot';
+
+export interface CloudResource {
+  readonly id: string;
+  readonly name: string;
+  readonly type: 'vcn' | 'subnet' | 'internet-gateway' | 'volume';
+  readonly state: string;
+  readonly region: string;
+  readonly details?: string;
+}
+
 /** Basic account/tenancy information shown after a successful connection. */
 export interface AccountInfo {
   readonly accountId: string;
@@ -79,4 +90,13 @@ export interface CloudProvider {
 
   /** Permanently terminate an instance and its boot volume. */
   terminateInstance(instanceId: string): Promise<Result<void, ProviderError>>;
+
+  /** Start, stop or reboot an existing compute instance and wait for completion. */
+  instanceAction(
+    instanceId: string,
+    action: InstanceAction,
+  ): Promise<Result<CloudInstance, ProviderError>>;
+
+  /** Discover supported non-compute resources in the configured compartment. */
+  listResources(): Promise<Result<CloudResource[], ProviderError>>;
 }

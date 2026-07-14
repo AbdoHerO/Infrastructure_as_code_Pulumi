@@ -3,6 +3,34 @@
 All notable changes to CloudForge are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project builds in phases.
 
+## [Unreleased]
+
+### Added
+
+- Completed Phases 12–19: verified SSH host trust, cancellable/time-bounded
+  deployments, dedicated SSH Keys, remote Containers/Compose, paginated OCI
+  inventory and lifecycle controls, Pulumi drift refresh, backup/restore, log
+  rotation, real packaged updates, cross-platform CI/release/SBOM automation and
+  a safe declarative extension runtime.
+- Added RSA/Ed25519 key-generator, settings and extension lifecycle regression
+  tests; the suite now contains 62 passing tests across 15 files.
+- Structured infrastructure progress derived from Pulumi Automation API engine
+  events. Preview, Apply, Refresh and Destroy now show an indeterminate progress
+  bar, the current resource operation, per-resource Ready/Failed states and an
+  operation-specific completion message.
+- Managed-stack discovery/destruction and direct OCI account-instance discovery
+  and termination, including dependency-safe deletion guidance.
+- A first-instance walkthrough and an evidence-based completion roadmap.
+
+### Changed
+
+- Enabled the Electron renderer sandbox and removed non-functional telemetry and
+  fake provider/plugin claims. Docker installation no longer pipes a downloaded
+  script into a privileged shell.
+- Documentation now distinguishes implemented modules from placeholders and
+  partial foundations. Removed incorrect claims that Ansible, Docker SDK based
+  container management, executable plugins and real auto-updates already ship.
+
 ## [Phase 11] — Hardening, Coverage & Packaging
 
 ### Added
@@ -11,7 +39,7 @@ All notable changes to CloudForge are documented here. The format follows
   permission request (camera, microphone, geolocation, …) via
   `setPermissionRequestHandler`/`setPermissionCheckHandler`, complementing the
   existing context isolation, CSP and navigation guards.
-- **Coverage**: a Vitest workspace enables `pnpm test:coverage` to run all 45
+- **Coverage**: a Vitest workspace enables `pnpm test:coverage` to run all 49
   tests with a single V8 coverage report from the repo root.
 - **Packaging**: `electron-builder` configuration (`electron-builder.yml`) with
   Windows/macOS/Linux targets and `asarUnpack` for the native/runtime deps
@@ -21,7 +49,7 @@ All notable changes to CloudForge are documented here. The format follows
 ### Verified
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` all green;
-  `pnpm test:coverage` runs 45 tests across the workspace.
+  `pnpm test:coverage` runs 49 tests across the workspace.
 
 ## [Phase 10] — Templates, Plugins & Updates
 

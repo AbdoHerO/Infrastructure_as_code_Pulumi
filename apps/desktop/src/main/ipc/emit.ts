@@ -11,17 +11,19 @@ export function emitEvent<C extends IpcEventChannel>(
   channel: C,
   payload: IpcEventPayload<C>,
 ): void {
-  const message = payload.event.message.trimEnd();
-  if (message.length > 0) {
-    const isError = payload.event.stream === 'stderr' || payload.event.stream === 'error';
-    const fields = {
-      event: `stream.${channel}`,
-      channel,
-      stream: payload.event.stream,
-      streamId: payload.streamId,
-    };
-    if (isError) log().warn(fields, message);
-    else log().trace(fields, message);
+  if ('event' in payload) {
+    const message = payload.event.message.trimEnd();
+    if (message.length > 0) {
+      const isError = payload.event.stream === 'stderr' || payload.event.stream === 'error';
+      const fields = {
+        event: `stream.${channel}`,
+        channel,
+        stream: payload.event.stream,
+        streamId: payload.streamId,
+      };
+      if (isError) log().warn(fields, message);
+      else log().trace(fields, message);
+    }
   }
 
   for (const contents of webContents.getAllWebContents()) {

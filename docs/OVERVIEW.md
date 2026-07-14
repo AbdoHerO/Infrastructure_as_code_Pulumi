@@ -67,7 +67,8 @@ A typical journey through the app:
 
 4. Compose infrastructure     Infrastructure → pick project → add resources
    (or apply a template)       (network, subnet, firewall, compute, volume)
-                              → Preview  → Apply   (live Pulumi log stream)
+                              → Preview  → Apply   (structured resource progress
+                                plus the live Pulumi log stream)
 
 5. Deploy an application       Deployments → pick project + template + host + SSH key
                               → Deploy   (live SSH log stream, per-step)
@@ -82,14 +83,12 @@ IPC channels (see [IPC Reference](IPC.md)).
 ## The 14 modules
 
 Dashboard · Projects · Cloud Providers · Templates · Infrastructure ·
-Deployments · Containers¹ · Logs · Secrets · SSH Keys² · Settings ·
-Plugin Marketplace · Updates · About.
+Deployments · Containers · Logs · Secrets · SSH Keys · Settings · Built-in
+Extensions · Updates · About.
 
-¹ _Containers_ currently renders a phase-scoped placeholder (Docker SDK
-management was not a numbered milestone); the pattern to implement it mirrors the
-other modules.
-² SSH keys are managed as an `ssh` **credential kind** in the Credential
-Manager, so the "SSH Keys" nav item shares that storage.
+All routes are functional. Containers use verified SSH rather than an exposed
+Docker socket, and SSH Keys uses the encrypted Credential store as its source of
+truth. See the [Completion Report](ROADMAP.md) for delivered scope.
 
 ## Glossary
 

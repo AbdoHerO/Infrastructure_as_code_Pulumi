@@ -1,6 +1,16 @@
 import type { ReactNode } from 'react';
 import { Trash2 } from 'lucide-react';
-import { Badge, Button, Card, CardContent, Input, Label, Select, Switch, Textarea } from '@cloudforge/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Label,
+  Select,
+  Switch,
+  Textarea,
+} from '@cloudforge/ui';
 import type {
   AvailabilityDomain,
   ComputeResource,
@@ -41,7 +51,13 @@ const FALLBACK_SHAPES = [
   'VM.Standard.E4.Flex',
   'VM.Standard.E5.Flex',
 ];
-const OS_IMAGES = ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-20.04', 'oracle-linux-9', 'oracle-linux-8'];
+const OS_IMAGES = [
+  'ubuntu-22.04',
+  'ubuntu-24.04',
+  'ubuntu-20.04',
+  'oracle-linux-9',
+  'oracle-linux-8',
+];
 const OCID_OPTION = '__ocid__';
 
 /** OCI-aware editor for a single resource, dispatching on its kind. */
@@ -329,7 +345,9 @@ function VolumeFields({
           type="number"
           min={50}
           value={numText(resource.sizeGb)}
-          onChange={(event) => onChange({ ...resource, sizeGb: toNumber(event.target.value) ?? 50 })}
+          onChange={(event) =>
+            onChange({ ...resource, sizeGb: toNumber(event.target.value) ?? 50 })
+          }
         />
       </Field>
       <Field label="Attach to instance" hint="Optional — leave as None for an unattached volume">

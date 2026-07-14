@@ -11,4 +11,6 @@ export interface PluginManifest {
   readonly kind: PluginKind;
   readonly description: string;
   readonly author: string;
+  /** Declarative capability interpreted by trusted application code. */
+  readonly contribution?: 'theme:nord';
 }

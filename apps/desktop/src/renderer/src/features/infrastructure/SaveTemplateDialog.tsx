@@ -38,7 +38,11 @@ export function SaveTemplateDialog({
       return;
     }
     save.mutate(
-      { name: name.trim(), plan, ...(description.trim() ? { description: description.trim() } : {}) },
+      {
+        name: name.trim(),
+        plan,
+        ...(description.trim() ? { description: description.trim() } : {}),
+      },
       {
         onSuccess: () => {
           toast.success(`Saved template "${name.trim()}"`);

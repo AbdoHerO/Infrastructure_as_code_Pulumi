@@ -97,13 +97,13 @@ Persisted templates. Built-in templates live in code; this table stores
 `definition` holds the serialized `InfrastructurePlan` and `builtIn` is `false`
 (see [`PrismaTemplateStore`](../packages/database/src/repositories/prisma-template-store.ts)).
 
-| Column                | Type       | Notes                                        |
-| --------------------- | ---------- | -------------------------------------------- |
-| `id`                  | String @id |                                              |
-| `kind`                | String     | `infrastructure` \| `deployment`             |
-| `name`, `description` | String     |                                              |
-| `definition`          | String     | JSON — the saved `InfrastructurePlan`        |
-| `builtIn`             | Boolean    | `false` for user-saved templates             |
+| Column                | Type       | Notes                                 |
+| --------------------- | ---------- | ------------------------------------- |
+| `id`                  | String @id |                                       |
+| `kind`                | String     | `infrastructure` \| `deployment`      |
+| `name`, `description` | String     |                                       |
+| `definition`          | String     | JSON — the saved `InfrastructurePlan` |
+| `builtIn`             | Boolean    | `false` for user-saved templates      |
 
 ### Deployment
 
@@ -200,15 +200,15 @@ The audit / activity feed powering the Logs module and dashboard timeline.
 
 ## Where things are stored (summary)
 
-| Data                              | Table / key                                                      |
-| --------------------------------- | ---------------------------------------------------------------- |
-| Projects                          | `Project`                                                        |
-| Credentials (encrypted)           | `Credential`                                                     |
-| App settings                      | `Setting` (`app.settings`)                                       |
-| Infrastructure plan (per project) | `Setting` (`plan:<projectId>`)                                   |
-| Custom infrastructure templates   | `Template` (`kind = infrastructure`, `builtIn = false`)          |
-| Pulumi state                      | local file backend under `userData/pulumi/state` (not in SQLite) |
-| Deployment history                | `Deployment`                                                     |
-| Activity/audit                    | `Activity`                                                       |
-| Installed plugins                 | `Plugin`                                                         |
+| Data                              | Table / key                                                                |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| Projects                          | `Project`                                                                  |
+| Credentials (encrypted)           | `Credential`                                                               |
+| App settings                      | `Setting` (`app.settings`)                                                 |
+| Infrastructure plan (per project) | `Setting` (`plan:<projectId>`)                                             |
+| Custom infrastructure templates   | `Template` (`kind = infrastructure`, `builtIn = false`)                    |
+| Pulumi state                      | local file backend under `userData/pulumi/state` (not in SQLite)           |
+| Deployment history                | `Deployment`                                                               |
+| Activity/audit                    | `Activity`                                                                 |
+| Installed plugins                 | `Plugin`                                                                   |
 | Application log file              | `userData/logs/cloudforge.log` (not in SQLite — see [Modules](MODULES.md)) |

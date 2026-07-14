@@ -147,8 +147,12 @@ recheck them against [Configuration & Credentials](CONFIGURATION.md).
    OCID), **boot-volume size**, **subnet**, **availability domain**, public-IP
    assignment and the **SSH public key**. Network/subnet/instance references are
    dropdowns of the resources already in your plan.
-4. **Save plan**, then **Preview** (a dry run) and watch the live engine log.
-5. **Apply** to provision. **Destroy** tears it down.
+4. **Save plan**, then **Preview** (a dry run). Watch the indeterminate progress
+   panel and live engine log; each planned resource is listed separately.
+5. **Apply** to provision. The panel moves through real Pulumi/OCI resource
+   operations and becomes **Ready** only after the operation summary succeeds.
+   **Destroy** shows the same dependency-ordered resource progress and ends as
+   **Infrastructure destroyed**.
 6. To reuse a plan, click **Save as template** — it appears under **Templates →
    Your templates**, where you can apply it to any project or delete it.
 
@@ -162,6 +166,9 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 > shows _Pulumi ready_ when it's detected) and the project's provider credential
 > linked (Step 3). On the first Apply, Pulumi downloads the Oracle resource
 > plugin, so it needs internet access and may take a minute.
+> Keep CloudForge open while an operation is running. The percentage is
+> intentionally omitted because OCI does not provide a reliable completion
+> percentage for instance creation.
 >
 > **Free-tier tip:** the built-in templates default to the `VM.Standard.E4.Flex`
 > shape, which is **not** Always-Free-eligible. To stay within the free tier,
@@ -187,11 +194,16 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 
 ### Other modules
 
-- **Settings** — theme, telemetry, log retention, default region, confirm-destructive.
-- **Plugin Marketplace** — install/enable extensions (providers, templates,
-  widgets, themes).
-- **Updates** — current version + update status.
+- **Settings** — reduced motion, log retention, default region, destructive
+  confirmation, and database/Pulumi-state backup and restore.
+- **Built-in Extensions** — enable trusted declarative capabilities. Nord changes
+  the live theme; downloaded JavaScript is never executed.
+- **Updates** — check, download, progress, and restart-to-install states.
 - **Templates** — browse infrastructure & deployment blueprints.
+- **SSH Keys** — generate/import Ed25519 or RSA pairs, inspect and copy public
+  keys/fingerprints, explicitly reveal private material, and delete credentials.
+- **Containers** — use verified SSH transport to list/control containers, read
+  logs/stats, and deploy Compose projects without exposing the Docker TCP socket.
 
 ---
 

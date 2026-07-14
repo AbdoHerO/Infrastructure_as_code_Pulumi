@@ -1,7 +1,5 @@
 import { createHashRouter } from 'react-router-dom';
-import { Container, KeyRound } from 'lucide-react';
 import { AppShell } from './layout/AppShell.js';
-import { PlaceholderPage } from '../components/PlaceholderPage.js';
 import { DashboardPage } from '../features/dashboard/DashboardPage.js';
 import { ProjectsPage } from '../features/projects/ProjectsPage.js';
 import { InfrastructurePage } from '../features/infrastructure/InfrastructurePage.js';
@@ -14,6 +12,8 @@ import { UpdatesPage } from '../features/updates/UpdatesPage.js';
 import { SecretsPage } from '../features/secrets/SecretsPage.js';
 import { SettingsPage } from '../features/settings/SettingsPage.js';
 import { AboutPage } from '../features/about/AboutPage.js';
+import { SshKeysPage } from '../features/ssh-keys/SshKeysPage.js';
+import { ContainersPage } from '../features/containers/ContainersPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -29,31 +29,11 @@ export const router = createHashRouter([
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'infrastructure', element: <InfrastructurePage /> },
       { path: 'deployments', element: <DeploymentsPage /> },
-      {
-        path: 'containers',
-        element: (
-          <PlaceholderPage
-            title="Containers"
-            description="Manage Docker containers and Compose stacks."
-            icon={Container}
-            phase="Phase 8"
-          />
-        ),
-      },
+      { path: 'containers', element: <ContainersPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },
-      {
-        path: 'ssh-keys',
-        element: (
-          <PlaceholderPage
-            title="SSH Keys"
-            description="Manage SSH key pairs used for deployments."
-            icon={KeyRound}
-            phase="Phase 4"
-          />
-        ),
-      },
+      { path: 'ssh-keys', element: <SshKeysPage /> },
       { path: 'logs', element: <LogsPage /> },
       { path: 'plugins', element: <MarketplacePage /> },
       { path: 'updates', element: <UpdatesPage /> },
