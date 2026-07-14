@@ -1,6 +1,7 @@
 import { join } from 'node:path';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow } from 'electron';
 import { is } from '@electron-toolkit/utils';
+import { openSafeExternalUrl } from './security/external-links.js';
 
 /**
  * Create the main application window with a hardened security posture:
@@ -32,7 +33,7 @@ export function createMainWindow(): BrowserWindow {
   // Open target=_blank / external navigations in the user's default browser,
   // never inside the app window.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void openSafeExternalUrl(url);
     return { action: 'deny' };
   });
 
@@ -41,7 +42,7 @@ export function createMainWindow(): BrowserWindow {
     const rendererUrl = process.env.ELECTRON_RENDERER_URL;
     if (rendererUrl && url.startsWith(rendererUrl)) return;
     event.preventDefault();
-    void shell.openExternal(url);
+    void openSafeExternalUrl(url);
   });
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;

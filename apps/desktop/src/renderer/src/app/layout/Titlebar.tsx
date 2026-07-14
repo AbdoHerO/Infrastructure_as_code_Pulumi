@@ -1,4 +1,5 @@
-import { Monitor, Moon, Search, Sun } from 'lucide-react';
+import { CircleHelp, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@cloudforge/ui';
 import type { ThemeMode } from '@cloudforge/shared';
 import { useThemeStore } from '../theme/theme-store.js';
@@ -18,6 +19,8 @@ const MODE_ICON = {
 
 /** Draggable top bar hosting global search and the theme switcher. */
 export function Titlebar(): JSX.Element {
+  const location = useLocation();
+  const navigate = useNavigate();
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   const openPalette = useCommandPalette((s) => s.setOpen);
@@ -37,14 +40,37 @@ export function Titlebar(): JSX.Element {
         </kbd>
       </button>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        title={`Theme: ${mode}`}
-        onClick={() => setMode(NEXT_MODE[mode])}
-      >
-        <ModeIcon className="size-4" />
-      </Button>
+      <div className="no-drag flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Open help for this page"
+          aria-label="Open contextual documentation"
+          onClick={() => navigate(`/documentation?doc=${documentationFor(location.pathname)}`)}
+        >
+          <CircleHelp className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          title={`Theme: ${mode}`}
+          onClick={() => setMode(NEXT_MODE[mode])}
+        >
+          <ModeIcon className="size-4" />
+        </Button>
+      </div>
     </header>
   );
+}
+
+function documentationFor(pathname: string): string {
+  if (pathname.startsWith('/infrastructure')) return 'first-instance';
+  if (pathname.startsWith('/ansible')) return 'ansible';
+  if (pathname.startsWith('/nginx')) return 'nginx-manager';
+  if (pathname.startsWith('/firewall')) return 'firewall-manager';
+  if (pathname.startsWith('/ssl')) return 'ssl-domains';
+  if (pathname.startsWith('/providers') || pathname.startsWith('/secrets')) return 'configuration';
+  if (pathname.startsWith('/updates')) return 'moving-and-releasing';
+  if (pathname.startsWith('/settings')) return 'configuration';
+  return 'getting-started';
 }

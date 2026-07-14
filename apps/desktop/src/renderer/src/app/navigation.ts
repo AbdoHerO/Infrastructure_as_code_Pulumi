@@ -1,5 +1,6 @@
 import {
   Blocks,
+  BookOpen,
   Boxes,
   Cloud,
   Container,
@@ -40,7 +41,10 @@ export interface NavGroup {
 export const NAVIGATION: readonly NavGroup[] = [
   {
     title: 'Overview',
-    items: [{ label: 'Dashboard', path: '/', icon: LayoutDashboard }],
+    items: [
+      { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { label: 'Documentation', path: '/documentation', icon: BookOpen },
+    ],
   },
   {
     title: 'Manage',

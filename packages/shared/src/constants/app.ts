@@ -4,7 +4,6 @@ export const APP = {
   subtitle: 'Modern Infrastructure Platform',
   tagline: ['Provision.', 'Configure.', 'Deploy.', 'Manage.'] as const,
   id: 'com.cloudforge.desktop',
-  version: '0.1.0',
 } as const;
 
 /** Supported UI theme modes. */

@@ -7,7 +7,9 @@
     "baseUrl": ".",
     "paths": {
       "@renderer/*": ["src/renderer/src/*"],
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@desktop-build/*": ["build/*"],
+      "@docs/*": ["../../docs/*"]
     }
   },
   "include": [

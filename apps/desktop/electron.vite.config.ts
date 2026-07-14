@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
@@ -44,8 +45,30 @@ const workspaceAliases = {
  */
 const WORKSPACE_PACKAGES = Object.keys(workspaceAliases);
 
+function gitCommit(): string {
+  const fromEnvironment = process.env.CLOUDFORGE_GIT_COMMIT ?? process.env.GITHUB_SHA;
+  if (fromEnvironment) return fromEnvironment.slice(0, 12);
+  try {
+    return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+      cwd: resolve(__dirname, '../..'),
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+const builtAt = process.env.CLOUDFORGE_BUILD_DATE ?? new Date().toISOString();
+const buildNumber =
+  process.env.CLOUDFORGE_BUILD_NUMBER ??
+  `${builtAt.slice(0, 10).replaceAll('-', '')}.dev`;
+const buildInfo = { buildNumber, gitCommit: gitCommit(), builtAt };
+
 export default defineConfig({
   main: {
+    define: {
+      __CLOUDFORGE_BUILD_INFO__: JSON.stringify(buildInfo),
+    },
     plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     resolve: {
       alias: {
@@ -84,6 +107,8 @@ export default defineConfig({
         ...workspaceAliases,
         '@renderer': resolve(__dirname, 'src/renderer/src'),
         '@shared': resolve(__dirname, 'src/shared'),
+        '@desktop-build': resolve(__dirname, 'build'),
+        '@docs': resolve(__dirname, '../../docs'),
       },
     },
     plugins: [react(), productionCspMeta()],

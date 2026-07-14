@@ -18,6 +18,7 @@ import { AnsiblePage } from '../features/ansible/AnsiblePage.js';
 import { NginxPage } from '../features/nginx/NginxPage.js';
 import { FirewallPage } from '../features/firewall/FirewallPage.js';
 import { SslPage } from '../features/ssl/SslPage.js';
+import { DocumentationPage } from '../features/documentation/DocumentationPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -30,6 +31,7 @@ export const router = createHashRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <DashboardPage /> },
+      { path: 'documentation', element: <DocumentationPage /> },
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'infrastructure', element: <InfrastructurePage /> },
       { path: 'deployments', element: <DeploymentsPage /> },

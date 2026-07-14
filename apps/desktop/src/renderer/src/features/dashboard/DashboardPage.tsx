@@ -1,5 +1,6 @@
-import { Boxes, Cloud, Rocket, Server } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
+import { BookOpen, Boxes, Cloud, Rocket, Server } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useProjects } from '../projects/useProjects.js';
@@ -34,6 +35,33 @@ export function DashboardPage(): JSX.Element {
     <>
       <PageHeader title="Dashboard" description={`${APP.subtitle} — ${APP.tagline.join(' ')}`} />
 
+      {projectCount === 0 ? (
+        <Card className="border-primary/30 bg-primary/5 mb-6">
+          <CardContent className="flex flex-col items-start justify-between gap-4 py-5 sm:flex-row sm:items-center">
+            <div>
+              <p className="font-semibold">
+                New to CloudForge? Start with the guided documentation.
+              </p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Configure Oracle credentials, create your first project, preview it safely, and
+                connect with SSH.
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/documentation?doc=getting-started">
+                  <BookOpen />
+                  Getting started
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link to="/documentation?doc=first-instance">Create first instance</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat, index) => (
           <StatCard key={stat.label} index={index} {...stat} />
@@ -55,7 +83,7 @@ export function DashboardPage(): JSX.Element {
             <CardTitle>System</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2.5 text-sm">
-            <InfoRow label="Version" value={`v${info?.version ?? APP.version}`} />
+            <InfoRow label="Version" value={info ? `v${info.version}` : '—'} />
             <InfoRow label="Platform" value={info ? `${info.platform} · ${info.arch}` : '—'} />
             <InfoRow label="Electron" value={info?.versions.electron ?? '—'} />
             <InfoRow label="Node" value={info?.versions.node ?? '—'} />

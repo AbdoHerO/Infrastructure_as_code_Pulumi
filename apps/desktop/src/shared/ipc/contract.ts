@@ -66,6 +66,8 @@ import type {
 export interface IpcContract {
   'app:getInfo': { request: void; response: AppInfo };
   'app:ping': { request: string; response: string };
+  'app:openExternal': { request: { link: 'github' | 'releases' }; response: void };
+  'app:copyDiagnostics': { request: void; response: void };
 
   'projects:list': { request: void; response: ProjectDto[] };
   'projects:get': { request: { id: string }; response: ProjectDto };
@@ -416,6 +418,16 @@ export interface AppInfo {
   readonly platform: NodeJS.Platform;
   readonly arch: string;
   readonly locale: string;
+  readonly packaged: boolean;
+  readonly build: {
+    readonly number: string;
+    readonly commit: string;
+    readonly builtAt: string;
+  };
+  readonly os: {
+    readonly type: string;
+    readonly release: string;
+  };
   readonly versions: {
     readonly electron: string;
     readonly node: string;
@@ -427,6 +439,8 @@ export interface AppInfo {
 export const IPC_CHANNELS = [
   'app:getInfo',
   'app:ping',
+  'app:openExternal',
+  'app:copyDiagnostics',
   'projects:list',
   'projects:get',
   'projects:create',

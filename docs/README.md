@@ -30,6 +30,8 @@ backup/restore and the packaged update workflow are implemented.
 | [IPC Reference](IPC.md)                             | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
 | [Data Model](DATA-MODEL.md)                         | The Prisma/SQLite schema — all 12 tables and conventions                                                          |
 | [Security](SECURITY.md)                             | The security model: encryption, keychain, hardening, threat notes                                                 |
+| [Privacy](PRIVACY.md)                               | Local data, network activity, diagnostic boundaries, and retention                                                |
+| [License](LICENSE.md)                               | Current CloudForge licensing status and third-party notices                                                       |
 | [Development](DEVELOPMENT.md)                       | Setup, scripts, coding conventions, and step-by-step "how to add X" recipes                                       |
 | [Packaging](PACKAGING.md)                           | Building distributables and runtime prerequisites                                                                 |
 | [Move State & Release](MOVING-AND-RELEASING.md)     | Transfer the database safely and publish tested Windows installers from Git tags                                  |
@@ -37,6 +39,10 @@ backup/restore and the packaged update workflow are implemented.
 
 Project-level entry points: the top-level [README](../README.md) and the
 [CHANGELOG](../CHANGELOG.md) (a phase-by-phase build history).
+
+The installed desktop application bundles these Markdown files into the
+**Documentation** page. Use the global help button to open the guide related to
+the current module; no internet connection is required to read bundled guides.
 
 ## At a glance
 

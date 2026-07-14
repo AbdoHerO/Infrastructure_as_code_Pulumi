@@ -2,9 +2,11 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
 import { NAVIGATION } from '../navigation.js';
+import { useAppInfo } from '../../features/dashboard/useAppInfo.js';
 
 /** Fixed navigation rail listing every application module, grouped by concern. */
 export function Sidebar(): JSX.Element {
+  const { data: info } = useAppInfo();
   return (
     <aside className="border-sidebar-border bg-sidebar flex h-full w-60 shrink-0 flex-col border-r">
       <div className="flex items-center gap-2.5 px-5 py-4">
@@ -49,7 +51,7 @@ export function Sidebar(): JSX.Element {
       </nav>
 
       <div className="border-sidebar-border border-t px-5 py-3">
-        <p className="text-muted-foreground text-[11px]">v{APP.version}</p>
+        <p className="text-muted-foreground text-[11px]">{info ? `v${info.version}` : 'Version —'}</p>
       </div>
     </aside>
   );
