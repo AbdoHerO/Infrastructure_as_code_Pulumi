@@ -53,6 +53,7 @@ export * from './application/providers/provider-connection-service.js';
 export * from './application/infrastructure/infrastructure-plan.js';
 export * from './application/infrastructure/infrastructure-service.js';
 export * from './application/infrastructure/infrastructure-template.js';
+export * from './application/infrastructure/ssh-connection.js';
 export * from './application/deployment/deployment-template.js';
 export * from './application/deployment/deployment-service.js';
 export * from './application/activity/activity-service.js';

@@ -12,16 +12,19 @@ credential. Oracle Console is not required for normal provisioning or deletion.
 3. Open **Projects**, create the project, select the Oracle credential, region, and environment.
 4. Open **Templates**, select the SSH key, and apply **OCI Always Free ARM VPS**.
    It seeds a VCN, public subnet, TCP 22/80/443 firewall, and
-   `VM.Standard.A1.Flex` with 4 OCPUs, 24 GB RAM, a 200 GB boot disk, and Ubuntu
+   `VM.Standard.A1.Flex` with 2 OCPUs, 12 GB RAM, a 200 GB boot disk, and Ubuntu
    24.04 ARM64. Open **Infrastructure** afterward to customize it before Apply.
 5. Open TCP 22 for SSH. Add 80 and 443 only when the server will host HTTP/HTTPS services.
 6. For the compute resource, select the public subnet, enable **Assign public IP**, choose the
    shape and image, paste the SSH public key, and set the boot-volume size.
 7. Select **Save plan**, then **Preview**. Review all create, update, replacement, and delete
    operations before continuing.
-8. Select **Apply**. Wait for success, then copy the public IP from **Stack outputs**.
-9. Stack outputs include the public/private IP and SSH user. Connect with
-   `ubuntu` for this template (`opc` for Oracle Linux).
+8. Select **Apply** and wait for success. CloudForge reads the public IP and SSH
+   user from the completed stack outputs and displays a **Connect with SSH**
+   panel with copyable commands for every public compute instance.
+9. Use the direct command when the matching key is loaded in your SSH agent, or
+   copy the `-i "<private-key-path>"` command and replace the placeholder with
+   the private-key file path. Ubuntu uses `ubuntu`; Oracle Linux uses `opc`.
 
 ## Where the SSH user, key, and password come from
 
@@ -41,9 +44,11 @@ credential. Oracle Console is not required for normal provisioning or deletion.
 ssh -i "$HOME\.ssh\my-cloudforge-key" ubuntu@<stack-public-ip>
 ```
 
-Always Free is a tenancy-wide allowance target, not a promise of regional
-capacity or zero cost. Review Preview and OCI usage when other A1 instances or
-boot volumes already consume the allowance.
+Oracle's current [Always Free Resources documentation](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
+defines the A1 tenancy allowance as 2 OCPUs and 12 GB RAM. The 200 GB storage
+allowance is shared by boot and block volumes; this template's 200 GB boot disk
+uses all of it. Always Free is not a promise of regional capacity or zero cost.
+Review Preview and OCI usage before applying.
 
 ## Understand the creation progress
 

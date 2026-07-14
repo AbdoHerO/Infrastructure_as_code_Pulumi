@@ -66,7 +66,7 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
     id: 'oci-always-free-arm',
     name: 'OCI Always Free ARM VPS',
     description:
-      'Ubuntu 24.04 ARM64: A1 Flex, 4 OCPUs, 24 GB RAM and a 200 GB boot disk. Uses the full commonly documented free storage allowance; verify tenancy limits.',
+      'Ubuntu 24.04 ARM64: A1 Flex, 2 OCPUs, 12 GB RAM and a 200 GB boot disk. Uses the current documented Always Free compute and storage allowances; verify tenancy usage.',
     category: 'compute',
     build: (ctx) => ({
       providerKind: 'oracle',
@@ -83,8 +83,8 @@ export const INFRASTRUCTURE_TEMPLATES: readonly InfrastructureTemplate[] = [
           subnetName: 'subnet',
           sshPublicKey: ctx.sshPublicKey ?? '',
           assignPublicIp: true,
-          ocpus: 4,
-          memoryGb: 24,
+          ocpus: 2,
+          memoryGb: 12,
           bootVolumeGb: 200,
         },
       ],

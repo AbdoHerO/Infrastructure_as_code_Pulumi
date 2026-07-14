@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BookmarkPlus,
   CheckCircle2,
+  Copy,
   Eye,
   Hammer,
   Loader2,
@@ -11,6 +12,7 @@ import {
   RefreshCw,
   Save,
   ServerCog,
+  Terminal,
   Trash,
   XCircle,
 } from 'lucide-react';
@@ -34,6 +36,8 @@ import {
   type ProjectDto,
   type ResourceKind,
   type ResourceSpec,
+  extractSshConnectionHints,
+  formatSshCommand,
   validatePlan,
 } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
@@ -94,6 +98,10 @@ export function InfrastructurePage(): JSX.Element {
       ({ ref }) => ref.project === currentRef.project && ref.stack === currentRef.stack,
     );
   const outputs = useOutputs(projectId, currentStackExists);
+  const sshConnections = useMemo(
+    () => extractSshConnectionHints(outputs.data ?? {}),
+    [outputs.data],
+  );
   const { lines, progress, resources: resourceProgress, clear } = useEngineLogs(streamId);
 
   // Default to the first project and hydrate local state from its stored plan.
@@ -407,6 +415,7 @@ export function InfrastructurePage(): JSX.Element {
               </CardContent>
             </Card>
           ) : null}
+          <SshConnectionPanel connections={sshConnections} />
         </div>
       </div>
 
@@ -434,6 +443,77 @@ export function InfrastructurePage(): JSX.Element {
         plan={currentPlan}
       />
     </>
+  );
+}
+
+function SshConnectionPanel({
+  connections,
+}: {
+  connections: ReturnType<typeof extractSshConnectionHints>;
+}): JSX.Element | null {
+  if (connections.length === 0) return null;
+
+  const copy = async (command: string): Promise<void> => {
+    await navigator.clipboard.writeText(command);
+    toast.success('SSH command copied');
+  };
+
+  return (
+    <Card className="border-success/40">
+      <CardContent className="space-y-4 py-4">
+        <div className="flex items-start gap-2">
+          <Terminal className="text-success mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Connect with SSH</p>
+            <p className="text-muted-foreground text-xs">
+              Use the private key matching the public key configured on this instance.
+            </p>
+          </div>
+        </div>
+        {connections.map((connection) => {
+          const defaultCommand = formatSshCommand(connection);
+          const identityCommand = formatSshCommand(connection, true);
+          return (
+            <div key={connection.resourceName} className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{connection.resourceName}</p>
+                <Badge variant="success">{connection.user}</Badge>
+              </div>
+              <div className="bg-foreground text-background flex items-center gap-2 rounded-md px-3 py-2">
+                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{defaultCommand}</code>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  title="Copy SSH command"
+                  onClick={() => void copy(defaultCommand)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+              <div className="bg-secondary flex items-center gap-2 rounded-md px-3 py-2">
+                <code className="min-w-0 flex-1 overflow-x-auto text-xs">{identityCommand}</code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Copy SSH command with private-key path"
+                  onClick={() => void copy(identityCommand)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Replace <code>&lt;private-key-path&gt;</code> when the key is not loaded in your SSH
+                agent. You can manage encrypted keys under{' '}
+                <Link className="text-primary underline" to="/ssh-keys">
+                  SSH Keys
+                </Link>
+                .
+              </p>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 

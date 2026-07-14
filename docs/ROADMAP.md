@@ -89,7 +89,7 @@ namespaced files, runs `nginx -t`, rolls back failures, and reloads only
 known-good configuration.
 
 The built-in OCI Always Free ARM plan seeds Ubuntu 24.04 on A1 Flex with the
-requested 4 OCPUs, 24 GB RAM and 200 GB boot volume. Template application
+currently documented 2 OCPUs, 12 GB RAM and 200 GB boot volume. Template application
 requires an SSH public key, and OCI stack outputs state the default SSH user.
 
 ## Verification snapshot

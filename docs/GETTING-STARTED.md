@@ -175,7 +175,10 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 > **Free-tier tip:** the built-in templates default to the `VM.Standard.E4.Flex`
 > shape, which is **not** Always-Free-eligible. To stay within the free tier,
 > edit the compute resource's shape to `VM.Standard.E2.1.Micro` (x86) or
-> `VM.Standard.A1.Flex` (Arm) before applying.
+> `VM.Standard.A1.Flex` (Arm) before applying. The dedicated **OCI Always Free
+> ARM VPS** template follows Oracle's current documented tenancy allowance: 2
+> OCPUs, 12 GB RAM and 200 GB combined boot/block storage. Its 200 GB boot disk
+> consumes the complete storage allowance.
 
 ### Step 5 — Deploy an application (Deployments)
 
