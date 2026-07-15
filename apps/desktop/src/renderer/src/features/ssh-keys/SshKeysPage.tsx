@@ -19,6 +19,7 @@ import {
 } from '@cloudforge/ui';
 import type { SshKeyAlgorithm, SshKeySummary } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
 import {
   revealSshPrivateKey,
   exportSshPrivateKey,
@@ -32,6 +33,7 @@ export function SshKeysPage(): JSX.Element {
   const keys = useSshKeys();
   const remove = useDeleteSshKey();
   const [dialog, setDialog] = useState<'generate' | 'import' | null>(null);
+  const [deletingKey, setDeletingKey] = useState<SshKeySummary | null>(null);
 
   return (
     <>
@@ -61,12 +63,7 @@ export function SshKeysPage(): JSX.Element {
               key={key.id}
               sshKey={key}
               deleting={remove.isPending}
-              onDelete={() => {
-                const typed = window.prompt(
-                  `Delete SSH key "${key.name}"? Type its name to confirm.`,
-                );
-                if (typed === key.name) remove.mutate(key.id);
-              }}
+              onDelete={() => setDeletingKey(key)}
             />
           ))}
         </div>
@@ -83,6 +80,25 @@ export function SshKeysPage(): JSX.Element {
       )}
 
       <KeyDialog mode={dialog} onClose={() => setDialog(null)} />
+      <NameConfirmationDialog
+        open={deletingKey !== null}
+        title="Delete SSH key"
+        description={`Delete “${deletingKey?.name ?? ''}” permanently? Targets using this key will no longer be able to authenticate.`}
+        expectedName={deletingKey?.name ?? ''}
+        confirmLabel="Delete key"
+        pending={remove.isPending}
+        onOpenChange={(open) => !open && setDeletingKey(null)}
+        onConfirm={() => {
+          if (!deletingKey) return;
+          remove.mutate(deletingKey.id, {
+            onSuccess: () => {
+              toast.success(`SSH key “${deletingKey.name}” deleted`);
+              setDeletingKey(null);
+            },
+            onError: (error) => toast.error(error.message),
+          });
+        }}
+      />
     </>
   );
 }

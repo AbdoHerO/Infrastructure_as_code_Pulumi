@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CheckCircle2,
   CircleStop,
@@ -14,7 +15,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Separator } from '@cloudforge/ui';
-import { type CredentialSummaryDto, PROVIDER_LABELS, type ProviderKind } from '@cloudforge/core';
+import {
+  type CloudInstance,
+  type CredentialSummaryDto,
+  PROVIDER_LABELS,
+  type ProviderKind,
+} from '@cloudforge/core';
+import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
 import {
   useLoadInstances,
   useLoadAvailabilityDomains,
@@ -38,6 +45,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
   const terminate = useTerminateInstance();
   const resources = useLoadResources();
   const instanceAction = useInstanceAction();
+  const [terminatingInstance, setTerminatingInstance] = useState<CloudInstance | null>(null);
 
   const result = test.data;
   const isAws = credential.kind === 'aws';
@@ -240,16 +248,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                         variant="destructive"
                         size="sm"
                         disabled={terminate.isPending}
-                        onClick={() => {
-                          const typed = window.prompt(
-                            `Permanently terminate "${instance.name}" and delete its boot volume? Type the instance name to confirm.`,
-                          );
-                          if (typed !== instance.name) return;
-                          terminate.mutate(
-                            { credentialId: credential.id, instanceId: instance.id },
-                            { onSuccess: () => instances.mutate(credential.id) },
-                          );
-                        }}
+                        onClick={() => setTerminatingInstance(instance)}
                       >
                         {terminate.isPending ? (
                           <Loader2 className="size-4 animate-spin" />
@@ -338,6 +337,27 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
             ) : null}
           </>
         ) : null}
+        <NameConfirmationDialog
+          open={terminatingInstance !== null}
+          title="Terminate cloud instance"
+          description={`Permanently terminate “${terminatingInstance?.name ?? ''}” and delete its boot volume. This cannot be undone.`}
+          expectedName={terminatingInstance?.name ?? ''}
+          confirmLabel="Terminate instance"
+          pending={terminate.isPending}
+          onOpenChange={(open) => !open && setTerminatingInstance(null)}
+          onConfirm={() => {
+            if (!terminatingInstance) return;
+            terminate.mutate(
+              { credentialId: credential.id, instanceId: terminatingInstance.id },
+              {
+                onSuccess: () => {
+                  setTerminatingInstance(null);
+                  instances.mutate(credential.id);
+                },
+              },
+            );
+          }}
+        />
       </CardContent>
     </Card>
   );
