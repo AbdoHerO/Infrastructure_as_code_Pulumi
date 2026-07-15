@@ -10,7 +10,12 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { retry: 1, refetchOnWindowFocus: false },
+          queries: {
+            retry: 1,
+            refetchOnMount: 'always',
+            refetchOnReconnect: 'always',
+            refetchOnWindowFocus: true,
+          },
         },
       }),
   );

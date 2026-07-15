@@ -94,7 +94,16 @@ export function registerInfraHandlers(): void {
   );
 
   registerHandler('infra:destroyStack', async ({ ref, streamId }) => {
+    const projects = orThrow(await getContainer().projectService.list());
+    const owner = projects.find((project) => {
+      const projectRef = projectStackReference(project);
+      return projectRef.project === ref.project && projectRef.stack === ref.stack;
+    });
     orThrow(await getContainer().infrastructureService.destroyManagedStack(ref, sink(streamId)));
+    if (owner) {
+      orThrow(await getContainer().vpsTargetService.removeManagedProject(owner.id));
+      emitEvent('vpsTargets:changed', { reason: 'deleted' });
+    }
     getContainer().activityService.recordSafe({
       type: 'infrastructure.destroyed',
       message: `Destroyed managed stack ${ref.project}/${ref.stack}`,

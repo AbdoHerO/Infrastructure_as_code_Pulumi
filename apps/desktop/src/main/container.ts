@@ -75,6 +75,7 @@ export interface AppContainer {
   readonly nginxService: NginxService;
   readonly sslService: SslService;
   readonly secretsBackedByOsKeychain: boolean;
+  synchronizeData(): Promise<{ warnings: readonly string[] }>;
   snapshotDatabase(destination: string): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -266,6 +267,8 @@ export async function initContainer(): Promise<AppContainer> {
     nginxService,
     sslService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
+    synchronizeData: () =>
+      reconcileManagedTargets(projectService, infrastructureService, vpsTargetService),
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
     },
@@ -277,7 +280,7 @@ export async function initContainer(): Promise<AppContainer> {
   };
   log().info({ event: 'container.ready' }, 'Application services initialised');
   setTimeout(() => {
-    void reconcileManagedTargets(projectService, infrastructureService);
+    void reconcileManagedTargets(projectService, infrastructureService, vpsTargetService);
   }, 2_000).unref();
   return container;
 }
@@ -285,33 +288,49 @@ export async function initContainer(): Promise<AppContainer> {
 async function reconcileManagedTargets(
   projects: ProjectService,
   infrastructure: InfrastructureService,
-): Promise<void> {
+  targets: VpsTargetService,
+): Promise<{ warnings: readonly string[] }> {
+  const warnings: string[] = [];
   const [projectList, stacks] = await Promise.all([
     projects.list(),
     infrastructure.listManagedStacks(),
   ]);
-  if (!projectList.ok || !stacks.ok) {
+  if (!projectList.ok) {
     log().warn({ event: 'vps-target.reconcile.skipped' }, 'Could not discover managed stacks');
-    return;
+    warnings.push(projectList.error.message);
+    return { warnings };
   }
-  let synchronized = false;
+  if (!stacks.ok) {
+    log().warn({ event: 'vps-target.reconcile.skipped' }, 'Could not discover managed stacks');
+    warnings.push(stacks.error.message);
+    return { warnings };
+  }
+  const projectIds = projectList.value.map((project) => project.id);
+  const orphanCleanup = await targets.removeManagedOutsideProjects(projectIds);
+  if (!orphanCleanup.ok) warnings.push(orphanCleanup.error.message);
+
   for (const project of projectList.value) {
     const ref = projectStackReference(project);
     const exists = stacks.value.some(
       (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
     );
-    if (!exists) continue;
+    if (!exists) {
+      const removed = await targets.removeManagedProject(project.id);
+      if (!removed.ok) warnings.push(removed.error.message);
+      continue;
+    }
     const outputs = await infrastructure.outputs(ref, project.id);
     if (!outputs.ok) {
       log().warn(
         { event: 'vps-target.reconcile.failed', projectId: project.id, err: outputs.error },
         'Could not synchronize managed VPS targets',
       );
+      warnings.push(outputs.error.message);
       continue;
     }
-    synchronized = true;
   }
-  if (synchronized) emitEvent('vpsTargets:changed', { reason: 'synchronized' });
+  emitEvent('vpsTargets:changed', { reason: 'synchronized' });
+  return { warnings };
 }
 
 /** Access the initialised container. Throws if called before {@link initContainer}. */

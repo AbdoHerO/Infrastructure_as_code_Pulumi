@@ -173,6 +173,20 @@ export class VpsTargetService {
     return this.targets.removeManagedByProject(projectId);
   }
 
+  removeManagedResourcesOutside(
+    projectId: string,
+    resourceNames: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    return this.targets.removeManagedResourcesOutside(projectId, resourceNames);
+  }
+
+  /** Remove generated targets whose owning Infrastructure project no longer exists. */
+  removeManagedOutsideProjects(
+    projectIds: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    return this.targets.removeManagedOutsideProjects(projectIds);
+  }
+
   removeManagedResource(
     projectId: string,
     resourceName: string,

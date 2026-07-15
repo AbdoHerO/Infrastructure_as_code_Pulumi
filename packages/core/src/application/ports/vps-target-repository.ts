@@ -41,4 +41,11 @@ export interface VpsTargetRepository {
   remove(id: string): Promise<Result<void, PersistenceError>>;
   removeManaged(projectId: string, resourceName: string): Promise<Result<void, PersistenceError>>;
   removeManagedByProject(projectId: string): Promise<Result<void, PersistenceError>>;
+  removeManagedResourcesOutside(
+    projectId: string,
+    resourceNames: readonly string[],
+  ): Promise<Result<void, PersistenceError>>;
+  removeManagedOutsideProjects(
+    projectIds: readonly string[],
+  ): Promise<Result<void, PersistenceError>>;
 }

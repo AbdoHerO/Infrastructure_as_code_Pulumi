@@ -60,6 +60,8 @@ export function AnsiblePage(): JSX.Element {
   const savedTargets = useVpsTargets();
   const targetActions = useVpsTargetActions();
   const actions = useAnsibleActions(streamId);
+  const resetPreflight = actions.preflight.reset;
+  const resetAccess = actions.access.reset;
   const logs = useAnsibleLogs(streamId);
   const [selectedTargetId, setSelectedTargetId] = useState('');
   const [targetName, setTargetName] = useState('');
@@ -202,7 +204,20 @@ export function AnsiblePage(): JSX.Element {
     setHostKeySha256(saved.hostKeySha256);
   };
   useEffect(() => {
-    if (selectedTargetId || !savedTargets.data?.length) return;
+    if (!savedTargets.data) return;
+    if (selectedTargetId && !savedTargets.data.some((saved) => saved.id === selectedTargetId)) {
+      setSelectedTargetId('');
+      setTargetName('');
+      setHost('');
+      setPort(22);
+      setUsername('ubuntu');
+      setSshCredentialId('');
+      setHostKeySha256('');
+      resetPreflight();
+      resetAccess();
+      return;
+    }
+    if (selectedTargetId || !savedTargets.data.length) return;
     const saved = savedTargets.data[0]!;
     setSelectedTargetId(saved.id);
     setTargetName(saved.name);
@@ -211,7 +226,7 @@ export function AnsiblePage(): JSX.Element {
     setUsername(saved.username);
     setSshCredentialId(saved.sshCredentialId ?? '');
     setHostKeySha256(saved.hostKeySha256);
-  }, [savedTargets.data, selectedTargetId]);
+  }, [resetAccess, resetPreflight, savedTargets.data, selectedTargetId]);
   const saveTarget = (): void => {
     const request = { name: targetName, ...target };
     const callbacks = {

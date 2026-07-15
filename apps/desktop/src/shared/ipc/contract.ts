@@ -71,6 +71,7 @@ export interface IpcContract {
   'app:openExternal': { request: { link: 'github' | 'releases' }; response: void };
   'app:copyDiagnostics': { request: void; response: void };
   'app:copyText': { request: { text: string }; response: void };
+  'app:synchronize': { request: void; response: { warnings: readonly string[] } };
 
   'projects:list': { request: void; response: ProjectDto[] };
   'projects:get': { request: { id: string }; response: ProjectDto };
@@ -469,6 +470,7 @@ export const IPC_CHANNELS = [
   'app:openExternal',
   'app:copyDiagnostics',
   'app:copyText',
+  'app:synchronize',
   'projects:list',
   'projects:get',
   'projects:create',

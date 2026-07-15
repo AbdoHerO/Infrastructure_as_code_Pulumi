@@ -6,6 +6,7 @@ import { registerHandler } from '../registry.js';
 import { BUILD_INFO } from '../../build-info.js';
 import { openProductExternalLink } from '../../security/external-links.js';
 import { formatDiagnostics } from '../../app-diagnostics.js';
+import { getContainer } from '../../container.js';
 
 /** Register application/runtime information handlers. */
 export function registerAppHandlers(): void {
@@ -15,6 +16,7 @@ export function registerAppHandlers(): void {
   registerHandler('app:openExternal', async ({ link }) => openProductExternalLink(link));
   registerHandler('app:copyDiagnostics', () => clipboard.writeText(formatDiagnostics(appInfo())));
   registerHandler('app:copyText', ({ text }) => clipboard.writeText(text));
+  registerHandler('app:synchronize', () => getContainer().synchronizeData());
 }
 
 function appInfo(): AppInfo {

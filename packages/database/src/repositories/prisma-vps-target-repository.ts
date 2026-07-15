@@ -81,6 +81,35 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
       await this.db.vpsTarget.deleteMany({ where: { managedProjectId: projectId } });
     });
   }
+
+  async removeManagedResourcesOutside(
+    projectId: string,
+    resourceNames: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    return guard('delete stale managed VPS targets', async () => {
+      await this.db.vpsTarget.deleteMany({
+        where: {
+          managedProjectId: projectId,
+          ...(resourceNames.length > 0
+            ? { managedResourceName: { notIn: [...resourceNames] } }
+            : {}),
+        },
+      });
+    });
+  }
+
+  async removeManagedOutsideProjects(
+    projectIds: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    return guard('delete orphaned managed VPS targets', async () => {
+      await this.db.vpsTarget.deleteMany({
+        where: {
+          managedProjectId:
+            projectIds.length > 0 ? { not: null, notIn: [...projectIds] } : { not: null },
+        },
+      });
+    });
+  }
 }
 
 function toRecord(row: PrismaVpsTarget): VpsTargetRecord {

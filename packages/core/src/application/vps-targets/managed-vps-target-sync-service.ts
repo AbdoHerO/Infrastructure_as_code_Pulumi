@@ -29,6 +29,10 @@ interface ManagedTargetStore {
     projectId: string,
     resourceName: string,
   ): Promise<Result<void, { message: string }>>;
+  removeManagedResourcesOutside(
+    projectId: string,
+    resourceNames: readonly string[],
+  ): Promise<Result<void, { message: string }>>;
 }
 
 export interface ManagedTargetSyncResult {
@@ -63,12 +67,22 @@ export class ManagedVpsTargetSyncService {
     );
     const targets: VpsTargetDto[] = [];
     const warnings: string[] = [];
+    const managedResourceNames = plan.resources
+      .filter((resource) => resource.kind === 'compute' && resource.assignPublicIp)
+      .map((resource) => resource.name);
+    const staleCleanup = await this.targets.removeManagedResourcesOutside(
+      projectId,
+      managedResourceNames,
+    );
+    if (!staleCleanup.ok) warnings.push(staleCleanup.error.message);
 
     for (const resource of plan.resources) {
       if (resource.kind !== 'compute' || !resource.assignPublicIp) continue;
       const connection = hints.get(resource.name);
       if (!connection) {
         warnings.push(`${resource.name}: no public SSH output was returned`);
+        const removed = await this.targets.removeManagedResource(projectId, resource.name);
+        if (!removed.ok) warnings.push(`${resource.name}: ${removed.error.message}`);
         continue;
       }
       // Resolve from validated key material instead of trusting a persisted ID.

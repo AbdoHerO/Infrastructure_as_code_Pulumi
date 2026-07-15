@@ -55,6 +55,30 @@ class MemoryTargets implements VpsTargetRepository {
     }
     return Promise.resolve(ok(undefined));
   }
+  removeManagedResourcesOutside(
+    projectId: string,
+    resourceNames: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    for (const [id, value] of this.values) {
+      if (
+        value.managedProjectId === projectId &&
+        (!value.managedResourceName || !resourceNames.includes(value.managedResourceName))
+      ) {
+        this.values.delete(id);
+      }
+    }
+    return Promise.resolve(ok(undefined));
+  }
+  removeManagedOutsideProjects(
+    projectIds: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    for (const [id, value] of this.values) {
+      if (value.managedProjectId && !projectIds.includes(value.managedProjectId)) {
+        this.values.delete(id);
+      }
+    }
+    return Promise.resolve(ok(undefined));
+  }
 }
 
 const valid = {
@@ -123,5 +147,20 @@ describe('VpsTargetService', () => {
     expect(repository.values.size).toBe(1);
     await service.removeManagedProject('project-1');
     expect(repository.values.size).toBe(0);
+  });
+
+  it('removes orphaned generated targets but preserves manual targets', async () => {
+    const managed = await service.upsertManaged({
+      ...valid,
+      managedProjectId: 'deleted-project',
+      managedResourceName: 'server',
+    });
+    const manual = await service.create({ ...valid, name: 'External VPS' });
+    expect(managed.ok && manual.ok).toBe(true);
+
+    await service.removeManagedOutsideProjects(['active-project']);
+
+    const listed = await service.list();
+    expect(listed.ok && listed.value.map((target) => target.name)).toEqual(['External VPS']);
   });
 });

@@ -59,7 +59,14 @@ export function ContainersPage(): JSX.Element {
     (id: string): void => {
       setSelectedTargetId(id);
       const selected = targets.data?.find((target) => target.id === id);
-      if (!selected) return;
+      if (!selected) {
+        setHost('');
+        setPort(22);
+        setUsername('opc');
+        setSshCredentialId('');
+        setHostKeySha256('');
+        return;
+      }
       setHost(selected.host);
       setPort(selected.port);
       setUsername(selected.username);
@@ -69,7 +76,9 @@ export function ContainersPage(): JSX.Element {
     [targets.data],
   );
   useEffect(() => {
-    if (!selectedTargetId && targets.data?.length) selectTarget(targets.data[0]!.id);
+    if (!targets.data) return;
+    const selectedExists = targets.data.some((target) => target.id === selectedTargetId);
+    if (!selectedExists) selectTarget(targets.data[0]?.id ?? '');
   }, [selectedTargetId, targets.data, selectTarget]);
 
   const target: ContainerTargetRequest = { host, port, username, sshCredentialId, hostKeySha256 };

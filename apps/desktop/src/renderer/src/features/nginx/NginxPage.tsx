@@ -85,7 +85,10 @@ export function NginxPage(): JSX.Element {
     toast.error(error.message);
   };
   useEffect(() => {
-    if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
+    if (!targets.data) return;
+    if (!targets.data.some((target) => target.id === targetId)) {
+      setTargetId(targets.data[0]?.id ?? '');
+    }
   }, [targetId, targets.data]);
   useEffect(() => {
     if (!liveTail || !targetId) return;

@@ -75,7 +75,13 @@ export function DeploymentsPage(): JSX.Element {
     (id: string): void => {
       setSelectedTargetId(id);
       const selected = targets.data?.find((target) => target.id === id);
-      if (!selected) return;
+      if (!selected) {
+        setHost('');
+        setPort(22);
+        setUsername('ubuntu');
+        setHostKeySha256('');
+        return;
+      }
       setHost(selected.host);
       setPort(selected.port);
       setUsername(selected.username);
@@ -99,6 +105,7 @@ export function DeploymentsPage(): JSX.Element {
     if (selected?.managedProjectId === projectId) return;
     const managed = targets.data?.find((target) => target.managedProjectId === projectId);
     if (managed) selectTarget(managed.id);
+    else if (selectedTargetId && !selected) selectTarget('');
   }, [projectId, selectedTargetId, selectTarget, targets.data]);
 
   if (projects?.length === 0) {

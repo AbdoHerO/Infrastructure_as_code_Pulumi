@@ -38,6 +38,7 @@ describe('ManagedVpsTargetSyncService', () => {
         upsertManaged,
         removeManagedProject: vi.fn().mockResolvedValue(ok(undefined)),
         removeManagedResource: vi.fn().mockResolvedValue(ok(undefined)),
+        removeManagedResourcesOutside: vi.fn().mockResolvedValue(ok(undefined)),
       },
       {
         findByPublicKey: vi.fn().mockResolvedValue(
@@ -80,6 +81,7 @@ describe('ManagedVpsTargetSyncService', () => {
         upsertManaged: vi.fn(),
         removeManagedProject: vi.fn().mockResolvedValue(ok(undefined)),
         removeManagedResource,
+        removeManagedResourcesOutside: vi.fn().mockResolvedValue(ok(undefined)),
       },
       { findByPublicKey: vi.fn().mockResolvedValue(ok(null)) },
       { inspectHostKey: vi.fn() },
@@ -93,6 +95,27 @@ describe('ManagedVpsTargetSyncService', () => {
 
     expect(result.targets).toEqual([]);
     expect(result.warnings[0]).toContain('SSH public key is not managed');
+    expect(removeManagedResource).toHaveBeenCalledWith('project-id', 'server');
+  });
+
+  it('removes a managed target when the compute resource no longer has SSH outputs', async () => {
+    const removeManagedResource = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new ManagedVpsTargetSyncService(
+      {
+        upsertManaged: vi.fn(),
+        removeManagedProject: vi.fn().mockResolvedValue(ok(undefined)),
+        removeManagedResource,
+        removeManagedResourcesOutside: vi.fn().mockResolvedValue(ok(undefined)),
+      },
+      { findByPublicKey: vi.fn() },
+      { inspectHostKey: vi.fn() },
+      { attempts: 1, delayMs: 0 },
+    );
+
+    const result = await service.sync('project-id', plan, {});
+
+    expect(result.targets).toEqual([]);
+    expect(result.warnings[0]).toContain('no public SSH output');
     expect(removeManagedResource).toHaveBeenCalledWith('project-id', 'server');
   });
 });

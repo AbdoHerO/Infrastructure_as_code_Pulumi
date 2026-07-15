@@ -3,6 +3,7 @@ import { getContainer } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
+import { emitEvent } from '../emit.js';
 
 /** Register the Projects module IPC handlers. */
 export function registerProjectHandlers(): void {
@@ -44,11 +45,13 @@ export function registerProjectHandlers(): void {
         { context: { project: ref.project, stack: ref.stack } },
       );
     }
+    orThrow(await getContainer().vpsTargetService.removeManagedProject(id));
     orThrow(await getContainer().projectService.remove(id));
     getContainer().activityService.recordSafe({
       type: 'project.deleted',
       message: 'Deleted a project',
       projectId: id,
     });
+    emitEvent('vpsTargets:changed', { reason: 'deleted' });
   });
 }
