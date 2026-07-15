@@ -122,13 +122,14 @@ export class CloudflareApiProvider implements CloudflareProvider {
   }
 
   async testConnection(): Promise<Result<ServiceConnection, ServiceProviderError>> {
-    const verified = await this.api.request<{ status: string }>('/user/tokens/verify');
-    if (!verified.ok) return verified;
     const [account, zones] = await Promise.all([this.account(), this.zones()]);
     if (!account.ok) return account;
     if (!zones.ok) return zones;
     return ok({
-      connected: verified.value.status === 'active',
+      // Reading the account and its zones is the capability CloudForge actually
+      // needs. It also works for both user-owned and account-owned API tokens;
+      // their dedicated token-verification endpoints are not interchangeable.
+      connected: true,
       provider: this.kind,
       message: `Connected to ${account.value.name} · ${zones.value.length} zone(s)`,
       account: { id: account.value.id, name: account.value.name },
@@ -207,19 +208,26 @@ export class CloudflareApiProvider implements CloudflareProvider {
           this.pageRules(zone.id),
         ])
       : ([ok([]), ok(null), ok(null), ok([])] as const);
+    const warnings = [
+      ...(!records.ok ? [`DNS: ${records.error.message}`] : []),
+      ...(!settings.ok ? [`SSL and cache: ${settings.error.message}`] : []),
+      ...(!security.ok ? [`Security: ${security.error.message}`] : []),
+      ...(!pages.ok ? [`Page Rules: ${pages.error.message}`] : []),
+    ];
     return ok({
       account: account.value,
       connected: true,
-      apiStatus: 'operational',
+      apiStatus: warnings.length === 0 ? 'operational' : 'limited permissions',
       zones: zones.value.length,
-      dnsRecords: records.ok ? records.value.length : 0,
+      dnsRecords: records.ok ? records.value.length : null,
       plan: zone?.plan ?? '—',
       sslMode: settings.ok && settings.value ? settings.value.sslMode : '—',
-      proxiedRecords: records.ok ? records.value.filter((item) => item.proxied).length : 0,
-      firewallRules: security.ok && security.value ? security.value.rules.length : 0,
-      pageRules: pages.ok ? pages.value.length : 0,
-      cacheStatus: settings.ok && settings.value ? settings.value.cacheLevel : '—',
+      proxiedRecords: records.ok ? records.value.filter((item) => item.proxied).length : null,
+      firewallRules: security.ok && security.value ? security.value.rules.length : null,
+      pageRules: pages.ok ? pages.value.length : null,
+      cacheStatus: settings.ok && settings.value ? settings.value.cacheLevel : 'Unavailable',
       lastSynchronization: new Date().toISOString(),
+      warnings,
     });
   }
 

@@ -87,14 +87,15 @@ export interface CloudflareDashboard {
   readonly connected: boolean;
   readonly apiStatus: string;
   readonly zones: number;
-  readonly dnsRecords: number;
+  readonly dnsRecords: number | null;
   readonly plan: string;
   readonly sslMode: string;
-  readonly proxiedRecords: number;
-  readonly firewallRules: number;
-  readonly pageRules: number;
+  readonly proxiedRecords: number | null;
+  readonly firewallRules: number | null;
+  readonly pageRules: number | null;
   readonly cacheStatus: string;
   readonly lastSynchronization: string;
+  readonly warnings: readonly string[];
 }
 
 export interface CloudflareSecurityOverview {

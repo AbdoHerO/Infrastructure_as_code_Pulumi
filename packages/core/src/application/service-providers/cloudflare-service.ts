@@ -83,10 +83,12 @@ export class CloudflareService {
     zoneId: string,
     input: CloudflareDnsRecordInput,
   ): Promise<Result<CloudflareDnsRecord, CloudflareFailure>> {
-    const valid = validateDnsRecord(input);
-    if (!valid.ok) return valid;
     const zone = required(zoneId, 'Zone');
     if (!zone.ok) return zone;
+    const zoneName = await this.resolveZoneName(credentialId, zone.value);
+    if (!zoneName.ok) return zoneName;
+    const valid = validateDnsRecord(input, zoneName.value);
+    if (!valid.ok) return valid;
     const current = await this.dnsRecords(credentialId, zone.value);
     if (!current.ok) return current;
     if (
@@ -115,12 +117,14 @@ export class CloudflareService {
     recordId: string,
     input: CloudflareDnsRecordInput,
   ): Promise<Result<CloudflareDnsRecord, CloudflareFailure>> {
-    const valid = validateDnsRecord(input);
-    if (!valid.ok) return valid;
     const zone = required(zoneId, 'Zone');
     const record = required(recordId, 'Record');
     if (!zone.ok) return zone;
     if (!record.ok) return record;
+    const zoneName = await this.resolveZoneName(credentialId, zone.value);
+    if (!zoneName.ok) return zoneName;
+    const valid = validateDnsRecord(input, zoneName.value);
+    if (!valid.ok) return valid;
     const current = await this.dnsRecords(credentialId, zone.value);
     if (!current.ok) return current;
     if (
@@ -436,6 +440,18 @@ export class CloudflareService {
     return operation(created.value as CloudflareProvider);
   }
 
+  private async resolveZoneName(
+    credentialId: string,
+    zoneId: string,
+  ): Promise<Result<string, CloudflareFailure>> {
+    const zones = await this.zones(credentialId);
+    if (!zones.ok) return zones;
+    const zone = zones.value.find((item) => item.id === zoneId);
+    return zone
+      ? { ok: true, value: zone.name }
+      : err(new ValidationError('The selected Cloudflare zone is no longer available'));
+  }
+
   private async record(
     type: string,
     message: string,
@@ -460,9 +476,12 @@ const HOST =
   /^(?:\*\.)?(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)*[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.?$/i;
 export function validateDnsRecord(
   input: CloudflareDnsRecordInput,
+  zoneName?: string,
 ): Result<CloudflareDnsRecordInput, ValidationError> {
-  const name = input.name.trim().toLowerCase();
-  const content = input.content.trim();
+  const zone = zoneName?.trim().toLowerCase().replace(/\.$/, '');
+  const name = normalizeRecordName(input.name, zone);
+  const content =
+    input.type === 'CNAME' ? normalizeCnameTarget(input.content, zone) : input.content.trim();
   if (!name || !HOST.test(name)) return err(new ValidationError('Enter a valid DNS record name'));
   if (!content || /[\r\n\0]/.test(content))
     return err(new ValidationError('DNS record content is required'));
@@ -473,6 +492,8 @@ export function validateDnsRecord(
     return err(new ValidationError(`Enter a valid ${input.type} address`));
   if (input.type === 'CNAME' && (!HOST.test(content) || content === name))
     return err(new ValidationError('Enter a valid CNAME target different from the record name'));
+  if (['MX', 'NS', 'PTR'].includes(input.type) && (!HOST.test(content) || content === name))
+    return err(new ValidationError(`Enter a valid ${input.type} target hostname`));
   if (input.ttl !== 1 && (input.ttl < 60 || input.ttl > 86400 || !Number.isInteger(input.ttl)))
     return err(new ValidationError('TTL must be Automatic (1) or between 60 and 86400 seconds'));
   if (input.proxied && !['A', 'AAAA', 'CNAME'].includes(input.type))
@@ -483,6 +504,11 @@ export function validateDnsRecord(
     (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 65535)
   )
     return err(new ValidationError('DNS record priority must be between 0 and 65535'));
+  if (
+    ['MX', 'URI'].includes(input.type) &&
+    (input.priority === undefined || input.priority === null)
+  )
+    return err(new ValidationError(`${input.type} records require a priority`));
   return {
     ok: true,
     value: {
@@ -500,6 +526,21 @@ export function validateDnsRecord(
         : {}),
     },
   };
+}
+
+function normalizeRecordName(value: string, zone: string | undefined): string {
+  const name = value.trim().toLowerCase().replace(/\.$/, '');
+  if (!zone) return name;
+  if (name === '@' || name === '') return zone;
+  if (name === zone || name.endsWith(`.${zone}`)) return name;
+  return `${name}.${zone}`;
+}
+
+function normalizeCnameTarget(value: string, zone: string | undefined): string {
+  const target = value.trim().toLowerCase().replace(/\.$/, '');
+  if (!zone) return target;
+  if (target === '@') return zone;
+  return target && !target.includes('.') ? `${target}.${zone}` : target;
 }
 
 function validIpv4(value: string): boolean {

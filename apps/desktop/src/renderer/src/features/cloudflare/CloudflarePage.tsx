@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cloud, RefreshCw, Save, Shield, Trash2, Zap } from 'lucide-react';
+import { Cloud, Save, Shield, Trash2, Zap } from 'lucide-react';
 import type {
   CloudflareDnsRecord,
   CloudflareDnsBatchAction,
@@ -81,7 +81,7 @@ export function CloudflarePage(): JSX.Element {
   const [credentialId, setCredentialId] = useState('');
   const [zoneId, setZoneId] = useState('');
   const zones = useCloudflareZones(credentialId);
-  const dashboard = useCloudflareDashboard(credentialId, zoneId);
+  const dashboard = useCloudflareDashboard(credentialId, zoneId, zones.isSuccess);
   const client = useQueryClient();
   useEffect(() => {
     if (!credentialId && credentials[0]) setCredentialId(credentials[0].id);
@@ -98,20 +98,11 @@ export function CloudflarePage(): JSX.Element {
       }),
     [client],
   );
-  const refresh = async (): Promise<void> => {
-    await client.invalidateQueries({ queryKey: ['cloudflare'] });
-    toast.success('Cloudflare synchronized');
-  };
   return (
     <div className="space-y-6">
       <PageHeader
         title="Cloudflare"
         description="Manage account zones, DNS, security, SSL, caching and edge services without exposing API tokens."
-        actions={
-          <Button variant="outline" onClick={() => void refresh()}>
-            <RefreshCw className="size-4" /> Refresh
-          </Button>
-        }
       />
       <Card>
         <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_1fr_auto]">
@@ -240,25 +231,42 @@ function Dashboard({
         ['API', data.apiStatus],
         ['Plan', data.plan],
         ['Zones', data.zones],
-        ['DNS records', data.dnsRecords],
-        ['Proxied', data.proxiedRecords],
+        ['DNS records', data.dnsRecords ?? 'Unavailable'],
+        ['Proxied', data.proxiedRecords ?? 'Unavailable'],
         ['SSL mode', data.sslMode],
-        ['Firewall rules', data.firewallRules],
-        ['Page rules', data.pageRules],
+        ['Firewall rules', data.firewallRules ?? 'Unavailable'],
+        ['Page rules', data.pageRules ?? 'Unavailable'],
         ['Cache', data.cacheStatus],
         ['Last sync', new Date(data.lastSynchronization).toLocaleString()],
       ]
     : [];
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-      {metrics.map(([label, value]) => (
-        <Card key={String(label)}>
-          <CardHeader className="pb-2">
-            <CardDescription>{label}</CardDescription>
-            <CardTitle className="text-lg">{String(value)}</CardTitle>
+    <div className="space-y-4">
+      {data?.warnings.length ? (
+        <Card className="border-amber-300 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="text-base">Limited Cloudflare permissions</CardTitle>
+            <CardDescription>
+              The credential can connect, but some dashboard capabilities are unavailable.
+            </CardDescription>
           </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            {data.warnings.map((warning) => (
+              <p key={warning}>• {warning}</p>
+            ))}
+          </CardContent>
         </Card>
-      ))}
+      ) : null}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {metrics.map(([label, value]) => (
+          <Card key={String(label)}>
+            <CardHeader className="pb-2">
+              <CardDescription>{label}</CardDescription>
+              <CardTitle className="text-lg">{String(value)}</CardTitle>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -483,6 +491,18 @@ function Dns({
   if (!zoneId) return <NeedZone />;
   return (
     <div className="space-y-4">
+      {records.isError ? (
+        <Card className="border-red-300 bg-red-50/50">
+          <CardHeader>
+            <CardTitle className="text-base">DNS access unavailable</CardTitle>
+            <CardDescription>{records.error.message}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            Grant this token Zone → DNS → Read to list records and Zone → DNS → Edit to create,
+            update, or delete them.
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle>Automatic DNS wizard</CardTitle>
@@ -569,9 +589,16 @@ function Dns({
             <Label>Type</Label>
             <Select
               value={draft.type}
-              onChange={(event) =>
-                setDraft({ ...draft, type: event.target.value as CloudflareDnsType })
-              }
+              onChange={(event) => {
+                const type = event.target.value as CloudflareDnsType;
+                const needsPriority = type === 'MX' || type === 'URI';
+                setDraft({
+                  ...draft,
+                  type,
+                  proxied: ['A', 'AAAA', 'CNAME'].includes(type) ? draft.proxied : false,
+                  priority: needsPriority ? (draft.priority ?? 10) : null,
+                });
+              }}
             >
               {DNS_TYPES.map((type) => (
                 <option key={type}>{type}</option>
@@ -582,7 +609,7 @@ function Dns({
             <Label>Name</Label>
             <Input
               value={draft.name}
-              placeholder="app.example.com"
+              placeholder="@, www, or app.example.com"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </div>
@@ -590,7 +617,7 @@ function Dns({
             <Label>Content</Label>
             <Input
               value={draft.content}
-              placeholder="203.0.113.10"
+              placeholder={dnsContentPlaceholder(draft.type)}
               onChange={(e) => setDraft({ ...draft, content: e.target.value })}
             />
           </div>
@@ -606,7 +633,7 @@ function Dns({
             <Label>Priority</Label>
             <Input
               type="number"
-              placeholder="MX/SRV only"
+              placeholder="Required for MX/URI"
               value={draft.priority ?? ''}
               onChange={(event) =>
                 setDraft({
@@ -638,7 +665,7 @@ function Dns({
             />
           </div>
           <div className="flex items-end gap-2 md:col-span-2">
-            <Button disabled={save.isPending} onClick={submit}>
+            <Button disabled={save.isPending || records.isError} onClick={submit}>
               <Save className="size-4" /> {editing ? 'Apply update' : 'Create'}
             </Button>
             {editing ? (
@@ -1506,6 +1533,26 @@ function NeedZone(): JSX.Element {
       </CardContent>
     </Card>
   );
+}
+
+function dnsContentPlaceholder(type: CloudflareDnsType): string {
+  const placeholders: Record<CloudflareDnsType, string> = {
+    A: '203.0.113.10',
+    AAAA: '2001:db8::10',
+    CNAME: 'target.example.com',
+    TXT: 'Text or verification value',
+    MX: 'mail.example.com',
+    SRV: '10 5 443 target.example.com',
+    CAA: '0 issue "letsencrypt.org"',
+    NS: 'ns1.example.net',
+    PTR: 'host.example.com',
+    HTTPS: '1 . alpn="h2,h3"',
+    TLSA: '3 1 1 certificate-association-data',
+    SSHFP: '4 2 fingerprint',
+    URI: '10 1 "https://example.com/"',
+    SVCB: '1 target.example.com alpn="h2"',
+  };
+  return placeholders[type];
 }
 function Control({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (

@@ -23,17 +23,20 @@ export function useCloudflareZones(
     queryKey: [...cloudflareKey(credentialId), 'zones'],
     queryFn: () => invoke('cloudflare:zones', { credentialId }),
     enabled: Boolean(credentialId),
+    retry: false,
   });
 }
 
 export function useCloudflareDashboard(
   credentialId: string,
   zoneId: string,
+  zonesReady = true,
 ): UseQueryResult<CloudflareDashboard> {
   return useQuery({
     queryKey: [...cloudflareKey(credentialId), 'dashboard', zoneId],
     queryFn: () => invoke('cloudflare:dashboard', { credentialId, ...(zoneId ? { zoneId } : {}) }),
-    enabled: Boolean(credentialId),
+    enabled: Boolean(credentialId && zonesReady),
+    retry: false,
   });
 }
 

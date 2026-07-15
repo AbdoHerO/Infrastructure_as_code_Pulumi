@@ -13,6 +13,13 @@ provisioning remain isolated from this module.
 5. Enter a name and API token. Account ID and default zone are optional.
 6. Open **Cloudflare**, select the credential, and choose **Test connection**.
 
+Create this token from the general **API Tokens** page. An R2 token created from
+the R2 object-storage wizard is valid for its advertised account/R2 operations,
+but it does not automatically receive Zone DNS or Zone Settings permissions.
+CloudForge tests the real Account and Zone capabilities instead of relying on a
+token-verification endpoint that differs between user-owned and account-owned
+tokens.
+
 The API token is encrypted by the existing credential repository. The renderer
 receives only the credential ID and non-secret account data. Tokens are never
 included in IPC payloads, logs, activities, diagnostics, or UI state.
@@ -68,6 +75,11 @@ Examples:
 | Alias          | CNAME | `www.example.com`             | `example.com`      | On    |
 | Mail exchanger | MX    | `example.com`                 | `mail.example.com` | Off   |
 | Verification   | TXT   | `_acme-challenge.example.com` | provider value     | Off   |
+
+The editor also accepts convenient relative names. `@` becomes the selected
+zone apex, `www` becomes `www.example.com`, and `*.api` becomes
+`*.api.example.com`. CloudForge normalizes these values in the Application layer
+before duplicate validation or an API request.
 
 TTL `1` means Cloudflare Automatic. Only A, AAAA, and CNAME records can use the
 Cloudflare proxy.
@@ -133,6 +145,11 @@ available, save the Account ID in the Cloudflare credential.
 ### DNS update is forbidden
 
 Add DNS: Edit for the zone. DNS: Read alone permits listing but not changes.
+
+If both listing and editing fail with `Authentication error`, recreate the token
+with **Zone → DNS → Read** and **Zone → DNS → Edit**, and include the affected
+zone under **Zone Resources**. A token that only has Account or R2 permissions
+can still list an account or zone while DNS access remains forbidden.
 
 ### A setting is unavailable
 
