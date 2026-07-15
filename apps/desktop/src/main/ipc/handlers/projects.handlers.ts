@@ -28,7 +28,7 @@ export function registerProjectHandlers(): void {
   });
 
   registerHandler('projects:update', async ({ id, changes }) =>
-    orThrow(await getContainer().projectService.update(id, changes)),
+    orThrow(await getContainer().projectConfigurationService.update(id, changes)),
   );
 
   registerHandler('projects:delete', async ({ id }) => {

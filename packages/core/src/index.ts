@@ -46,6 +46,7 @@ export * from './application/dto/deployment-dto.js';
 
 // Application — services
 export * from './application/projects/project-service.js';
+export * from './application/projects/project-configuration-service.js';
 export * from './application/credentials/credential-service.js';
 export * from './application/settings/settings.js';
 export * from './application/settings/settings-service.js';

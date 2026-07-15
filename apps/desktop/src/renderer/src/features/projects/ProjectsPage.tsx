@@ -1,8 +1,24 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Boxes, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, CardContent, Label, Select, toast } from '@cloudforge/ui';
-import { isProvisioningProviderKind, PROVIDER_LABELS, type ProjectDto } from '@cloudforge/core';
+import { Boxes, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Label,
+  Select,
+  Textarea,
+  toast,
+} from '@cloudforge/ui';
+import {
+  ENVIRONMENTS,
+  isProvisioningProviderKind,
+  PROVIDER_LABELS,
+  type Environment,
+  type ProjectDto,
+} from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
@@ -64,6 +80,114 @@ export function ProjectsPage(): JSX.Element {
 
 function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
   const deleteProject = useDeleteProject();
+  const updateProject = useUpdateProject();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(project.name);
+  const [region, setRegion] = useState(project.region);
+  const [environment, setEnvironment] = useState<Environment>(project.environment);
+  const [description, setDescription] = useState(project.description);
+
+  const cancel = (): void => {
+    setName(project.name);
+    setRegion(project.region);
+    setEnvironment(project.environment);
+    setDescription(project.description);
+    setEditing(false);
+  };
+  const save = (): void => {
+    if (!name.trim()) {
+      toast.error('Project name is required');
+      return;
+    }
+    if (!region.trim()) {
+      toast.error('Project region is required');
+      return;
+    }
+    updateProject.mutate(
+      {
+        id: project.id,
+        changes: {
+          name: name.trim(),
+          region: region.trim(),
+          environment,
+          description: description.trim(),
+        },
+      },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          toast.success('Project configuration updated');
+        },
+        onError: (error) =>
+          toast.error(error instanceof Error ? error.message : 'Failed to update project'),
+      },
+    );
+  };
+
+  if (editing) {
+    return (
+      <Card>
+        <CardContent className="space-y-4 py-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <ProjectField label="Name">
+              <Input
+                value={name}
+                maxLength={100}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </ProjectField>
+            <ProjectField label="Region">
+              <Input
+                value={region}
+                placeholder="af-casablanca-1"
+                onChange={(event) => setRegion(event.target.value)}
+              />
+            </ProjectField>
+            <ProjectField label="Environment">
+              <Select
+                value={environment}
+                onChange={(event) => setEnvironment(event.target.value as Environment)}
+              >
+                {ENVIRONMENTS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </Select>
+            </ProjectField>
+            <ProjectField label="Cloud provider">
+              <ProviderLink project={project} compact />
+            </ProjectField>
+          </div>
+          <ProjectField label="Description">
+            <Textarea
+              value={description}
+              placeholder="What does this infrastructure host?"
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </ProjectField>
+          <p className="text-muted-foreground text-xs">
+            For projects without provisioned infrastructure, region changes are synchronized to the
+            saved infrastructure plan. Stack identity and provider fields are protected after
+            resources are created.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={updateProject.isPending} onClick={cancel}>
+              <X className="size-4" /> Cancel
+            </Button>
+            <Button disabled={updateProject.isPending} onClick={save}>
+              {updateProject.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Save changes
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -84,6 +208,9 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
         </div>
         <div className="flex items-center gap-3">
           <ProviderLink project={project} />
+          <Button variant="ghost" size="icon" title="Edit project" onClick={() => setEditing(true)}>
+            <Pencil className="size-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -108,7 +235,13 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
  * Inline selector that links (or clears) the cloud-provider credential a
  * project uses for provisioning. Required before Preview / Apply can run.
  */
-function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
+function ProviderLink({
+  project,
+  compact = false,
+}: {
+  project: ProjectDto;
+  compact?: boolean;
+}): JSX.Element {
   const { data: credentials } = useCredentials();
   const updateProject = useUpdateProject();
   const providerCredentials = (credentials ?? []).filter((c) => isProvisioningProviderKind(c.kind));
@@ -127,11 +260,13 @@ function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
 
   return (
     <div className="flex flex-col gap-1">
-      <Label className="text-muted-foreground text-[11px] uppercase tracking-wide">
-        Cloud provider
-      </Label>
+      {!compact ? (
+        <Label className="text-muted-foreground text-[11px] uppercase tracking-wide">
+          Cloud provider
+        </Label>
+      ) : null}
       <Select
-        className="h-9 w-56"
+        className={compact ? 'h-9 w-full' : 'h-9 w-56'}
         value={project.providerId ?? ''}
         disabled={updateProject.isPending || providerCredentials.length === 0}
         onChange={(event) => change(event.target.value)}
@@ -145,6 +280,15 @@ function ProviderLink({ project }: { project: ProjectDto }): JSX.Element {
           </option>
         ))}
       </Select>
+    </div>
+  );
+}
+
+function ProjectField({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
     </div>
   );
 }

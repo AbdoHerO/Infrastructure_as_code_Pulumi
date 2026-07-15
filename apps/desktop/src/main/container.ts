@@ -16,6 +16,7 @@ import {
   InfrastructureService,
   ManagedVpsTargetSyncService,
   PluginService,
+  ProjectConfigurationService,
   ProjectService,
   type ProviderCredentialResolver,
   ProviderConnectionService,
@@ -63,6 +64,7 @@ import { emitEvent } from './ipc/emit.js';
  */
 export interface AppContainer {
   readonly projectService: ProjectService;
+  readonly projectConfigurationService: ProjectConfigurationService;
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
   readonly providerService: ProviderConnectionService;
@@ -195,6 +197,12 @@ export async function initContainer(): Promise<AppContainer> {
     new PrismaTemplateStore(db),
     targetSyncService,
   );
+  const projectConfigurationService = new ProjectConfigurationService(
+    projectService,
+    infrastructureService,
+    projectStackReference,
+    activityService,
+  );
   const remoteTargetResolver: RemoteTargetResolver = {
     async resolve(targetId) {
       const saved = await vpsTargetService.get(targetId);
@@ -261,6 +269,7 @@ export async function initContainer(): Promise<AppContainer> {
 
   container = {
     projectService,
+    projectConfigurationService,
     credentialService,
     settingsService,
     providerService,

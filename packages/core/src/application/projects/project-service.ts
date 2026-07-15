@@ -67,6 +67,18 @@ export class ProjectService {
     return ok(toProjectDto(updated.value));
   }
 
+  /** Validate and project an update without writing it to persistence. */
+  async previewUpdate(
+    id: string,
+    input: UpdateProjectInput,
+  ): Promise<Result<ProjectDto, ProjectServiceError>> {
+    const project = await this.load(id);
+    if (!project.ok) return project;
+    const candidate = Project.reconstitute(project.value.toSnapshot());
+    const updated = candidate.update(input);
+    return updated.ok ? ok(toProjectDto(updated.value)) : updated;
+  }
+
   async remove(id: string): Promise<Result<void, ProjectServiceError>> {
     const project = await this.load(id);
     if (!project.ok) return project;
