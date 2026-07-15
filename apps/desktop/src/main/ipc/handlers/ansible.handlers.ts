@@ -33,6 +33,9 @@ export function registerAnsibleHandlers(): void {
   registerHandler('ansible:status', async (request) =>
     orThrow(await getContainer().ansibleManager.status(await resolveSshTarget(request))),
   );
+  registerHandler('ansible:profileStates', async (request) =>
+    orThrow(await getContainer().ansibleManager.profileStates(await resolveSshTarget(request))),
+  );
   registerHandler('ansible:preflight', async (request) => {
     const report = orThrow(
       await getContainer().ansibleManager.preflight(

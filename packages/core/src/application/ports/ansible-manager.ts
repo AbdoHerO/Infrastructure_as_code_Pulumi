@@ -26,6 +26,22 @@ export interface AnsibleStatus {
   readonly version: string | null;
 }
 
+export type AnsibleProfileRuntimeStatus = 'not-installed' | 'stopped' | 'running' | 'unhealthy';
+
+/** Live, target-specific state discovered from the VPS rather than run history. */
+export interface AnsibleProfileState {
+  readonly profileId: AnsibleProfileId;
+  readonly status: AnsibleProfileRuntimeStatus;
+  readonly installed: boolean;
+  readonly running: boolean;
+  readonly version: string | null;
+  readonly port: number | null;
+  /** Native host firewall only. Cloud-provider ingress is managed separately. */
+  readonly hostFirewallOpen: boolean | null;
+  readonly detail: string;
+  readonly checkedAt: string;
+}
+
 export type VpsCheckStatus = 'ready' | 'warning' | 'repairable' | 'blocked';
 
 export interface VpsPreflightCheck {
@@ -98,6 +114,9 @@ export interface AnsibleManager {
   profiles(): readonly AnsibleProfile[];
   inspectHostKey(host: string, port: number): Promise<Result<string, DeploymentError>>;
   status(target: DeploymentTarget): Promise<Result<AnsibleStatus, DeploymentError>>;
+  profileStates(
+    target: DeploymentTarget,
+  ): Promise<Result<readonly AnsibleProfileState[], DeploymentError>>;
   preflight(
     target: DeploymentTarget,
     profileId?: AnsibleProfileId,

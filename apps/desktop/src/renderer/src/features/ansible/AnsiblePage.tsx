@@ -74,6 +74,7 @@ export function AnsiblePage(): JSX.Element {
   const [hostKeySha256, setHostKeySha256] = useState('');
   const [profileId, setProfileId] = useState('docker');
   const profile = profiles.data?.find((item) => item.id === profileId);
+  const profileState = actions.profileStates.data?.find((item) => item.profileId === profileId);
   const [variables, setVariables] = useState<Record<string, unknown>>({});
   const [domain, setDomain] = useState('');
   const [upstreamHost, setUpstreamHost] = useState('127.0.0.1');
@@ -159,12 +160,20 @@ export function AnsiblePage(): JSX.Element {
   };
   const runProfile = (): void => {
     if (!profile) return;
+    if (
+      profileState?.installed &&
+      !window.confirm(
+        `${profile.name} is already ${profileState.running ? 'running' : 'installed'}. Re-run its idempotent configuration to update or repair it?`,
+      )
+    )
+      return;
     logs.clear();
     actions.run.mutate(
       { ...target, profileId: profile.id, variables: profileValues() },
       {
         onSuccess: ({ summary }) => {
           toast.success(summary);
+          actions.profileStates.mutate(target);
           if (profile.id === 'jenkins') loadProfileAccess();
         },
         onError: fail,
@@ -236,6 +245,15 @@ export function AnsiblePage(): JSX.Element {
     setSshCredentialId(saved.sshCredentialId ?? '');
     setHostKeySha256(saved.hostKeySha256);
   }, [resetAccess, resetPreflight, savedTargets.data, selectedTargetId]);
+  useEffect(() => {
+    if (!connected) {
+      actions.profileStates.reset();
+      return;
+    }
+    actions.profileStates.mutate(target);
+    // Primitive target fields deliberately define when remote state is refreshed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host, hostKeySha256, port, sshCredentialId, username]);
   const saveTarget = (): void => {
     const request = { name: targetName, ...target };
     const callbacks = {
@@ -447,49 +465,114 @@ export function AnsiblePage(): JSX.Element {
         <TabsContent value="profiles">
           <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
             <Card>
-              <CardHeader>
-                <CardTitle>Generic profile</CardTitle>
-                <CardDescription>
-                  Check readiness, review any blockers, and explicitly prepare the VPS before a run.
-                </CardDescription>
+              <CardHeader className="flex-row items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Generic profile</CardTitle>
+                  <CardDescription>
+                    Live state is read from the selected VPS. Re-running a profile is idempotent.
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!connected || actions.profileStates.isPending}
+                  onClick={() => actions.profileStates.mutate(target)}
+                >
+                  {actions.profileStates.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  Refresh states
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
+                {actions.profileStates.isError ? (
+                  <p className="text-destructive text-sm">
+                    Could not inspect installed services: {actions.profileStates.error.message}
+                  </p>
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-2">
-                  {(profiles.data ?? []).map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        setProfileId(item.id);
-                        setVariables({});
-                        actions.preflight.reset();
-                        actions.access.reset();
-                        actions.run.reset();
-                        setShowAccessSecret(false);
-                      }}
-                      className={`rounded-lg border p-4 text-left transition-colors ${item.id === profileId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
-                    >
-                      <p className="font-medium">{item.name}</p>
-                      <p className="text-muted-foreground mt-1 text-xs">{item.description}</p>
-                    </button>
-                  ))}
+                  {(profiles.data ?? []).map((item) => {
+                    const state = actions.profileStates.data?.find(
+                      (candidate) => candidate.profileId === item.id,
+                    );
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setProfileId(item.id);
+                          setVariables({});
+                          actions.preflight.reset();
+                          actions.access.reset();
+                          actions.run.reset();
+                          setShowAccessSecret(false);
+                        }}
+                        className={`rounded-lg border p-4 text-left transition-colors ${item.id === profileId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-medium">{item.name}</p>
+                          <Badge
+                            variant={
+                              state?.status === 'running'
+                                ? 'success'
+                                : state?.installed
+                                  ? 'warning'
+                                  : 'secondary'
+                            }
+                          >
+                            {state?.status ?? 'checking'}
+                          </Badge>
+                        </div>
+                        <p className="text-muted-foreground mt-1 text-xs">{item.description}</p>
+                        {state?.version ? (
+                          <p className="text-muted-foreground mt-2 truncate text-xs">
+                            {state.version}
+                            {state.port ? ` · port ${state.port}` : ''}
+                          </p>
+                        ) : null}
+                        {state?.hostFirewallOpen === false ? (
+                          <p className="text-destructive mt-2 text-xs">
+                            Port {state.port} is blocked by the VPS firewall
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
                 {profile?.variables.map((spec) => (
                   <Field key={spec.key} label={spec.label}>
-                    <Input
-                      type={spec.secret ? 'password' : spec.type === 'number' ? 'number' : 'text'}
-                      value={displayValue(variables[spec.key] ?? spec.defaultValue)}
-                      onChange={(event) => {
-                        setVariables((current) => ({
-                          ...current,
-                          [spec.key]:
-                            spec.type === 'number'
-                              ? Number(event.target.value)
-                              : event.target.value,
-                        }));
-                        actions.preflight.reset();
-                      }}
-                    />
+                    {spec.type === 'boolean' ? (
+                      <div className="flex min-h-10 items-center gap-3">
+                        <Switch
+                          checked={Boolean(variables[spec.key] ?? spec.defaultValue)}
+                          onCheckedChange={(checked) => {
+                            setVariables((current) => ({ ...current, [spec.key]: checked }));
+                            actions.preflight.reset();
+                          }}
+                          id={`ansible-variable-${spec.key}`}
+                        />
+                        <Label htmlFor={`ansible-variable-${spec.key}`}>
+                          {(variables[spec.key] ?? spec.defaultValue) ? 'Enabled' : 'Disabled'}
+                        </Label>
+                      </div>
+                    ) : (
+                      <Input
+                        type={spec.secret ? 'password' : spec.type === 'number' ? 'number' : 'text'}
+                        value={displayValue(variables[spec.key] ?? spec.defaultValue)}
+                        onChange={(event) => {
+                          setVariables((current) => ({
+                            ...current,
+                            [spec.key]:
+                              spec.type === 'number'
+                                ? Number(event.target.value)
+                                : event.target.value,
+                          }));
+                          actions.preflight.reset();
+                        }}
+                      />
+                    )}
                     {spec.description ? (
                       <p className="text-muted-foreground text-xs">{spec.description}</p>
                     ) : null}
@@ -502,7 +585,8 @@ export function AnsiblePage(): JSX.Element {
                     ) : (
                       <Play className="size-4" />
                     )}
-                    Run {profile?.name ?? 'profile'}
+                    {profileState?.installed ? 'Re-run / update' : 'Run'}{' '}
+                    {profile?.name ?? 'profile'}
                   </Button>
                   <Button
                     variant="outline"

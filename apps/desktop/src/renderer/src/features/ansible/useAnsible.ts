@@ -10,6 +10,7 @@ import type {
   AnsibleOutcome,
   AnsibleAccessDetails,
   AnsibleProfile,
+  AnsibleProfileState,
   AnsibleStatus,
   NginxSite,
   VpsPreflightReport,
@@ -33,6 +34,7 @@ type PreflightRequest = SshTargetRequest & {
 interface AnsibleActions {
   inspect: UseMutationResult<{ fingerprint: string }, Error, { host: string; port: number }>;
   status: UseMutationResult<AnsibleStatus, Error, SshTargetRequest>;
+  profileStates: UseMutationResult<readonly AnsibleProfileState[], Error, SshTargetRequest>;
   bootstrap: UseMutationResult<AnsibleStatus, Error, SshTargetRequest>;
   preflight: UseMutationResult<VpsPreflightReport, Error, PreflightRequest>;
   repair: UseMutationResult<VpsPreflightReport, Error, SshTargetRequest & { targetId?: string }>;
@@ -100,6 +102,9 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
   const status = useMutation({
     mutationFn: (target: SshTargetRequest) => invoke('ansible:status', target),
   });
+  const profileStates = useMutation({
+    mutationFn: (target: SshTargetRequest) => invoke('ansible:profileStates', target),
+  });
   const bootstrap = useMutation({
     mutationFn: (target: SshTargetRequest) => invoke('ansible:bootstrap', { ...target, streamId }),
   });
@@ -138,6 +143,7 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
   return {
     inspect,
     status,
+    profileStates,
     bootstrap,
     preflight,
     repair,

@@ -5,6 +5,7 @@ import type {
   AnsibleAccessDetails,
   AnsibleOutcome,
   AnsibleProfile,
+  AnsibleProfileState,
   AnsibleProfileId,
   AnsibleStatus,
   AppSettings,
@@ -234,6 +235,10 @@ export interface IpcContract {
     response: { fingerprint: string };
   };
   'ansible:status': { request: SshTargetRequest; response: AnsibleStatus };
+  'ansible:profileStates': {
+    request: SshTargetRequest;
+    response: readonly AnsibleProfileState[];
+  };
   'ansible:preflight': {
     request: SshTargetRequest & {
       targetId?: string;

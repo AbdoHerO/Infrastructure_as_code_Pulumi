@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 import type { NginxSite } from '@cloudforge/core';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
-import { renderManagedNginxSite, validateNginxSite } from './ssh-ansible-manager.js';
+import {
+  parseProfileStates,
+  renderManagedNginxSite,
+  validateNginxSite,
+} from './ssh-ansible-manager.js';
 
 describe('generic Ansible catalog', () => {
   it('has one safe local playbook for every unique profile', () => {
@@ -36,6 +40,53 @@ describe('generic Ansible catalog', () => {
     expect(playbook).toContain('docker network create --driver bridge cloudforge-network-probe');
     expect(playbook).toContain('Repair Docker firewall chains after a firewalld startup race');
     expect(playbook).toContain("'DOCKER-FORWARD' in docker_network_probe.stderr");
+  });
+
+  it('uses current Ansible facts and repository modules', () => {
+    const docker = getPlaybook('docker');
+    expect(docker).toContain('ansible.builtin.deb822_repository');
+    expect(docker).not.toContain('ansible.builtin.apt_repository');
+    expect(docker).not.toContain('ansible_os_family');
+  });
+
+  it('manages native service ports through the active VPS firewall', () => {
+    for (const profile of ['jenkins', 'nginx'] as const) {
+      const playbook = getPlaybook(profile);
+      expect(playbook).toContain('through the active VPS firewall');
+      expect(playbook).toContain("--comment 'CloudForge managed service'");
+      expect(playbook).toContain('netfilter-persistent save');
+      expect(playbook).toContain('manage_host_firewall | default(true) | bool');
+    }
+  });
+});
+
+describe('live Ansible profile state', () => {
+  it('parses installed, running, stopped, and host-firewall state', () => {
+    const states = parseProfileStates(`noise
+CF_PROFILE|docker|true|true|27.5.1|-|unknown|Docker Engine service
+CF_PROFILE|dockhand|true|true|fnsys/dockhand:latest|3000|unknown|Dockhand container
+CF_PROFILE|portainer|false|false||-|unknown|Portainer container is absent
+CF_PROFILE|jenkins|true|false|2.516.1|8080|closed|Jenkins native service
+CF_PROFILE|nginx|true|true|1.24.0|80|open|Nginx native service
+`);
+
+    expect(states).toHaveLength(5);
+    expect(states.find((state) => state.profileId === 'dockhand')).toMatchObject({
+      status: 'running',
+      port: 3000,
+    });
+    expect(states.find((state) => state.profileId === 'portainer')).toMatchObject({
+      status: 'not-installed',
+      installed: false,
+    });
+    expect(states.find((state) => state.profileId === 'jenkins')).toMatchObject({
+      status: 'stopped',
+      hostFirewallOpen: false,
+    });
+    expect(states.find((state) => state.profileId === 'nginx')).toMatchObject({
+      status: 'running',
+      hostFirewallOpen: true,
+    });
   });
 });
 

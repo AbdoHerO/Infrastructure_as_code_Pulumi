@@ -70,13 +70,30 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         required: true,
         defaultValue: 8080,
       },
+      {
+        key: 'manage_host_firewall',
+        label: 'Open VPS firewall port',
+        type: 'boolean',
+        required: true,
+        defaultValue: true,
+        description: 'Allow the Jenkins port through UFW, firewalld, or iptables.',
+      },
     ],
   },
   {
     id: 'nginx',
     name: 'Nginx',
     description: 'Install and enable a clean native Nginx service. Domains are managed separately.',
-    variables: [],
+    variables: [
+      {
+        key: 'manage_host_firewall',
+        label: 'Open VPS firewall port',
+        type: 'boolean',
+        required: true,
+        defaultValue: true,
+        description: 'Allow HTTP port 80 through UFW, firewalld, or iptables.',
+      },
+    ],
   },
 ] as const;
 
@@ -94,61 +111,71 @@ const HEADER = `---
 const DOCKER = `${HEADER}
     - name: Install Docker repository prerequisites on Debian family
       ansible.builtin.apt:
-        name: [ca-certificates, curl]
+        name: [ca-certificates, curl, python3-debian]
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Create APT keyring directory
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Install Docker repository signing key
       ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+        url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Read Debian architecture
       ansible.builtin.command: dpkg --print-architecture
       register: docker_deb_arch
       changed_when: false
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
+    - name: Remove legacy Docker repository definition
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.list
+        state: absent
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Configure Docker APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch={{ docker_deb_arch.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
-        filename: docker
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: [deb]
+        uris: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}"
+        suites: ["{{ ansible_facts['distribution_release'] }}"]
+        components: [stable]
+        architectures: ["{{ docker_deb_arch.stdout }}"]
+        signed_by: /etc/apt/keyrings/docker.asc
         state: present
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Install official Docker packages on Debian family
       ansible.builtin.apt:
         name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
     - name: Install Docker repository prerequisites on Red Hat family
       ansible.builtin.package:
         name: dnf-plugins-core
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Configure official Docker repository on Red Hat family
       ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/{{ 'rhel' if ansible_distribution == 'RedHat' else 'centos' }}/docker-ce.repo"
+        url: "https://download.docker.com/linux/{{ 'rhel' if ansible_facts['distribution'] == 'RedHat' else 'centos' }}/docker-ce.repo"
         dest: /etc/yum.repos.d/docker-ce.repo
         mode: '0644'
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Install official Docker packages on Red Hat family
       ansible.builtin.package:
         name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Create Docker systemd override directory on Red Hat family
       ansible.builtin.file:
         path: /etc/systemd/system/docker.service.d
         state: directory
         mode: '0755'
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Start Docker after firewalld on Red Hat family
       ansible.builtin.copy:
         dest: /etc/systemd/system/docker.service.d/cloudforge-firewalld.conf
@@ -158,7 +185,7 @@ const DOCKER = `${HEADER}
           After=network-online.target firewalld.service
           Wants=network-online.target
       register: docker_systemd_override
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
     - name: Reload systemd after Docker ordering change
       ansible.builtin.systemd:
         daemon_reload: true
@@ -184,7 +211,7 @@ const DOCKER = `${HEADER}
         state: restarted
       when:
         - docker_network_probe.rc != 0
-        - ansible_os_family == 'RedHat'
+        - ansible_facts['os_family'] == 'RedHat'
         - >-
           'DOCKER-FORWARD' in docker_network_probe.stderr or
           'Failed to Setup IP tables' in docker_network_probe.stderr or
@@ -273,6 +300,33 @@ const PORTAINER = `${HEADER}
       changed_when: "'Started' in compose_result.stdout or 'Created' in compose_result.stdout or 'Recreated' in compose_result.stdout"
 `;
 
+function hostFirewallTask(service: string, port: string): string {
+  return `    - name: Allow ${service} through the active VPS firewall
+      ansible.builtin.shell: |
+        set -eu
+        port="${port}"
+        changed=0
+        if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+          ufw status 2>/dev/null | grep -Eq "(^|[[:space:]])$port/tcp[[:space:]].*ALLOW" || { ufw allow "$port/tcp"; changed=1; }
+        elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
+          firewall-cmd --quiet --query-port="$port/tcp" || { firewall-cmd --permanent --add-port="$port/tcp"; firewall-cmd --reload; changed=1; }
+        elif command -v iptables >/dev/null 2>&1; then
+          iptables -C INPUT -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT 2>/dev/null || { iptables -I INPUT 1 -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT; changed=1; }
+          if [ "$changed" -eq 1 ]; then
+            if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save >/dev/null
+            elif [ -d /etc/sysconfig ]; then iptables-save > /etc/sysconfig/iptables
+            fi
+          fi
+        fi
+        echo "cloudforge_changed=$changed"
+      args:
+        executable: /bin/sh
+      register: cloudforge_firewall
+      changed_when: "'cloudforge_changed=1' in cloudforge_firewall.stdout"
+      when: manage_host_firewall | default(true) | bool
+`;
+}
+
 const JENKINS = `${HEADER}
     - name: Install Java and prerequisites on Debian family
       ansible.builtin.apt:
@@ -351,6 +405,7 @@ const JENKINS = `${HEADER}
         name: jenkins
         state: started
         enabled: true
+${hostFirewallTask('Jenkins', '{{ service_port }}')}
   handlers:
     - name: Restart Jenkins
       ansible.builtin.systemd_service:
@@ -372,6 +427,7 @@ const NGINX = `${HEADER}
         name: nginx
         state: started
         enabled: true
+${hostFirewallTask('Nginx HTTP', '80')}
 `;
 
 const PLAYBOOKS: Readonly<Record<AnsibleProfileId, string>> = {
