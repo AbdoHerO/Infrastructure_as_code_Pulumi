@@ -1,6 +1,23 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cloud, Save, Shield, Trash2, Zap } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  CheckCircle2,
+  Clock3,
+  Cloud,
+  Database,
+  Globe2,
+  LockKeyhole,
+  Network,
+  Save,
+  ServerCog,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import type {
   CloudflareDnsRecord,
   CloudflareDnsBatchAction,
@@ -21,6 +38,7 @@ import {
   Input,
   Label,
   Select,
+  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -106,9 +124,18 @@ export function CloudflarePage(): JSX.Element {
         description="Manage account zones, DNS, security, SSL, caching and edge services without exposing API tokens."
       />
       <Card>
-        <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_1fr_auto]">
-          <div>
-            <Label>Cloudflare credential</Label>
+        <div className="h-1 bg-orange-500" />
+        <CardContent className="grid gap-5 p-6 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+          <div className="hidden size-11 items-center justify-center rounded-xl bg-orange-500/10 text-orange-600 lg:flex">
+            <Cloud className="size-5" />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Cloudflare credential</Label>
+              <Badge variant={dashboard.data?.connected ? 'success' : 'outline'}>
+                {dashboard.data?.connected ? 'Connected' : 'Not tested'}
+              </Badge>
+            </div>
             <Select
               value={credentialId}
               onChange={(event) => {
@@ -123,10 +150,20 @@ export function CloudflarePage(): JSX.Element {
                 </option>
               ))}
             </Select>
+            <p className="text-muted-foreground text-xs">Encrypted and never sent to the UI.</p>
           </div>
-          <div>
-            <Label>Zone</Label>
-            <Select value={zoneId} onChange={(event) => setZoneId(event.target.value)}>
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Zone</Label>
+              {zones.data ? (
+                <span className="text-muted-foreground text-xs">{zones.data.length} available</span>
+              ) : null}
+            </div>
+            <Select
+              value={zoneId}
+              disabled={!credentialId || zones.isLoading}
+              onChange={(event) => setZoneId(event.target.value)}
+            >
               <option value="">All zones</option>
               {zones.data?.map((zone) => (
                 <option key={zone.id} value={zone.id}>
@@ -134,9 +171,16 @@ export function CloudflarePage(): JSX.Element {
                 </option>
               ))}
             </Select>
+            <p className="text-muted-foreground truncate text-xs">
+              {zones.isLoading
+                ? 'Synchronizing zones…'
+                : zones.isError
+                  ? 'Zones could not be loaded.'
+                  : 'Choose the domain you want to manage.'}
+            </p>
           </div>
           <Button
-            className="mt-6"
+            className="lg:mb-5"
             variant="outline"
             disabled={!credentialId}
             onClick={() => {
@@ -156,19 +200,26 @@ export function CloudflarePage(): JSX.Element {
         <Empty />
       ) : (
         <Tabs defaultValue="dashboard">
-          <TabsList className="flex h-auto flex-wrap justify-start">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="zones">Zones</TabsTrigger>
-            <TabsTrigger value="dns">DNS</TabsTrigger>
-            <TabsTrigger value="ssl">SSL & Cache</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            <TabsTrigger value="rules">Page Rules</TabsTrigger>
-            <TabsTrigger value="redirects">Redirect Rules</TabsTrigger>
-            <TabsTrigger value="platform">Workers · R2 · Access</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-1">
+            <TabsList className="h-auto min-w-max justify-start">
+              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+              <TabsTrigger value="zones">Zones</TabsTrigger>
+              <TabsTrigger value="dns">DNS</TabsTrigger>
+              <TabsTrigger value="ssl">SSL & Cache</TabsTrigger>
+              <TabsTrigger value="security">Security</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="rules">Page Rules</TabsTrigger>
+              <TabsTrigger value="redirects">Redirect Rules</TabsTrigger>
+              <TabsTrigger value="platform">Workers · R2 · Access</TabsTrigger>
+            </TabsList>
+          </div>
           <TabsContent value="dashboard">
-            <Dashboard data={dashboard.data} />
+            <Dashboard
+              data={dashboard.data}
+              loading={dashboard.isLoading}
+              error={dashboard.error}
+              zoneName={zones.data?.find((zone) => zone.id === zoneId)?.name}
+            />
           </TabsContent>
           <TabsContent value="zones">
             <Zones credentialId={credentialId} zones={zones.data ?? []} onSelect={setZoneId} />
@@ -224,28 +275,62 @@ function Empty(): JSX.Element {
 
 function Dashboard({
   data,
+  loading,
+  error,
+  zoneName,
 }: {
   data: Awaited<ReturnType<typeof invoke<'cloudflare:dashboard'>>> | undefined;
+  loading: boolean;
+  error: Error | null;
+  zoneName: string | undefined;
 }): JSX.Element {
-  const metrics = data
-    ? [
-        ['Account', data.account.name],
-        ['Email', data.account.email ?? 'Unavailable'],
-        ['Connected', data.connected ? 'Yes' : 'No'],
-        ['API', data.apiStatus],
-        ['Plan', data.plan],
-        ['Zones', data.zones],
-        ['DNS records', data.dnsRecords ?? 'Unavailable'],
-        ['Proxied', data.proxiedRecords ?? 'Unavailable'],
-        ['SSL mode', data.sslMode],
-        ['Firewall rules', data.firewallRules ?? 'Unavailable'],
-        ['Page rules', data.pageRules ?? 'Unavailable'],
-        ['Cache', data.cacheStatus],
-        ['Last sync', new Date(data.lastSynchronization).toLocaleString()],
-      ]
-    : [];
+  if (loading) return <DashboardSkeleton />;
+  if (error)
+    return (
+      <Card className="border-destructive/40">
+        <CardContent className="flex min-h-40 items-center gap-4 p-6">
+          <div className="bg-destructive/10 text-destructive flex size-10 items-center justify-center rounded-xl">
+            <Activity className="size-5" />
+          </div>
+          <div>
+            <p className="font-medium">Cloudflare dashboard is unavailable</p>
+            <p className="text-muted-foreground mt-1 text-sm">{error.message}</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  if (!data) return <DashboardSkeleton />;
+  const metrics: readonly Metric[] = [
+    { label: 'Zones', value: data.zones, icon: Globe2, tone: 'orange' },
+    {
+      label: 'DNS records',
+      value: data.dnsRecords ?? 'Unavailable',
+      icon: Network,
+      tone: 'blue',
+    },
+    {
+      label: 'Proxied records',
+      value: data.proxiedRecords ?? 'Unavailable',
+      icon: Cloud,
+      tone: 'orange',
+    },
+    { label: 'SSL mode', value: data.sslMode, icon: LockKeyhole, tone: 'green' },
+    {
+      label: 'Firewall rules',
+      value: data.firewallRules ?? 'Unavailable',
+      icon: ShieldCheck,
+      tone: 'purple',
+    },
+    {
+      label: 'Page rules',
+      value: data.pageRules ?? 'Unavailable',
+      icon: ServerCog,
+      tone: 'blue',
+    },
+    { label: 'Cache level', value: data.cacheStatus, icon: Database, tone: 'purple' },
+  ];
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {data?.warnings.length ? (
         <Card className="border-amber-300 bg-amber-50/50">
           <CardHeader>
@@ -261,14 +346,133 @@ function Dashboard({
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {metrics.map(([label, value]) => (
-          <Card key={String(label)}>
-            <CardHeader className="pb-2">
-              <CardDescription>{label}</CardDescription>
-              <CardTitle className="text-lg">{String(value)}</CardTitle>
-            </CardHeader>
-          </Card>
+      <Card className="overflow-hidden">
+        <CardContent className="grid gap-0 p-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(360px,1fr)]">
+          <div className="flex min-w-0 gap-4 border-b p-6 lg:border-b-0 lg:border-r">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-sm">
+              <Cloud className="size-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Cloudflare account
+                </p>
+                <Badge variant={data.connected ? 'success' : 'destructive'}>
+                  <CheckCircle2 className="size-3" />
+                  {data.connected ? 'Connected' : 'Disconnected'}
+                </Badge>
+              </div>
+              <h2 className="mt-2 break-words text-xl font-semibold tracking-tight">
+                {data.account.name}
+              </h2>
+              <p className="text-muted-foreground mt-1 break-all text-sm">
+                {data.account.email ?? 'Email unavailable for this token'}
+              </p>
+              <p
+                className="text-muted-foreground mt-3 truncate font-mono text-xs"
+                title={data.account.id}
+              >
+                {data.account.id}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 divide-x">
+            <AccountDetail label="Plan" value={data.plan} icon={BarChart3} />
+            <AccountDetail
+              label="API status"
+              value={data.apiStatus}
+              icon={Activity}
+              healthy={data.apiStatus === 'operational'}
+            />
+            <AccountDetail label="Zone in view" value={zoneName ?? 'All zones'} icon={Globe2} />
+            <AccountDetail
+              label="Last synchronized"
+              value={new Date(data.lastSynchronization).toLocaleString()}
+              icon={Clock3}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <MetricCard key={metric.label} metric={metric} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface Metric {
+  readonly label: string;
+  readonly value: string | number;
+  readonly icon: LucideIcon;
+  readonly tone: 'orange' | 'blue' | 'green' | 'purple';
+}
+
+const metricTone: Record<Metric['tone'], string> = {
+  orange: 'bg-orange-500/10 text-orange-600',
+  blue: 'bg-blue-500/10 text-blue-600',
+  green: 'bg-emerald-500/10 text-emerald-600',
+  purple: 'bg-violet-500/10 text-violet-600',
+};
+
+function MetricCard({ metric }: { metric: Metric }): JSX.Element {
+  const Icon = metric.icon;
+  return (
+    <Card className="min-w-0 transition-shadow hover:shadow-sm">
+      <CardContent className="flex items-center gap-4 p-5">
+        <div
+          className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${metricTone[metric.tone]}`}
+        >
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-muted-foreground text-xs font-medium">{metric.label}</p>
+          <p
+            className="mt-1 truncate text-lg font-semibold capitalize"
+            title={String(metric.value)}
+          >
+            {metric.value}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccountDetail({
+  label,
+  value,
+  icon: Icon,
+  healthy = false,
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  healthy?: boolean;
+}): JSX.Element {
+  return (
+    <div className="nth-last-2:border-b-0 min-w-0 border-b p-5 last:border-b-0 odd:border-r">
+      <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium">
+        <Icon className="size-3.5" /> {label}
+      </div>
+      <p
+        className={`mt-2 truncate text-sm font-semibold capitalize ${healthy ? 'text-emerald-600' : ''}`}
+        title={value}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function DashboardSkeleton(): JSX.Element {
+  return (
+    <div className="space-y-5">
+      <Skeleton className="h-48 w-full" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        {Array.from({ length: 7 }, (_, index) => (
+          <Skeleton key={index} className="h-20" />
         ))}
       </div>
     </div>
