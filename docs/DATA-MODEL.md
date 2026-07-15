@@ -30,7 +30,7 @@ pnpm --filter @cloudforge/database prisma:generate       # regenerate the client
 pnpm --filter @cloudforge/database db:bootstrap-sql       # regenerate bootstrap.sql
 ```
 
-## Tables (12)
+## Tables (13)
 
 ### Project
 
@@ -180,6 +180,28 @@ in the related encrypted `Credential`.
 | `lastPreflightAt`          | DateTime?  | Last real remote check         |
 | `createdAt` / `updatedAt`  | DateTime   | indexed on `updatedAt`         |
 
+### JenkinsPipeline
+
+A CloudForge-managed Jenkins Pipeline job. Jobs are grouped into a deterministic
+folder for their existing `VpsTarget`; the target and credentials are referenced,
+not duplicated. Repository and deployment configuration is persisted, while API
+tokens remain only in encrypted `Credential` records and Jenkins' credential store.
+
+| Column                                       | Type            | Notes                                                |
+| -------------------------------------------- | --------------- | ---------------------------------------------------- |
+| `id`                                         | String @id      | Application UUID                                     |
+| `folder`, `name`                             | String          | Unique Jenkins folder/job identity                   |
+| `targetId`                                   | String          | Existing `VpsTarget` id, indexed                     |
+| `jenkinsCredentialId`                        | String          | Encrypted Jenkins credential reference               |
+| `githubCredentialId`                         | String?         | Encrypted GitHub credential reference                |
+| `repositoryUrl`, `branch`, `jenkinsfilePath` | String          | SCM pipeline configuration                           |
+| `pipelineScript`, `definitionMode`           | String          | Inline script or `scm` definition                    |
+| `parameters`, `environment`                  | String          | Validated JSON; secret environment keys are rejected |
+| `domain`, `applicationPort`                  | String/Int      | Optional Nginx/Cloudflare integration                |
+| `cloudflareCredentialId`, `cloudflareZoneId` | String?         | Optional service-provider references                 |
+| `configureDomain`                            | Boolean         | Enables DNS and Nginx orchestration                  |
+| `lastStatus`, timestamps                     | String/DateTime | Jenkins state and audit timestamps                   |
+
 ### Setting
 
 Simple key/value store. Backs `AppSettings` (`key = app.settings`) and per-project
@@ -227,5 +249,6 @@ The audit / activity feed powering the Logs module and dashboard timeline.
 | Deployment history                | `Deployment`                                                               |
 | Activity/audit                    | `Activity`                                                                 |
 | Saved Ansible VPS targets         | `VpsTarget`                                                                |
+| Jenkins pipeline definitions      | `JenkinsPipeline`                                                          |
 | Installed plugins                 | `Plugin`                                                                   |
 | Application log file              | `userData/logs/cloudforge.log` (not in SQLite — see [Modules](MODULES.md)) |

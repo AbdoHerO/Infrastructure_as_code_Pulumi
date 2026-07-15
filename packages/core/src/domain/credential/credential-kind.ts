@@ -4,6 +4,7 @@ export const CREDENTIAL_KINDS = [
   'aws',
   'azure',
   'github',
+  'jenkins',
   'cloudflare',
   'openai',
   'anthropic',
@@ -90,6 +91,18 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
     kind: 'github',
     label: 'GitHub',
     fields: [field('personalAccessToken', 'Personal Access Token', { secret: true })],
+  },
+  jenkins: {
+    kind: 'jenkins',
+    label: 'Jenkins',
+    fields: [
+      field('username', 'Jenkins Username'),
+      field('apiToken', 'Jenkins API Token', { secret: true }),
+      field('baseUrl', 'Jenkins URL', {
+        required: false,
+        placeholder: 'http://server.example.com:8080',
+      }),
+    ],
   },
   cloudflare: {
     kind: 'cloudflare',

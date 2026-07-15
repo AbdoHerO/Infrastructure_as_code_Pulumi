@@ -87,6 +87,35 @@ model VpsTarget {
   @@index([sshCredentialId])
 }
 
+model JenkinsPipeline {
+  id                     String   @id
+  name                   String
+  folder                 String
+  description            String   @default("")
+  targetId               String
+  jenkinsCredentialId    String
+  githubCredentialId     String?
+  repositoryUrl          String   @default("")
+  branch                 String   @default("main")
+  jenkinsfilePath        String   @default("Jenkinsfile")
+  pipelineScript         String   @default("")
+  definitionMode         String   @default("scm")
+  parameters             String   @default("[]")
+  environment            String   @default("{}")
+  domain                 String   @default("")
+  applicationPort        Int?
+  cloudflareCredentialId String?
+  cloudflareZoneId       String?
+  configureDomain        Boolean  @default(false)
+  lastStatus             String   @default("configured")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([folder, name])
+  @@index([targetId])
+  @@index([updatedAt])
+}
+
 model Template {
   id          String   @id
   kind        String // 'infrastructure' | 'deployment'

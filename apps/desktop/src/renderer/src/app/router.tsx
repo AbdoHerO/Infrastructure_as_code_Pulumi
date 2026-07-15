@@ -21,6 +21,7 @@ import { SslPage } from '../features/ssl/SslPage.js';
 import { DocumentationPage } from '../features/documentation/DocumentationPage.js';
 import { TerminalPage } from '../features/terminal/TerminalPage.js';
 import { CloudflarePage } from '../features/cloudflare/CloudflarePage.js';
+import { JenkinsPage } from '../features/jenkins/JenkinsPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -44,6 +45,7 @@ export const router = createHashRouter([
       { path: 'ssl', element: <SslPage /> },
       { path: 'terminal', element: <TerminalPage /> },
       { path: 'cloudflare', element: <CloudflarePage /> },
+      { path: 'jenkins', element: <JenkinsPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

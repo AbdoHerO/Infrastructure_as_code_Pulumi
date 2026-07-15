@@ -22,6 +22,7 @@ import privacy from '@docs/PRIVACY.md?raw';
 import license from '@docs/LICENSE.md?raw';
 import aws from '@docs/AWS.md?raw';
 import cloudflare from '@docs/CLOUDFLARE.md?raw';
+import jenkins from '@docs/JENKINS-PIPELINES.md?raw';
 
 export type DocumentationCategory = 'Start here' | 'Operate' | 'Reference' | 'Develop';
 
@@ -130,6 +131,14 @@ export const DOCUMENTATION: readonly DocumentationArticle[] = [
     'Manage zones, DNS, SSL/TLS, cache, analytics and edge services.',
     'Operate',
     cloudflare,
+  ),
+  article(
+    'jenkins-pipelines',
+    'JENKINS-PIPELINES.md',
+    'Jenkins Pipelines',
+    'Create per-VPS folders, dynamic application pipelines, and domain automation.',
+    'Operate',
+    jenkins,
   ),
   article(
     'infrastructure-updates',

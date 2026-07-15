@@ -68,6 +68,45 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
     "SELECT name FROM sqlite_master WHERE type='table' AND name='VpsTarget'",
   );
   let migrated = false;
+  const jenkinsTables = await db.$queryRawUnsafe<TableRow[]>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='JenkinsPipeline'",
+  );
+  if (jenkinsTables.length === 0) {
+    await db.$executeRawUnsafe(`CREATE TABLE "JenkinsPipeline" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "folder" TEXT NOT NULL,
+      "description" TEXT NOT NULL DEFAULT '',
+      "targetId" TEXT NOT NULL,
+      "jenkinsCredentialId" TEXT NOT NULL,
+      "githubCredentialId" TEXT,
+      "repositoryUrl" TEXT NOT NULL DEFAULT '',
+      "branch" TEXT NOT NULL DEFAULT 'main',
+      "jenkinsfilePath" TEXT NOT NULL DEFAULT 'Jenkinsfile',
+      "pipelineScript" TEXT NOT NULL DEFAULT '',
+      "definitionMode" TEXT NOT NULL DEFAULT 'scm',
+      "parameters" TEXT NOT NULL DEFAULT '[]',
+      "environment" TEXT NOT NULL DEFAULT '{}',
+      "domain" TEXT NOT NULL DEFAULT '',
+      "applicationPort" INTEGER,
+      "cloudflareCredentialId" TEXT,
+      "cloudflareZoneId" TEXT,
+      "configureDomain" BOOLEAN NOT NULL DEFAULT false,
+      "lastStatus" TEXT NOT NULL DEFAULT 'configured',
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    )`);
+    await db.$executeRawUnsafe(
+      'CREATE UNIQUE INDEX "JenkinsPipeline_folder_name_key" ON "JenkinsPipeline"("folder", "name")',
+    );
+    await db.$executeRawUnsafe(
+      'CREATE INDEX "JenkinsPipeline_targetId_idx" ON "JenkinsPipeline"("targetId")',
+    );
+    await db.$executeRawUnsafe(
+      'CREATE INDEX "JenkinsPipeline_updatedAt_idx" ON "JenkinsPipeline"("updatedAt")',
+    );
+    migrated = true;
+  }
   if (targetTables.length === 0) {
     await db.$executeRawUnsafe(`CREATE TABLE "VpsTarget" (
       "id" TEXT NOT NULL PRIMARY KEY,

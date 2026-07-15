@@ -16,4 +16,5 @@ export { PrismaDeploymentRepository } from './repositories/prisma-deployment-rep
 export { PrismaActivityRepository } from './repositories/prisma-activity-repository.js';
 export { PrismaPluginRepository } from './repositories/prisma-plugin-repository.js';
 export { PrismaVpsTargetRepository } from './repositories/prisma-vps-target-repository.js';
+export { PrismaJenkinsPipelineRepository } from './repositories/prisma-jenkins-pipeline-repository.js';
 export { toDomainProject, toPrismaProject } from './mappers/project-mapper.js';

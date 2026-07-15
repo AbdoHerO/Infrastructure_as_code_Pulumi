@@ -226,6 +226,13 @@ Zone settings, cache purge, security, analytics, Page Rules, Redirect Rules and 
 inventory have separate typed channels. Every request contains only a stored
 credential ID and resource identifiers; API tokens never cross IPC.
 
+### Jenkins pipeline channels
+
+`jenkins:list`, `jenkins:test`, `jenkins:save`, `jenkins:delete`, `jenkins:trigger`, and
+`jenkins:status` manage per-VPS Jenkins folders and jobs. Renderer payloads contain only stored
+credential IDs. The main-process application service decrypts Jenkins/GitHub tokens immediately
+before the adapter call and never returns or logs them.
+
 ## Adding a channel (checklist)
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,

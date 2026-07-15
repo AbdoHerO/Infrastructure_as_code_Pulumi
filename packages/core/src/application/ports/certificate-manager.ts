@@ -32,6 +32,8 @@ export interface ManagedDnsCoordinator {
   ensure(
     domain: string,
     expectedIp: string,
+    credentialId?: string,
+    zoneId?: string,
   ): Promise<
     Result<
       { readonly status: 'pending' | 'propagated' | 'error'; readonly warning: string | null },

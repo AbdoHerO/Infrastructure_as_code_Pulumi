@@ -26,6 +26,7 @@ import {
   SshKeyService,
   SshTerminalService,
   VpsTargetService,
+  JenkinsPipelineService,
   isProvisioningProviderKind,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
@@ -38,6 +39,7 @@ import {
   SshNginxManager,
   SshCertificateManager,
   NodeSshTerminalManager,
+  JenkinsHttpManager,
 } from '@cloudforge/deployment';
 import {
   createPrismaClient,
@@ -53,6 +55,7 @@ import {
   PrismaSettingsRepository,
   PrismaTemplateStore,
   PrismaVpsTargetRepository,
+  PrismaJenkinsPipelineRepository,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
@@ -84,6 +87,7 @@ export interface AppContainer {
   readonly sshTerminalService: SshTerminalService;
   readonly cloudflareService: CloudflareService;
   readonly cloudflareDnsAutomationService: CloudflareDnsAutomationService;
+  readonly jenkinsPipelineService: JenkinsPipelineService;
   readonly secretsBackedByOsKeychain: boolean;
   synchronizeData(): Promise<{ warnings: readonly string[] }>;
   snapshotDatabase(destination: string): Promise<void>;
@@ -275,6 +279,15 @@ export async function initContainer(): Promise<AppContainer> {
     domainResolver,
     activityService,
   );
+  const jenkinsPipelineService = new JenkinsPipelineService(
+    new PrismaJenkinsPipelineRepository(db),
+    vpsTargetService,
+    credentialService,
+    new JenkinsHttpManager(),
+    activityService,
+    cloudflareDnsAutomationService,
+    nginxService,
+  );
   const sslService = new SslService(
     remoteTargetResolver,
     domainResolver,
@@ -402,6 +415,7 @@ export async function initContainer(): Promise<AppContainer> {
     sshTerminalService,
     cloudflareService,
     cloudflareDnsAutomationService,
+    jenkinsPipelineService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     synchronizeData: async () => {
       const [targets, cloudflare] = await Promise.all([

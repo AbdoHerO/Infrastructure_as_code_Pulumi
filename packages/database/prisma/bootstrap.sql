@@ -49,16 +49,40 @@ CREATE TABLE "VpsTarget" (
     "username" TEXT NOT NULL,
     "sshCredentialId" TEXT,
     "hostKeySha256" TEXT NOT NULL,
-      "lastPreflight" TEXT NOT NULL DEFAULT '',
-      "lastPreflightAt" DATETIME,
-      "managedProjectId" TEXT,
-      "managedResourceName" TEXT,
+    "lastPreflight" TEXT NOT NULL DEFAULT '',
+    "lastPreflightAt" DATETIME,
+    "managedProjectId" TEXT,
+    "managedResourceName" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "VpsTarget_sshCredentialId_fkey" FOREIGN KEY ("sshCredentialId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-  );
+);
 
-  CREATE UNIQUE INDEX "VpsTarget_managedProjectId_managedResourceName_key" ON "VpsTarget"("managedProjectId", "managedResourceName");
+-- CreateTable
+CREATE TABLE "JenkinsPipeline" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "folder" TEXT NOT NULL,
+    "description" TEXT NOT NULL DEFAULT '',
+    "targetId" TEXT NOT NULL,
+    "jenkinsCredentialId" TEXT NOT NULL,
+    "githubCredentialId" TEXT,
+    "repositoryUrl" TEXT NOT NULL DEFAULT '',
+    "branch" TEXT NOT NULL DEFAULT 'main',
+    "jenkinsfilePath" TEXT NOT NULL DEFAULT 'Jenkinsfile',
+    "pipelineScript" TEXT NOT NULL DEFAULT '',
+    "definitionMode" TEXT NOT NULL DEFAULT 'scm',
+    "parameters" TEXT NOT NULL DEFAULT '[]',
+    "environment" TEXT NOT NULL DEFAULT '{}',
+    "domain" TEXT NOT NULL DEFAULT '',
+    "applicationPort" INTEGER,
+    "cloudflareCredentialId" TEXT,
+    "cloudflareZoneId" TEXT,
+    "configureDomain" BOOLEAN NOT NULL DEFAULT false,
+    "lastStatus" TEXT NOT NULL DEFAULT 'configured',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
 
 -- CreateTable
 CREATE TABLE "Template" (
@@ -160,6 +184,18 @@ CREATE INDEX "VpsTarget_updatedAt_idx" ON "VpsTarget"("updatedAt");
 
 -- CreateIndex
 CREATE INDEX "VpsTarget_sshCredentialId_idx" ON "VpsTarget"("sshCredentialId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VpsTarget_managedProjectId_managedResourceName_key" ON "VpsTarget"("managedProjectId", "managedResourceName");
+
+-- CreateIndex
+CREATE INDEX "JenkinsPipeline_targetId_idx" ON "JenkinsPipeline"("targetId");
+
+-- CreateIndex
+CREATE INDEX "JenkinsPipeline_updatedAt_idx" ON "JenkinsPipeline"("updatedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "JenkinsPipeline_folder_name_key" ON "JenkinsPipeline"("folder", "name");
 
 -- CreateIndex
 CREATE INDEX "Deployment_projectId_idx" ON "Deployment"("projectId");

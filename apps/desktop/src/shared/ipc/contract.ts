@@ -70,6 +70,9 @@ import type {
   CloudflareZoneSettings,
   ServiceConnection,
   CloudflareDnsPropagation,
+  JenkinsPipelineRecord,
+  JenkinsJobStatus,
+  SaveJenkinsPipelineInput,
 } from '@cloudforge/core';
 
 /**
@@ -218,6 +221,19 @@ export interface IpcContract {
     request: { credentialId: string; zoneId: string; accountId: string };
     response: CloudflarePlatformSummary;
   };
+
+  'jenkins:list': { request: void; response: JenkinsPipelineRecord[] };
+  'jenkins:test': {
+    request: { targetId: string; credentialId: string };
+    response: { version: string };
+  };
+  'jenkins:save': { request: SaveJenkinsPipelineInput; response: JenkinsPipelineRecord };
+  'jenkins:delete': { request: { id: string }; response: void };
+  'jenkins:trigger': {
+    request: { id: string; parameters: Readonly<Record<string, string>> };
+    response: void;
+  };
+  'jenkins:status': { request: { id: string }; response: JenkinsJobStatus };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
   'backup:create': { request: { passphrase: string }; response: { path: string | null } };
@@ -675,6 +691,12 @@ export const IPC_CHANNELS = [
   'cloudflare:saveRedirectRule',
   'cloudflare:deleteRedirectRule',
   'cloudflare:platform',
+  'jenkins:list',
+  'jenkins:test',
+  'jenkins:save',
+  'jenkins:delete',
+  'jenkins:trigger',
+  'jenkins:status',
   'security:status',
   'backup:create',
   'backup:restore',

@@ -39,6 +39,8 @@ export * from './application/ports/nginx-manager.js';
 export * from './application/ports/certificate-manager.js';
 export * from './application/ports/ssh-terminal-manager.js';
 export * from './application/ports/service-provider-factory.js';
+export * from './application/ports/jenkins-manager.js';
+export * from './application/ports/jenkins-pipeline-repository.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -72,3 +74,4 @@ export * from './application/service-providers/service-provider.js';
 export * from './application/service-providers/cloudflare.js';
 export * from './application/service-providers/cloudflare-service.js';
 export * from './application/service-providers/cloudflare-dns-automation-service.js';
+export * from './application/jenkins/jenkins-pipeline-service.js';

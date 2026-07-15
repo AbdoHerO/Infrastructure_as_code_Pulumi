@@ -110,6 +110,14 @@ blocked for an explicit decision. Its Nginx tab manages CloudForge-owned
 domain-to-port proxies with `nginx -t`, rollback, reload, and safe removal.
 Channels: `ansible:*`; event `ansible:log`. See [the Ansible guide](ANSIBLE.md).
 
+## Jenkins Pipelines (`/jenkins`)
+
+Creates one isolated Jenkins folder per shared VPS target and idempotently creates or updates
+application Pipeline jobs. Jobs support Git-backed Jenkinsfiles or inline steps, encrypted
+Jenkins/GitHub credentials, branches, typed parameters, environment values, build triggering,
+and live status. Optional domain automation reuses Cloudflare DNS and the Nginx Manager rather
+than duplicating either feature. Channels: `jenkins:*`. See [Jenkins Pipelines](JENKINS-PIPELINES.md).
+
 ## Logs (`/logs`)
 
 Two tabs. **Activity** — a searchable, category-filterable, **JSON-exportable**

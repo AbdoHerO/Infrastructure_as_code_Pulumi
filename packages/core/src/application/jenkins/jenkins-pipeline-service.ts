@@ -1,0 +1,407 @@
+import {
+  DeploymentError,
+  err,
+  newUuid,
+  NotFoundError,
+  ok,
+  toIsoDateString,
+  ValidationError,
+  type PersistenceError,
+  type Result,
+} from '@cloudforge/shared';
+import type { ActivityService } from '../activity/activity-service.js';
+import type {
+  CredentialService,
+  CredentialServiceError,
+} from '../credentials/credential-service.js';
+import type { NginxService } from '../nginx/nginx-service.js';
+import type { ManagedDnsCoordinator } from '../ports/certificate-manager.js';
+import type {
+  JenkinsConnection,
+  JenkinsJobStatus,
+  JenkinsManager,
+  JenkinsParameter,
+} from '../ports/jenkins-manager.js';
+import type {
+  JenkinsPipelineRecord,
+  JenkinsPipelineRepository,
+} from '../ports/jenkins-pipeline-repository.js';
+import type { VpsTargetService } from '../vps-targets/vps-target-service.js';
+
+export interface SaveJenkinsPipelineInput {
+  readonly id?: string;
+  readonly name: string;
+  readonly description: string;
+  readonly targetId: string;
+  readonly jenkinsCredentialId: string;
+  readonly githubCredentialId?: string | null;
+  readonly repositoryUrl: string;
+  readonly branch: string;
+  readonly jenkinsfilePath: string;
+  readonly pipelineScript: string;
+  readonly definitionMode: 'scm' | 'inline';
+  readonly parameters: readonly JenkinsParameter[];
+  readonly environment: Readonly<Record<string, string>>;
+  readonly domain: string;
+  readonly applicationPort?: number | null;
+  readonly cloudflareCredentialId?: string | null;
+  readonly cloudflareZoneId?: string | null;
+  readonly configureDomain: boolean;
+}
+
+export type JenkinsPipelineServiceError =
+  ValidationError | NotFoundError | PersistenceError | DeploymentError | CredentialServiceError;
+
+export class JenkinsPipelineService {
+  constructor(
+    private readonly pipelines: JenkinsPipelineRepository,
+    private readonly targets: VpsTargetService,
+    private readonly credentials: CredentialService,
+    private readonly jenkins: JenkinsManager,
+    private readonly activities: ActivityService,
+    private readonly managedDns?: ManagedDnsCoordinator,
+    private readonly nginx?: NginxService,
+  ) {}
+
+  list(): Promise<Result<JenkinsPipelineRecord[], PersistenceError>> {
+    return this.pipelines.list();
+  }
+
+  async test(
+    targetId: string,
+    credentialId: string,
+  ): Promise<Result<{ version: string }, JenkinsPipelineServiceError>> {
+    const connection = await this.connection(targetId, credentialId);
+    return connection.ok ? this.jenkins.test(connection.value) : connection;
+  }
+
+  async save(
+    input: SaveJenkinsPipelineInput,
+  ): Promise<Result<JenkinsPipelineRecord, JenkinsPipelineServiceError>> {
+    const valid = validatePipeline(input);
+    if (!valid.ok) return valid;
+    const existing = input.id ? await this.pipelines.get(input.id) : ok(null);
+    if (!existing.ok) return existing;
+    if (input.id && !existing.value)
+      return err(new NotFoundError('The Jenkins pipeline no longer exists'));
+    const target = await this.targets.get(valid.value.targetId);
+    if (!target.ok) return target;
+    const connection = await this.connection(valid.value.targetId, valid.value.jenkinsCredentialId);
+    if (!connection.ok) return connection;
+    const id = input.id ?? newUuid();
+    const folder = `cloudforge-${slug(target.value.name)}-${target.value.id.slice(0, 8)}`;
+    const folderResult = await this.jenkins.ensureFolder(connection.value, folder);
+    if (!folderResult.ok) return folderResult;
+    let githubCredentialId: string | null = null;
+    if (valid.value.githubCredentialId) {
+      const github = await this.credentials.getDecrypted(valid.value.githubCredentialId);
+      if (!github.ok) return github;
+      if (github.value.kind !== 'github')
+        return err(new ValidationError('Select a GitHub credential'));
+      const token = github.value.data.personalAccessToken?.trim();
+      if (!token) return err(new ValidationError('The GitHub credential has no token'));
+      githubCredentialId = `cloudforge-github-${id}`;
+      const stored = await this.jenkins.ensureGithubCredential(
+        connection.value,
+        folder,
+        githubCredentialId,
+        token,
+      );
+      if (!stored.ok) return stored;
+    }
+    const configured = await this.jenkins.upsertJob(connection.value, {
+      folder,
+      name: valid.value.name,
+      description: valid.value.description,
+      repositoryUrl: valid.value.repositoryUrl,
+      branch: valid.value.branch,
+      jenkinsfilePath: valid.value.jenkinsfilePath,
+      pipelineScript: valid.value.pipelineScript,
+      definitionMode: valid.value.definitionMode,
+      parameters: valid.value.parameters,
+      environment: valid.value.environment,
+      githubCredentialId,
+    });
+    if (!configured.ok) return configured;
+    if (
+      existing.value &&
+      (existing.value.folder !== folder || existing.value.name !== valid.value.name)
+    ) {
+      const oldConnection = await this.connection(
+        existing.value.targetId,
+        existing.value.jenkinsCredentialId,
+      );
+      if (!oldConnection.ok) return oldConnection;
+      const removedOldJob = await this.jenkins.removeJob(
+        oldConnection.value,
+        existing.value.folder,
+        existing.value.name,
+      );
+      if (!removedOldJob.ok) return removedOldJob;
+    }
+    const now = toIsoDateString(new Date());
+    const record: JenkinsPipelineRecord = {
+      id,
+      folder,
+      ...valid.value,
+      githubCredentialId: valid.value.githubCredentialId,
+      cloudflareCredentialId: valid.value.cloudflareCredentialId,
+      cloudflareZoneId: valid.value.cloudflareZoneId,
+      lastStatus: 'configured',
+      createdAt: existing.value?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const saved = await this.pipelines.save(record);
+    if (!saved.ok) return saved;
+    if (record.configureDomain) {
+      if (!this.managedDns || !this.nginx)
+        return err(new DeploymentError('Domain automation is not available'));
+      const dns = await this.managedDns.ensure(
+        record.domain,
+        target.value.host,
+        record.cloudflareCredentialId ?? undefined,
+        record.cloudflareZoneId ?? undefined,
+      );
+      if (!dns.ok)
+        return err(new DeploymentError('Could not configure Cloudflare DNS', { cause: dns.error }));
+      if (dns.value.status !== 'propagated')
+        return err(new DeploymentError('Cloudflare DNS was created but propagation is pending'));
+      const nginx = await this.nginx.saveSite(record.targetId, {
+        domain: record.domain,
+        enabled: true,
+        upstreamKind: 'host',
+        upstreamHost: '127.0.0.1',
+        upstreamPort: record.applicationPort ?? 80,
+        websocket: true,
+        ssl: false,
+        httpRedirect: false,
+        headers: [],
+        extraDirectives: [],
+        locations: [],
+        proxyTimeoutSeconds: 60,
+        clientMaxBodySize: '50m',
+        compression: true,
+        cache: false,
+        customSnippets: [],
+        lastModified: now,
+      });
+      if (!nginx.ok)
+        return err(
+          new DeploymentError('Cloudflare DNS is ready but Nginx setup failed', {
+            cause: nginx.error,
+          }),
+        );
+      this.activities.recordSafe({
+        type: 'jenkins.pipeline.domain.configured',
+        message: `Configured ${record.domain} for Jenkins pipeline ${record.name}`,
+        metadata: { pipelineId: record.id, targetId: record.targetId, domain: record.domain },
+      });
+    }
+    this.activities.recordSafe({
+      type: existing.value ? 'jenkins.pipeline.updated' : 'jenkins.pipeline.created',
+      message: `${existing.value ? 'Updated' : 'Created'} Jenkins pipeline ${record.name}`,
+      metadata: { pipelineId: record.id, targetId: record.targetId, folder: record.folder },
+    });
+    return ok(record);
+  }
+
+  async trigger(
+    id: string,
+    parameters: Readonly<Record<string, string>>,
+  ): Promise<Result<void, JenkinsPipelineServiceError>> {
+    const loaded = await this.load(id);
+    if (!loaded.ok) return loaded;
+    const connection = await this.connection(
+      loaded.value.targetId,
+      loaded.value.jenkinsCredentialId,
+    );
+    if (!connection.ok) return connection;
+    const allowed = new Set(loaded.value.parameters.map((parameter) => parameter.name));
+    if (Object.keys(parameters).some((name) => !allowed.has(name)))
+      return err(new ValidationError('A build parameter is not declared by this pipeline'));
+    const result = await this.jenkins.trigger(
+      connection.value,
+      loaded.value.folder,
+      loaded.value.name,
+      parameters,
+    );
+    this.activities.recordSafe({
+      type: result.ok ? 'jenkins.build.triggered' : 'jenkins.build.failed',
+      message: `${result.ok ? 'Triggered' : 'Failed to trigger'} Jenkins pipeline ${loaded.value.name}`,
+      metadata: { pipelineId: id, targetId: loaded.value.targetId },
+    });
+    return result;
+  }
+
+  async status(id: string): Promise<Result<JenkinsJobStatus, JenkinsPipelineServiceError>> {
+    const loaded = await this.load(id);
+    if (!loaded.ok) return loaded;
+    const connection = await this.connection(
+      loaded.value.targetId,
+      loaded.value.jenkinsCredentialId,
+    );
+    return connection.ok
+      ? this.jenkins.status(connection.value, loaded.value.folder, loaded.value.name)
+      : connection;
+  }
+
+  async remove(id: string): Promise<Result<void, JenkinsPipelineServiceError>> {
+    const loaded = await this.load(id);
+    if (!loaded.ok) return loaded;
+    const connection = await this.connection(
+      loaded.value.targetId,
+      loaded.value.jenkinsCredentialId,
+    );
+    if (!connection.ok) return connection;
+    const removed = await this.jenkins.removeJob(
+      connection.value,
+      loaded.value.folder,
+      loaded.value.name,
+    );
+    if (!removed.ok) return removed;
+    const deleted = await this.pipelines.remove(id);
+    if (!deleted.ok) return deleted;
+    this.activities.recordSafe({
+      type: 'jenkins.pipeline.deleted',
+      message: `Deleted Jenkins pipeline ${loaded.value.name}`,
+      metadata: { pipelineId: id, targetId: loaded.value.targetId },
+    });
+    return ok(undefined);
+  }
+
+  private async load(
+    id: string,
+  ): Promise<Result<JenkinsPipelineRecord, JenkinsPipelineServiceError>> {
+    const loaded = await this.pipelines.get(id);
+    if (!loaded.ok) return loaded;
+    return loaded.value ? ok(loaded.value) : err(new NotFoundError('Jenkins pipeline not found'));
+  }
+
+  private async connection(
+    targetId: string,
+    credentialId: string,
+  ): Promise<Result<JenkinsConnection, JenkinsPipelineServiceError>> {
+    const target = await this.targets.get(targetId);
+    if (!target.ok) return target;
+    const credential = await this.credentials.getDecrypted(credentialId);
+    if (!credential.ok) return credential;
+    if (credential.value.kind !== 'jenkins')
+      return err(new ValidationError('Select a Jenkins credential'));
+    const username = credential.value.data.username?.trim();
+    const apiToken = credential.value.data.apiToken?.trim();
+    if (!username || !apiToken)
+      return err(new ValidationError('The Jenkins username and API token are required'));
+    const configuredValue = credential.value.data.baseUrl?.trim();
+    const configuredUrl = configuredValue?.length ? configuredValue : undefined;
+    const baseUrl = (configuredUrl ?? `http://${target.value.host}:8080`).replace(/\/+$/, '');
+    try {
+      const parsed = new URL(baseUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocol');
+    } catch {
+      return err(new ValidationError('Enter a valid Jenkins HTTP or HTTPS URL'));
+    }
+    return ok({ baseUrl, username, apiToken });
+  }
+}
+
+function validatePipeline(
+  input: SaveJenkinsPipelineInput,
+): Result<
+  Omit<JenkinsPipelineRecord, 'id' | 'folder' | 'lastStatus' | 'createdAt' | 'updatedAt'>,
+  ValidationError
+> {
+  const name = input.name.trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(name))
+    return err(
+      new ValidationError(
+        'Pipeline name must contain only letters, numbers, dot, dash or underscore',
+      ),
+    );
+  if (!input.targetId || !input.jenkinsCredentialId)
+    return err(new ValidationError('Select a VPS and Jenkins credential'));
+  const repositoryUrl = input.repositoryUrl.trim();
+  if (input.definitionMode === 'scm' && !/^(?:https?:\/\/|git@)[^\s]+$/.test(repositoryUrl))
+    return err(new ValidationError('Enter a valid Git repository URL'));
+  const branch = input.branch.trim() || 'main';
+  const jenkinsfilePath = input.jenkinsfilePath.trim() || 'Jenkinsfile';
+  const pipelineScript = input.pipelineScript.trim();
+  if (input.definitionMode === 'inline' && !pipelineScript)
+    return err(new ValidationError('Enter an inline Jenkins pipeline script'));
+  if (pipelineScript.length > 500_000)
+    return err(new ValidationError('Pipeline script is too large'));
+  const names = new Set<string>();
+  for (const parameter of input.parameters) {
+    if (!/^[A-Z_][A-Z0-9_]{0,63}$/.test(parameter.name) || names.has(parameter.name))
+      return err(
+        new ValidationError('Pipeline parameter names must be unique environment-style names'),
+      );
+    names.add(parameter.name);
+    if (parameter.type === 'choice' && parameter.choices.length === 0)
+      return err(new ValidationError(`Choice parameter ${parameter.name} needs choices`));
+  }
+  const environment = Object.fromEntries(
+    Object.entries(input.environment)
+      .map(([key, value]): [string, string] => [key.trim(), value.trim()])
+      .filter(([key]) => /^[A-Z_][A-Z0-9_]{0,63}$/.test(key)),
+  );
+  if (
+    Object.keys(environment).some((key) =>
+      /(?:TOKEN|PASSWORD|SECRET|PRIVATE_KEY|API_KEY)/.test(key),
+    )
+  )
+    return err(
+      new ValidationError(
+        'Secret environment values must use Jenkins credentials or password build parameters',
+      ),
+    );
+  const domain = input.domain.trim().toLowerCase();
+  if (input.configureDomain && !/^(?:[a-z0-9-]+\.)+[a-z]{2,63}$/.test(domain))
+    return err(new ValidationError('Enter a valid deployment domain'));
+  const applicationPort = input.applicationPort ?? null;
+  if (
+    input.configureDomain &&
+    (!applicationPort || applicationPort < 1 || applicationPort > 65_535)
+  )
+    return err(new ValidationError('Enter the application port exposed on the VPS'));
+  return ok({
+    name,
+    description: input.description.trim(),
+    targetId: input.targetId,
+    jenkinsCredentialId: input.jenkinsCredentialId,
+    githubCredentialId: input.githubCredentialId ?? null,
+    repositoryUrl,
+    branch,
+    jenkinsfilePath,
+    pipelineScript,
+    definitionMode: input.definitionMode,
+    parameters: input.parameters.map((parameter) => {
+      if (parameter.type === 'password') return { ...parameter, defaultValue: '' };
+      if (parameter.type === 'boolean')
+        return { ...parameter, defaultValue: parameter.defaultValue === 'true' ? 'true' : 'false' };
+      if (parameter.type === 'choice')
+        return {
+          ...parameter,
+          defaultValue: parameter.choices.includes(parameter.defaultValue)
+            ? parameter.defaultValue
+            : (parameter.choices[0] ?? ''),
+        };
+      return parameter;
+    }),
+    environment,
+    domain,
+    applicationPort,
+    cloudflareCredentialId: input.cloudflareCredentialId ?? null,
+    cloudflareZoneId: input.cloudflareZoneId ?? null,
+    configureDomain: input.configureDomain,
+  });
+}
+
+function slug(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40) || 'vps'
+  );
+}
