@@ -31,6 +31,7 @@ describe('CloudflareApiProvider', () => {
           plan: { name: 'Free' },
         },
       ],
+      '/zones/zone-1/dns_records?per_page=500': [],
     });
 
     const result = await CloudflareApiProvider.fromTransport(api).testConnection();
@@ -38,6 +39,30 @@ describe('CloudflareApiProvider', () => {
     expect(result.ok && result.value.connected).toBe(true);
     expect(result.ok && result.value.zones?.[0]?.name).toBe('example.com');
     expect(api.calls.map(({ path }) => path)).not.toContain('/user/tokens/verify');
+  });
+
+  it('reports an account-only policy as connected with limited zone DNS permissions', async () => {
+    const denied = err(new ServiceProviderError('Cloudflare API 403: Authentication error'));
+    const api = new FakeTransport({
+      '/accounts?per_page=50': [{ id: 'account-1', name: 'Acme' }],
+      '/user': {},
+      '/zones?per_page=50': [
+        {
+          id: 'zone-1',
+          name: 'example.com',
+          status: 'active',
+          account: { id: 'account-1', name: 'Acme' },
+          plan: { name: 'Free' },
+        },
+      ],
+      '/zones/zone-1/dns_records?per_page=500': denied,
+    });
+
+    const result = await CloudflareApiProvider.fromTransport(api).testConnection();
+
+    expect(result.ok && result.value.connected).toBe(true);
+    expect(result.ok && result.value.message).toContain('DNS permissions are limited');
+    expect(result.ok && result.value.warnings?.[0]).toContain('Zone resource policy');
   });
 
   it('maps zones and DNS records without exposing the token', async () => {

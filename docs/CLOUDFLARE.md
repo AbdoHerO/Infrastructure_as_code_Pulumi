@@ -48,6 +48,13 @@ Choose the smallest set appropriate for the features you use:
 Restrict **Zone Resources** to the zones CloudForge should manage. Add the
 optional Account ID when the token can access several accounts.
 
+For Account API Tokens, an account resource such as
+`com.cloudflare.api.account.<ACCOUNT_ID>` does not by itself grant zone DNS
+access. The policy must also target the zone resource (or all zones nested under
+the account). The permission names must include **DNS Read** or **DNS Write**;
+account permissions such as **Account DNS Settings** and **DNS View** are
+different APIs.
+
 ## Dashboard and zones
 
 The dashboard displays the account, API status, selected-zone plan, number of

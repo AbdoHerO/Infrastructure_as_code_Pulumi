@@ -16,6 +16,7 @@ import {
 import { THEME_MODES } from '@cloudforge/shared';
 import type { UpdateState } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useThemeStore } from '../../app/theme/theme-store.js';
 import { useCredentials, useSecurityStatus } from '../secrets/useCredentials.js';
 import { useSettings, useUpdateSettings } from './useSettings.js';
@@ -24,6 +25,7 @@ import { toast } from '@cloudforge/ui';
 
 /** The Settings module with grouped, tabbed sections. */
 export function SettingsPage(): JSX.Element {
+  const confirm = useConfirmation();
   const { data: settings } = useSettings();
   const update = useUpdateSettings();
   const mode = useThemeStore((s) => s.mode);
@@ -124,15 +126,10 @@ export function SettingsPage(): JSX.Element {
           <Card>
             <CardContent className="divide-border/60 divide-y py-2">
               <Row
-                title="Confirm destructive actions"
-                description="Require confirmation before destroying infrastructure."
+                title="Destructive action protection"
+                description="CloudForge always requires explicit confirmation before destructive operations."
               >
-                <Switch
-                  checked={settings?.deployment.confirmDestructive ?? true}
-                  onCheckedChange={(confirmDestructive) =>
-                    update.mutate({ deployment: { confirmDestructive } })
-                  }
-                />
+                <span className="text-sm font-medium text-emerald-600">Always enabled</span>
               </Row>
               <Row title="Default region" description="Pre-selected region for new projects.">
                 <Input
@@ -183,7 +180,20 @@ export function SettingsPage(): JSX.Element {
                     <Download className="size-4" /> Download update
                   </Button>
                 ) : updateState.status === 'downloaded' ? (
-                  <Button onClick={() => installUpdate.mutate()} disabled={installUpdate.isPending}>
+                  <Button
+                    onClick={() => {
+                      void confirm({
+                        title: 'Restart and install update?',
+                        description:
+                          'CloudForge will close active sessions, restart, and install the downloaded update. Ensure no infrastructure or deployment operation is running.',
+                        confirmLabel: 'Restart and install',
+                        destructive: false,
+                      }).then((confirmed) => {
+                        if (confirmed) installUpdate.mutate();
+                      });
+                    }}
+                    disabled={installUpdate.isPending}
+                  >
                     <RotateCw className="size-4" /> Restart and install
                   </Button>
                 ) : (
@@ -459,15 +469,10 @@ export function SettingsPage(): JSX.Element {
                 />
               </Row>
               <Row
-                title="Confirm destructive actions"
-                description="Require confirmation before DNS or zone deletion."
+                title="Destructive action protection"
+                description="CloudForge always requires explicit confirmation before DNS, zone, and cache deletion."
               >
-                <Switch
-                  checked={settings?.cloudflare.confirmDelete ?? true}
-                  onCheckedChange={(confirmDelete) =>
-                    update.mutate({ cloudflare: { confirmDelete } })
-                  }
-                />
+                <span className="text-sm font-medium text-emerald-600">Always enabled</span>
               </Row>
               <Row
                 title="Activity logging"
@@ -528,15 +533,17 @@ export function SettingsPage(): JSX.Element {
                   variant="destructive"
                   disabled={!backupReady}
                   onClick={() => {
-                    if (
-                      !window.confirm(
-                        'Restore a CloudForge backup? Current data is safety-backed-up and the app will restart.',
-                      )
-                    )
-                      return;
-                    void invoke('backup:restore', { passphrase: backupPassphrase }).catch(
-                      (error: Error) => toast.error(error.message),
-                    );
+                    void confirm({
+                      title: 'Restore CloudForge backup?',
+                      description:
+                        'Current application data will be replaced, a safety backup will be created, and CloudForge will restart. Verify that the selected backup and passphrase are correct.',
+                      confirmLabel: 'Restore and restart',
+                    }).then((confirmed) => {
+                      if (!confirmed) return;
+                      void invoke('backup:restore', { passphrase: backupPassphrase }).catch(
+                        (error: Error) => toast.error(error.message),
+                      );
+                    });
                   }}
                 >
                   Restore backup

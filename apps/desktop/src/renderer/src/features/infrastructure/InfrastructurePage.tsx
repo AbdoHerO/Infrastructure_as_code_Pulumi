@@ -44,9 +44,9 @@ import {
 } from '@cloudforge/core';
 import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useProjects } from '../projects/useProjects.js';
 import { useCredentials } from '../secrets/useCredentials.js';
-import { useSettings } from '../settings/useSettings.js';
 import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
@@ -70,9 +70,9 @@ import {
 
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
 export function InfrastructurePage(): JSX.Element {
+  const confirm = useConfirmation();
   const { data: projects } = useProjects();
   const { data: credentials } = useCredentials();
-  const { data: settings } = useSettings();
   const sshKeys = useSshKeys();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [resources, setResources] = useState<ResourceSpec[]>([]);
@@ -161,6 +161,25 @@ export function InfrastructurePage(): JSX.Element {
     destroyManagedStack.isPending ||
     savePlan.isPending;
 
+  const destroyStack = async (stack: ManagedStackSummary): Promise<void> => {
+    const names = stack.resources.map((resource) => resource.name).join(', ');
+    const confirmed = await confirm({
+      title: 'Destroy managed cloud stack?',
+      description: `Destroy ${stack.ref.project}/${stack.ref.stack} and all ${stack.resources.length} tracked resources?\n\nResources: ${names || 'none'}\n\nThis permanently deletes remote cloud infrastructure and cannot be undone.`,
+      confirmLabel: 'Destroy stack',
+    });
+    if (!confirmed) return;
+    clear();
+    destroyManagedStack.mutate(
+      { ref: stack.ref, streamId },
+      {
+        onSuccess: () => toast.success('Managed cloud resources destroyed'),
+        onError: (error) =>
+          toast.error(error instanceof IpcCallError ? error.message : 'Destroy failed'),
+      },
+    );
+  };
+
   const editorContext: EditorContext = useMemo(
     () => ({
       networks: resources.filter((r) => r.kind === 'network').map((r) => r.name),
@@ -199,18 +218,7 @@ export function InfrastructurePage(): JSX.Element {
           stacks={managedStacks.data ?? []}
           projects={projects ?? []}
           busy={destroyManagedStack.isPending}
-          onDestroy={(stack) => {
-            if (!confirmDestroy(stack)) return;
-            clear();
-            destroyManagedStack.mutate(
-              { ref: stack.ref, streamId },
-              {
-                onSuccess: () => toast.success('Managed cloud resources destroyed'),
-                onError: (error) =>
-                  toast.error(error instanceof IpcCallError ? error.message : 'Destroy failed'),
-              },
-            );
-          }}
+          onDestroy={(stack) => void destroyStack(stack)}
         />
       </>
     );
@@ -238,14 +246,14 @@ export function InfrastructurePage(): JSX.Element {
     operation: 'preview' | 'apply' | 'destroy' | 'refresh',
   ): Promise<void> => {
     if (!projectId) return;
-    if (
-      operation === 'destroy' &&
-      (settings?.deployment.confirmDestructive ?? true) &&
-      !window.confirm(
-        'Destroy every cloud resource in this project stack and permanently remove its saved infrastructure plan? This cannot be undone.',
-      )
-    ) {
-      return;
+    if (operation === 'destroy') {
+      const confirmed = await confirm({
+        title: 'Destroy project infrastructure?',
+        description:
+          'Destroy every remote cloud resource in this project stack and permanently remove its saved infrastructure plan? Public IPs, instances, volumes, and data may be lost. This cannot be undone.',
+        confirmLabel: 'Destroy infrastructure',
+      });
+      if (!confirmed) return;
     }
     clear();
     if (operation !== 'destroy' && operation !== 'refresh' && !(await persist())) return;
@@ -270,11 +278,20 @@ export function InfrastructurePage(): JSX.Element {
         toast.error('Run Preview for the current plan before Apply.');
         return;
       }
-      if (
-        (currentPreview.hasReplacements || currentPreview.hasDeletes) &&
-        !confirmDestructivePreview(currentPreview)
-      )
-        return;
+      if (currentPreview.hasReplacements || currentPreview.hasDeletes) {
+        const destructive = currentPreview.resources
+          .filter((resource) => resource.destructive)
+          .map(
+            (resource) => `${resource.operation.toUpperCase()}: ${resource.type} ${resource.name}`,
+          )
+          .join('\n');
+        const confirmed = await confirm({
+          title: 'Apply destructive infrastructure changes?',
+          description: `This exact preview will perform destructive changes:\n\n${destructive}\n\nReplaced resources may be destroyed, public IPs may change, and data may be lost.`,
+          confirmLabel: 'Apply destructive changes',
+        });
+        if (!confirmed) return;
+      }
       apply.mutate(
         { projectId, streamId, previewToken: currentPreview.previewToken },
         {
@@ -463,18 +480,7 @@ export function InfrastructurePage(): JSX.Element {
         stacks={managedStacks.data ?? []}
         projects={projects ?? []}
         busy={destroyManagedStack.isPending}
-        onDestroy={(stack) => {
-          if (!confirmDestroy(stack)) return;
-          clear();
-          destroyManagedStack.mutate(
-            { ref: stack.ref, streamId },
-            {
-              onSuccess: () => toast.success('Managed cloud resources destroyed'),
-              onError: (error) =>
-                toast.error(error instanceof IpcCallError ? error.message : 'Destroy failed'),
-            },
-          );
-        }}
+        onDestroy={(stack) => void destroyStack(stack)}
       />
 
       <SaveTemplateDialog
@@ -669,16 +675,6 @@ function PreviewPanel({ preview }: { preview: PreviewResult | null }): JSX.Eleme
   );
 }
 
-function confirmDestructivePreview(preview: PreviewResult): boolean {
-  const destructive = preview.resources
-    .filter((resource) => resource.destructive)
-    .map((resource) => `${resource.operation.toUpperCase()}: ${resource.type} ${resource.name}`)
-    .join('\n');
-  return window.confirm(
-    `This plan contains destructive infrastructure changes:\n\n${destructive}\n\nReplaced resources may be destroyed, public IPs may change, and data may be lost. Continue with this exact preview?`,
-  );
-}
-
 function InfrastructureProgress({
   progress,
   resources,
@@ -856,11 +852,4 @@ function stackReference(project: ProjectDto): { project: string; stack: string }
     project: `${slug || 'project'}-${project.id.slice(0, 8)}`,
     stack: project.environment,
   };
-}
-
-function confirmDestroy(stack: ManagedStackSummary): boolean {
-  const names = stack.resources.map((resource) => resource.name).join(', ');
-  return window.confirm(
-    `Destroy stack ${stack.ref.project}/${stack.ref.stack} and all ${stack.resources.length} tracked resources?\n\n${names}\n\nThis cannot be undone.`,
-  );
 }

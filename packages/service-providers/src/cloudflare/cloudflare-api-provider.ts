@@ -125,13 +125,27 @@ export class CloudflareApiProvider implements CloudflareProvider {
     const [account, zones] = await Promise.all([this.account(), this.zones()]);
     if (!account.ok) return account;
     if (!zones.ok) return zones;
+    const warnings: string[] = [];
+    const firstZone = zones.value[0];
+    if (firstZone) {
+      const dns = await this.dnsRecords(firstZone.id);
+      if (!dns.ok) {
+        warnings.push(
+          `DNS access is unavailable for ${firstZone.name}. Add a Zone resource policy with DNS Read/Edit; account-only permissions do not grant access to zone DNS records.`,
+        );
+      }
+    }
     return ok({
       // Reading the account and its zones is the capability CloudForge actually
       // needs. It also works for both user-owned and account-owned API tokens;
       // their dedicated token-verification endpoints are not interchangeable.
       connected: true,
       provider: this.kind,
-      message: `Connected to ${account.value.name} · ${zones.value.length} zone(s)`,
+      message:
+        warnings.length === 0
+          ? `Connected to ${account.value.name} · ${zones.value.length} zone(s)`
+          : `Connected to ${account.value.name}, but DNS permissions are limited`,
+      ...(warnings.length > 0 ? { warnings } : {}),
       account: { id: account.value.id, name: account.value.name },
       zones: zones.value.map((zone) => ({
         id: zone.id,

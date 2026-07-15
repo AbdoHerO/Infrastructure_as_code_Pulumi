@@ -22,6 +22,7 @@ import {
 import type { DeploymentDto } from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
 import { useProjects } from '../projects/useProjects.js';
 import {
@@ -49,6 +50,7 @@ function statusVariant(status: DeploymentDto['status']): BadgeProps['variant'] {
 
 /** The Deployments module: run a template on a host over SSH with live logs. */
 export function DeploymentsPage(): JSX.Element {
+  const confirm = useConfirmation();
   const { data: projects } = useProjects();
   const { data: templates } = useDeploymentTemplates();
   const sshCredentials = useSshCredentials();
@@ -299,7 +301,16 @@ export function DeploymentsPage(): JSX.Element {
               {run.isPending ? (
                 <Button
                   variant="destructive"
-                  onClick={() => cancel.mutate(streamId)}
+                  onClick={() => {
+                    void confirm({
+                      title: 'Cancel deployment?',
+                      description:
+                        'Stop the active deployment? Remote changes already completed will not be rolled back automatically.',
+                      confirmLabel: 'Cancel deployment',
+                    }).then((confirmed) => {
+                      if (confirmed) cancel.mutate(streamId);
+                    });
+                  }}
                   disabled={cancel.isPending}
                 >
                   <Square className="size-4" />

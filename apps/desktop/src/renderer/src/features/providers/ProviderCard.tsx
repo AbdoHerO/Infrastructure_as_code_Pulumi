@@ -22,6 +22,7 @@ import {
   type ProviderKind,
 } from '@cloudforge/core';
 import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import {
   useLoadInstances,
   useLoadAvailabilityDomains,
@@ -36,6 +37,7 @@ import {
 
 /** A single provider connection: test it and discover regions/shapes. */
 export function ProviderCard({ credential }: { credential: CredentialSummaryDto }): JSX.Element {
+  const confirm = useConfirmation();
   const test = useTestConnection();
   const regions = useLoadRegions();
   const shapes = useLoadShapes();
@@ -49,6 +51,27 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
 
   const result = test.data;
   const isAws = credential.kind === 'aws';
+  const performInstanceAction = async (
+    instance: CloudInstance,
+    action: 'start' | 'stop' | 'reboot',
+  ): Promise<void> => {
+    if (action !== 'start') {
+      const confirmed = await confirm({
+        title: `${action === 'stop' ? 'Stop' : 'Reboot'} cloud instance?`,
+        description:
+          action === 'stop'
+            ? `Stop “${instance.name}”? Applications on this instance will become unavailable.`
+            : `Reboot “${instance.name}”? Active connections and services will be interrupted.`,
+        confirmLabel: action === 'stop' ? 'Stop instance' : 'Reboot instance',
+        destructive: false,
+      });
+      if (!confirmed) return;
+    }
+    instanceAction.mutate(
+      { credentialId: credential.id, instanceId: instance.id, action },
+      { onSuccess: () => instances.mutate(credential.id) },
+    );
+  };
 
   return (
     <Card>
@@ -263,16 +286,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                             size="sm"
                             variant="outline"
                             disabled={instanceAction.isPending}
-                            onClick={() =>
-                              instanceAction.mutate(
-                                {
-                                  credentialId: credential.id,
-                                  instanceId: instance.id,
-                                  action: 'start',
-                                },
-                                { onSuccess: () => instances.mutate(credential.id) },
-                              )
-                            }
+                            onClick={() => void performInstanceAction(instance, 'start')}
                           >
                             <Play className="size-3.5" /> Start
                           </Button>
@@ -281,16 +295,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                             size="sm"
                             variant="outline"
                             disabled={instanceAction.isPending}
-                            onClick={() =>
-                              instanceAction.mutate(
-                                {
-                                  credentialId: credential.id,
-                                  instanceId: instance.id,
-                                  action: 'stop',
-                                },
-                                { onSuccess: () => instances.mutate(credential.id) },
-                              )
-                            }
+                            onClick={() => void performInstanceAction(instance, 'stop')}
                           >
                             <CircleStop className="size-3.5" /> Stop
                           </Button>
@@ -299,16 +304,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                           size="sm"
                           variant="outline"
                           disabled={instanceAction.isPending || instance.state !== 'RUNNING'}
-                          onClick={() =>
-                            instanceAction.mutate(
-                              {
-                                credentialId: credential.id,
-                                instanceId: instance.id,
-                                action: 'reboot',
-                              },
-                              { onSuccess: () => instances.mutate(credential.id) },
-                            )
-                          }
+                          onClick={() => void performInstanceAction(instance, 'reboot')}
                         >
                           <RotateCw className="size-3.5" /> Reboot
                         </Button>

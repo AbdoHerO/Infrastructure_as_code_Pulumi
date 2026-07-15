@@ -20,6 +20,7 @@ import {
 import type { SshKeyAlgorithm, SshKeySummary } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import {
   revealSshPrivateKey,
   exportSshPrivateKey,
@@ -112,6 +113,7 @@ function SshKeyCard({
   deleting: boolean;
   onDelete: () => void;
 }): JSX.Element {
+  const confirm = useConfirmation();
   const copy = async (value: string, label: string): Promise<void> => {
     await navigator.clipboard.writeText(value);
     toast.success(`${label} copied`);
@@ -138,13 +140,15 @@ function SshKeyCard({
             variant="outline"
             size="sm"
             onClick={() => {
-              if (
-                !window.confirm(
-                  'Reveal and copy the private key to the clipboard? Clear the clipboard after use.',
-                )
-              )
-                return;
-              void revealSshPrivateKey(sshKey.id).then((value) => copy(value, 'Private key'));
+              void confirm({
+                title: 'Copy private SSH key?',
+                description:
+                  'The unencrypted private key will be placed on the clipboard. Other applications may read it; clear the clipboard immediately after use.',
+                confirmLabel: 'Copy private key',
+              }).then((confirmed) => {
+                if (confirmed)
+                  void revealSshPrivateKey(sshKey.id).then((value) => copy(value, 'Private key'));
+              });
             }}
           >
             <Copy className="size-4" /> Copy private key
@@ -153,11 +157,19 @@ function SshKeyCard({
             variant="outline"
             size="sm"
             onClick={() => {
-              void exportSshPrivateKey(sshKey.id, sshKey.name)
-                .then((path) => {
-                  if (path) toast.success(`Private key exported to ${path}`);
-                })
-                .catch((error: Error) => toast.error(error.message));
+              void confirm({
+                title: 'Export private SSH key?',
+                description:
+                  'The private key will be written to a file with owner-only permissions. Anyone who obtains it may access servers that trust this key.',
+                confirmLabel: 'Export private key',
+              }).then((confirmed) => {
+                if (!confirmed) return;
+                void exportSshPrivateKey(sshKey.id, sshKey.name)
+                  .then((path) => {
+                    if (path) toast.success(`Private key exported to ${path}`);
+                  })
+                  .catch((error: Error) => toast.error(error.message));
+              });
             }}
           >
             <Download className="size-4" /> Export private key

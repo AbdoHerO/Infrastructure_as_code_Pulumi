@@ -7,6 +7,7 @@ export interface ServiceConnection {
   readonly connected: boolean;
   readonly provider: ServiceProviderKind;
   readonly message: string;
+  readonly warnings?: readonly string[];
   readonly account?: { readonly id: string; readonly name: string };
   readonly zones?: readonly {
     readonly id: string;

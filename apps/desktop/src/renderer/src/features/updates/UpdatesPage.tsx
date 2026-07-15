@@ -5,10 +5,12 @@ import { Button, Card, CardContent } from '@cloudforge/ui';
 import type { UpdateState } from '@shared/ipc/contract.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 
 const initial: UpdateState = { status: 'idle', current: '—', latest: null };
 
 export function UpdatesPage(): JSX.Element {
+  const confirm = useConfirmation();
   const [state, setState] = useState<UpdateState>(initial);
   const check = useMutation({
     mutationFn: () => invoke('updates:check', undefined),
@@ -89,7 +91,20 @@ export function UpdatesPage(): JSX.Element {
             </Button>
           ) : null}
           {state.status === 'downloaded' ? (
-            <Button onClick={() => install.mutate()} disabled={install.isPending}>
+            <Button
+              onClick={() => {
+                void confirm({
+                  title: 'Restart and install update?',
+                  description:
+                    'CloudForge will close active sessions, restart, and install the downloaded update. Ensure no infrastructure or deployment operation is running.',
+                  confirmLabel: 'Restart and install',
+                  destructive: false,
+                }).then((confirmed) => {
+                  if (confirmed) install.mutate();
+                });
+              }}
+              disabled={install.isPending}
+            >
               <RotateCw className="size-4" /> Restart and install
             </Button>
           ) : null}

@@ -15,6 +15,7 @@ import {
 } from '@cloudforge/ui';
 import { CREDENTIAL_SCHEMAS, type CredentialSummaryDto } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { CredentialDialog } from './CredentialDialog.js';
 import { RevealDialog } from './RevealDialog.js';
 import { useCredentials, useDeleteCredential, useSecurityStatus } from './useCredentials.js';
@@ -26,6 +27,7 @@ export function SecretsPage(): JSX.Element {
   const { data: credentials, isLoading } = useCredentials();
   const { data: security } = useSecurityStatus();
   const deleteCredential = useDeleteCredential();
+  const confirm = useConfirmation();
 
   return (
     <>
@@ -96,12 +98,19 @@ export function SecretsPage(): JSX.Element {
                         size="icon"
                         title="Delete"
                         disabled={deleteCredential.isPending}
-                        onClick={() =>
-                          deleteCredential.mutate(credential.id, {
-                            onSuccess: () => toast.success('Credential deleted'),
-                            onError: () => toast.error('Failed to delete credential'),
-                          })
-                        }
+                        onClick={() => {
+                          void confirm({
+                            title: 'Delete credential?',
+                            description: `Delete “${credential.name}” permanently? Projects and services using this credential will lose access until another credential is linked.`,
+                            confirmLabel: 'Delete credential',
+                          }).then((confirmed) => {
+                            if (!confirmed) return;
+                            deleteCredential.mutate(credential.id, {
+                              onSuccess: () => toast.success('Credential deleted'),
+                              onError: () => toast.error('Failed to delete credential'),
+                            });
+                          });
+                        }}
                       >
                         <Trash2 className="size-4" />
                       </Button>

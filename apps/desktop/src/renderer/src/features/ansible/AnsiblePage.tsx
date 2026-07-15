@@ -45,6 +45,7 @@ import type {
 } from '@cloudforge/core';
 import type { SshTargetRequest } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
 import { useSshCredentials } from '../deployments/useDeployments.js';
 import {
@@ -56,6 +57,7 @@ import {
 } from './useAnsible.js';
 
 export function AnsiblePage(): JSX.Element {
+  const confirm = useConfirmation();
   const streamId = useMemo(() => crypto.randomUUID(), []);
   const profiles = useAnsibleProfiles();
   const credentials = useSshCredentials();
@@ -141,11 +143,19 @@ export function AnsiblePage(): JSX.Element {
       },
     );
   };
-  const repair = (): void => {
+  const repair = async (): Promise<void> => {
     const packageList = report?.repairPackages.join(', ');
     let packages = 'required system packages';
     if (packageList) packages = packageList;
-    if (!window.confirm(`CloudForge will install or update: ${packages}. Continue?`)) return;
+    if (
+      !(await confirm({
+        title: 'Repair VPS prerequisites?',
+        description: `CloudForge will install or update: ${packages}.`,
+        confirmLabel: 'Install packages',
+        destructive: false,
+      }))
+    )
+      return;
     logs.clear();
     actions.repair.mutate(
       { ...target, ...(selectedTargetId ? { targetId: selectedTargetId } : {}) },
@@ -158,13 +168,16 @@ export function AnsiblePage(): JSX.Element {
       },
     );
   };
-  const runProfile = (): void => {
+  const runProfile = async (): Promise<void> => {
     if (!profile) return;
     if (
       profileState?.installed &&
-      !window.confirm(
-        `${profile.name} is already ${profileState.running ? 'running' : 'installed'}. Re-run its idempotent configuration to update or repair it?`,
-      )
+      !(await confirm({
+        title: `Re-run ${profile.name}?`,
+        description: `${profile.name} is already ${profileState.running ? 'running' : 'installed'}. Its idempotent configuration will be applied again to update or repair it.`,
+        confirmLabel: 'Re-run configuration',
+        destructive: false,
+      }))
     )
       return;
     logs.clear();
@@ -267,8 +280,16 @@ export function AnsiblePage(): JSX.Element {
       targetActions.update.mutate({ id: selectedTargetId, ...request }, callbacks);
     else targetActions.create.mutate(request, callbacks);
   };
-  const deleteTarget = (): void => {
-    if (!selectedTargetId || !window.confirm(`Delete the saved target “${targetName}”?`)) return;
+  const deleteTarget = async (): Promise<void> => {
+    if (!selectedTargetId) return;
+    if (
+      !(await confirm({
+        title: 'Delete saved VPS target?',
+        description: `Delete “${targetName}” from CloudForge? The remote VPS itself will not be changed.`,
+        confirmLabel: 'Delete target',
+      }))
+    )
+      return;
     targetActions.remove.mutate(selectedTargetId, {
       onSuccess: () => {
         selectTarget('');
@@ -296,8 +317,15 @@ export function AnsiblePage(): JSX.Element {
       },
     );
   };
-  const removeSite = (site: NginxSite): void => {
-    if (!window.confirm(`Remove the Nginx route for ${site.domain}?`)) return;
+  const removeSite = async (site: NginxSite): Promise<void> => {
+    if (
+      !(await confirm({
+        title: 'Remove Nginx route?',
+        description: `Remove the live Nginx route for ${site.domain}? The site will stop routing after validation and reload.`,
+        confirmLabel: 'Remove route',
+      }))
+    )
+      return;
     logs.clear();
     actions.remove.mutate(
       { ...target, domain: site.domain },
@@ -309,6 +337,15 @@ export function AnsiblePage(): JSX.Element {
         onError: fail,
       },
     );
+  };
+  const cancelRun = async (): Promise<void> => {
+    const confirmed = await confirm({
+      title: 'Cancel remote Ansible operation?',
+      description:
+        'Stop the current Ansible process? Tasks already completed on the VPS are not automatically rolled back.',
+      confirmLabel: 'Cancel operation',
+    });
+    if (confirmed) actions.cancel.mutate();
   };
 
   return (
@@ -425,7 +462,7 @@ export function AnsiblePage(): JSX.Element {
               <Button
                 variant="destructive"
                 size="icon"
-                onClick={deleteTarget}
+                onClick={() => void deleteTarget()}
                 aria-label="Delete target"
               >
                 <Trash2 className="size-4" />
@@ -454,7 +491,11 @@ export function AnsiblePage(): JSX.Element {
       </Card>
 
       {report ? (
-        <PreflightReport report={report} onRepair={repair} repairing={actions.repair.isPending} />
+        <PreflightReport
+          report={report}
+          onRepair={() => void repair()}
+          repairing={actions.repair.isPending}
+        />
       ) : null}
 
       <Tabs defaultValue="profiles">
@@ -586,7 +627,10 @@ export function AnsiblePage(): JSX.Element {
                   </Field>
                 ))}
                 <div className="flex flex-wrap gap-2">
-                  <Button disabled={!connected || busy || !profileReady} onClick={runProfile}>
+                  <Button
+                    disabled={!connected || busy || !profileReady}
+                    onClick={() => void runProfile()}
+                  >
                     {actions.run.isPending ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : (
@@ -683,7 +727,7 @@ export function AnsiblePage(): JSX.Element {
                 ) : null}
               </CardContent>
             </Card>
-            <Output lines={logs.lines} busy={busy} cancel={() => actions.cancel.mutate()} />
+            <Output lines={logs.lines} busy={busy} cancel={() => void cancelRun()} />
           </div>
         </TabsContent>
         <TabsContent value="nginx">
@@ -777,7 +821,7 @@ export function AnsiblePage(): JSX.Element {
                       size="sm"
                       variant="destructive"
                       disabled={busy || !nginxReady}
-                      onClick={() => removeSite(site)}
+                      onClick={() => void removeSite(site)}
                     >
                       <Trash2 className="size-4" />
                       Remove
@@ -786,7 +830,7 @@ export function AnsiblePage(): JSX.Element {
                 </Card>
               ))}
             </div>
-            <Output lines={logs.lines} busy={busy} cancel={() => actions.cancel.mutate()} />
+            <Output lines={logs.lines} busy={busy} cancel={() => void cancelRun()} />
           </div>
         </TabsContent>
       </Tabs>

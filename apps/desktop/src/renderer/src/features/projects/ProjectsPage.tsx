@@ -20,6 +20,7 @@ import {
   type ProjectDto,
 } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { CreateProjectForm } from './CreateProjectForm.js';
@@ -79,6 +80,7 @@ export function ProjectsPage(): JSX.Element {
 }
 
 function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
+  const confirm = useConfirmation();
   const deleteProject = useDeleteProject();
   const updateProject = useUpdateProject();
   const [editing, setEditing] = useState(false);
@@ -216,12 +218,19 @@ function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
             size="icon"
             title="Delete project"
             disabled={deleteProject.isPending}
-            onClick={() =>
-              deleteProject.mutate(project.id, {
-                onSuccess: () => toast.success(`Project "${project.name}" deleted`),
-                onError: () => toast.error('Failed to delete project'),
-              })
-            }
+            onClick={() => {
+              void confirm({
+                title: 'Delete project?',
+                description: `Delete “${project.name}” from CloudForge? This removes its saved configuration. It does not automatically destroy cloud resources; destroy managed infrastructure first if it still exists.`,
+                confirmLabel: 'Delete project',
+              }).then((confirmed) => {
+                if (!confirmed) return;
+                deleteProject.mutate(project.id, {
+                  onSuccess: () => toast.success(`Project "${project.name}" deleted`),
+                  onError: () => toast.error('Failed to delete project'),
+                });
+              });
+            }}
           >
             <Trash2 className="size-4" />
           </Button>

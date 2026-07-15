@@ -40,6 +40,7 @@ import {
 } from '@cloudforge/ui';
 import type { ManagedNginxSite } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
 import { useNginx, useNginxEvents } from './useNginx.js';
@@ -65,6 +66,7 @@ const NEW_SITE: ManagedNginxSite = {
 };
 
 export function NginxPage(): JSX.Element {
+  const confirm = useConfirmation();
   const targets = useVpsTargets();
   const [targetId, setTargetId] = useState('');
   const streamId = useMemo(() => crypto.randomUUID(), []);
@@ -258,15 +260,19 @@ export function NginxPage(): JSX.Element {
                               size="sm"
                               variant="destructive"
                               disabled={busy || item.managed === false}
-                              onClick={() =>
-                                window.confirm(
-                                  `Delete ${item.domain}? A backup will be created first.`,
-                                ) &&
-                                nginx.removeSite.mutate(item.domain, {
-                                  onSuccess: ({ summary }) => toast.success(summary),
-                                  onError: fail,
-                                })
-                              }
+                              onClick={() => {
+                                void confirm({
+                                  title: 'Delete Nginx site?',
+                                  description: `Delete the live configuration for ${item.domain}? CloudForge will create a backup and validate Nginx before reloading.`,
+                                  confirmLabel: 'Delete site',
+                                }).then((confirmed) => {
+                                  if (!confirmed) return;
+                                  nginx.removeSite.mutate(item.domain, {
+                                    onSuccess: ({ summary }) => toast.success(summary),
+                                    onError: fail,
+                                  });
+                                });
+                              }}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -600,13 +606,19 @@ export function NginxPage(): JSX.Element {
                         <Button
                           variant="outline"
                           disabled={busy}
-                          onClick={() =>
-                            window.confirm(`Restore ${backup.id}?`) &&
-                            nginx.restore.mutate(backup.id, {
-                              onSuccess: ({ summary }) => toast.success(summary),
-                              onError: fail,
-                            })
-                          }
+                          onClick={() => {
+                            void confirm({
+                              title: 'Restore Nginx backup?',
+                              description: `Restore backup ${backup.id}? The current configuration will be replaced, validated, and reloaded only if valid.`,
+                              confirmLabel: 'Restore backup',
+                            }).then((confirmed) => {
+                              if (!confirmed) return;
+                              nginx.restore.mutate(backup.id, {
+                                onSuccess: ({ summary }) => toast.success(summary),
+                                onError: fail,
+                              });
+                            });
+                          }}
                         >
                           <ArchiveRestore className="mr-2 h-4 w-4" />
                           Restore

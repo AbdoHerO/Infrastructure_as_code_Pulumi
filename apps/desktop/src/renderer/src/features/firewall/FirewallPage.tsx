@@ -28,6 +28,7 @@ import {
   toast,
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
 import { useProviderCredentials } from '../providers/useProviders.js';
 
@@ -47,6 +48,7 @@ const TEMPLATES: Record<
 };
 
 export function FirewallPage(): JSX.Element {
+  const confirm = useConfirmation();
   const providers = useProviderCredentials();
   const [credentialId, setCredentialId] = useState('');
   const [instanceId, setInstanceId] = useState('');
@@ -320,10 +322,16 @@ export function FirewallPage(): JSX.Element {
                 </Badge>
                 <Button
                   disabled={!changed(firewall.rules, draft) || apply.isPending}
-                  onClick={() =>
-                    window.confirm('Update the live cloud firewall with these exact rules?') &&
-                    apply.mutate()
-                  }
+                  onClick={() => {
+                    void confirm({
+                      title: 'Apply live firewall rules?',
+                      description:
+                        'Replace the live cloud firewall rules with this exact validated set? Incorrect rules can interrupt SSH and application traffic.',
+                      confirmLabel: 'Apply firewall update',
+                    }).then((confirmed) => {
+                      if (confirmed) apply.mutate();
+                    });
+                  }}
                 >
                   <Save className="mr-2 h-4 w-4" />
                   Apply update
@@ -365,8 +373,15 @@ export function FirewallPage(): JSX.Element {
                       disabled={!Array.isArray(entry.metadata.before)}
                       onClick={() => {
                         if (!Array.isArray(entry.metadata.before)) return;
-                        if (window.confirm('Load this snapshot for review before applying?'))
-                          setDraft(entry.metadata.before as LiveFirewallRule[]);
+                        void confirm({
+                          title: 'Prepare firewall rollback?',
+                          description:
+                            'Load this historical snapshot into the editor for review? It will not affect the live firewall until you apply it.',
+                          confirmLabel: 'Load snapshot',
+                          destructive: false,
+                        }).then((confirmed) => {
+                          if (confirmed) setDraft(entry.metadata.before as LiveFirewallRule[]);
+                        });
                       }}
                     >
                       Prepare rollback

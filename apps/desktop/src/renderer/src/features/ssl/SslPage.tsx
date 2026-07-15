@@ -24,10 +24,12 @@ import {
   toast,
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
 
 export function SslPage(): JSX.Element {
+  const confirm = useConfirmation();
   const targets = useVpsTargets();
   const streamId = useMemo(() => crypto.randomUUID(), []);
   const [targetId, setTargetId] = useState('');
@@ -101,7 +103,12 @@ export function SslPage(): JSX.Element {
   ): Promise<void> => {
     if (
       format === 'key' &&
-      !window.confirm('Export the private key to this computer? Keep it secret.')
+      !(await confirm({
+        title: 'Export private key?',
+        description:
+          'The unencrypted certificate private key will be saved to this computer. Anyone with this file can impersonate the origin server.',
+        confirmLabel: 'Export private key',
+      }))
     )
       return;
     try {
@@ -239,7 +246,16 @@ export function SslPage(): JSX.Element {
             )}
             <Button
               disabled={!dns?.matches || !email || issue.isPending}
-              onClick={() => issue.mutate()}
+              onClick={() => {
+                void confirm({
+                  title: 'Issue and apply SSL certificate?',
+                  description: `Issue or renew the certificate for ${domain || 'this domain'}, update its managed Nginx configuration, validate it, and reload Nginx?`,
+                  confirmLabel: 'Issue certificate',
+                  destructive: false,
+                }).then((confirmed) => {
+                  if (confirmed) issue.mutate();
+                });
+              }}
             >
               Issue certificate
             </Button>

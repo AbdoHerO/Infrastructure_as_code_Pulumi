@@ -8,6 +8,7 @@ import type {
   CloudflareDnsType,
   CloudflarePageRule,
   CloudflareRedirectRule,
+  CloudflareZoneSettings,
 } from '@cloudforge/core';
 import {
   Badge,
@@ -34,9 +35,9 @@ import {
   toast,
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
-import { useSettings } from '../settings/useSettings.js';
 import {
   cloudflareKey,
   useCloudflareDashboard,
@@ -140,7 +141,10 @@ export function CloudflarePage(): JSX.Element {
             disabled={!credentialId}
             onClick={() => {
               void invoke('cloudflare:test', { credentialId })
-                .then((value) => toast.success(value.message))
+                .then((value) => {
+                  if (value.warnings?.length) toast.warning(value.warnings.join(' '));
+                  else toast.success(value.message);
+                })
                 .catch((error: Error) => toast.error(error.message));
             }}
           >
@@ -288,7 +292,7 @@ function Zones({
   }[];
   onSelect: (id: string) => void;
 }): JSX.Element {
-  const { data: settings } = useSettings();
+  const confirm = useConfirmation();
   const client = useQueryClient();
   const [zoneName, setZoneName] = useState('');
   const create = useMutation({
@@ -377,14 +381,13 @@ function Zones({
                     variant="destructive"
                     aria-label={`Delete ${zone.name}`}
                     onClick={() => {
-                      if (
-                        settings?.cloudflare.confirmDelete !== false &&
-                        !window.confirm(
-                          `Delete Cloudflare zone ${zone.name}? This removes it from Cloudflare.`,
-                        )
-                      )
-                        return;
-                      remove.mutate(zone.id);
+                      void confirm({
+                        title: 'Delete Cloudflare zone?',
+                        description: `Permanently delete ${zone.name} from Cloudflare? Its DNS records, settings, and dependent traffic configuration will be removed.`,
+                        confirmLabel: 'Delete zone',
+                      }).then((confirmed) => {
+                        if (confirmed) remove.mutate(zone.id);
+                      });
                     }}
                   >
                     <Trash2 className="size-4" />
@@ -408,7 +411,7 @@ function Dns({
   zoneId: string;
   zoneName: string;
 }): JSX.Element {
-  const { data: settings } = useSettings();
+  const confirm = useConfirmation();
   const records = useCloudflareDns(credentialId, zoneId);
   const save = useSaveCloudflareDns(credentialId, zoneId);
   const remove = useDeleteCloudflareDns(credentialId, zoneId);
@@ -754,12 +757,13 @@ function Dns({
               variant="destructive"
               disabled={!selected.length}
               onClick={() => {
-                if (
-                  settings?.cloudflare.confirmDelete !== false &&
-                  !window.confirm(`Delete ${selected.length} Cloudflare DNS record(s)?`)
-                )
-                  return;
-                batch.mutate({ kind: 'delete', recordIds: selected });
+                void confirm({
+                  title: 'Delete selected DNS records?',
+                  description: `Permanently delete ${selected.length} DNS record(s) from the selected Cloudflare zone? Affected domains and services may stop resolving.`,
+                  confirmLabel: 'Delete records',
+                }).then((confirmed) => {
+                  if (confirmed) batch.mutate({ kind: 'delete', recordIds: selected });
+                });
               }}
             >
               Delete selected
@@ -870,12 +874,13 @@ function Dns({
                       size="icon"
                       variant="destructive"
                       onClick={() => {
-                        if (
-                          settings?.cloudflare.confirmDelete !== false &&
-                          !window.confirm(`Delete DNS record ${record.name}?`)
-                        )
-                          return;
-                        remove.mutate(record.id);
+                        void confirm({
+                          title: 'Delete DNS record?',
+                          description: `Delete ${record.type} record ${record.name} → ${record.content}? The hostname may stop resolving immediately.`,
+                          confirmLabel: 'Delete record',
+                        }).then((confirmed) => {
+                          if (confirmed) remove.mutate(record.id);
+                        });
                       }}
                     >
                       <Trash2 className="size-4" />
@@ -898,6 +903,7 @@ function ZoneConfiguration({
   credentialId: string;
   zoneId: string;
 }): JSX.Element {
+  const confirm = useConfirmation();
   const settings = useCloudflareZoneSettings(credentialId, zoneId);
   const update = useUpdateCloudflareZoneSettings(credentialId, zoneId);
   const purge = useMutation({
@@ -905,6 +911,16 @@ function ZoneConfiguration({
     onSuccess: () => toast.success('Cloudflare cache purged'),
     onError: (e) => toast.error(e.message),
   });
+  const applySetting = (label: string, patch: Partial<CloudflareZoneSettings>): void => {
+    void confirm({
+      title: `Change ${label}?`,
+      description: `Apply this ${label} change to the live Cloudflare zone? Traffic, TLS negotiation, or caching behavior may change immediately.`,
+      confirmLabel: 'Apply setting',
+      destructive: false,
+    }).then((confirmed) => {
+      if (confirmed) update.mutate(patch);
+    });
+  };
   if (!zoneId) return <NeedZone />;
   if (!settings.data)
     return (
@@ -923,7 +939,11 @@ function ZoneConfiguration({
         <Control label="Encryption mode">
           <Select
             value={value.sslMode}
-            onChange={(e) => update.mutate({ sslMode: e.target.value as typeof value.sslMode })}
+            onChange={(e) =>
+              applySetting('encryption mode', {
+                sslMode: e.target.value as typeof value.sslMode,
+              })
+            }
           >
             <option value="off">Off</option>
             <option value="flexible">Flexible</option>
@@ -935,7 +955,9 @@ function ZoneConfiguration({
           <Select
             value={value.minimumTls}
             onChange={(e) =>
-              update.mutate({ minimumTls: e.target.value as typeof value.minimumTls })
+              applySetting('minimum TLS version', {
+                minimumTls: e.target.value as typeof value.minimumTls,
+              })
             }
           >
             <option>1.0</option>
@@ -947,27 +969,46 @@ function ZoneConfiguration({
         <Toggle
           label="Always use HTTPS"
           value={value.alwaysHttps}
-          change={(alwaysHttps) => update.mutate({ alwaysHttps })}
+          change={(alwaysHttps) => applySetting('Always Use HTTPS', { alwaysHttps })}
         />
-        <Toggle label="TLS 1.3" value={value.tls13} change={(tls13) => update.mutate({ tls13 })} />
-        <Toggle label="HSTS" value={value.hsts} change={(hsts) => update.mutate({ hsts })} />
+        <Toggle
+          label="TLS 1.3"
+          value={value.tls13}
+          change={(tls13) => applySetting('TLS 1.3', { tls13 })}
+        />
+        <Toggle label="HSTS" value={value.hsts} change={(hsts) => applySetting('HSTS', { hsts })} />
         <Toggle
           label="Automatic HTTPS rewrites"
           value={value.automaticHttpsRewrites}
-          change={(automaticHttpsRewrites) => update.mutate({ automaticHttpsRewrites })}
+          change={(automaticHttpsRewrites) =>
+            applySetting('Automatic HTTPS Rewrites', { automaticHttpsRewrites })
+          }
         />
         <Toggle
           label="Brotli compression"
           value={value.brotli}
-          change={(brotli) => update.mutate({ brotli })}
+          change={(brotli) => applySetting('Brotli compression', { brotli })}
         />
         <Toggle
           label="Development mode"
           value={value.developmentMode}
-          change={(developmentMode) => update.mutate({ developmentMode })}
+          change={(developmentMode) => applySetting('Development Mode', { developmentMode })}
         />
         <div>
-          <Button variant="destructive" disabled={purge.isPending} onClick={() => purge.mutate()}>
+          <Button
+            variant="destructive"
+            disabled={purge.isPending}
+            onClick={() => {
+              void confirm({
+                title: 'Purge entire Cloudflare cache?',
+                description:
+                  'Remove all cached assets for the selected zone? Traffic will temporarily return to the origin while the cache is rebuilt.',
+                confirmLabel: 'Purge entire cache',
+              }).then((confirmed) => {
+                if (confirmed) purge.mutate();
+              });
+            }}
+          >
             Purge entire cache
           </Button>
         </div>
@@ -1158,7 +1199,7 @@ function PageRules({
   credentialId: string;
   zoneId: string;
 }): JSX.Element {
-  const { data: settings } = useSettings();
+  const confirm = useConfirmation();
   const client = useQueryClient();
   const [target, setTarget] = useState('');
   const [priority, setPriority] = useState(1);
@@ -1263,12 +1304,13 @@ function PageRules({
                   size="icon"
                   variant="destructive"
                   onClick={() => {
-                    if (
-                      settings?.cloudflare.confirmDelete !== false &&
-                      !window.confirm(`Delete Page Rule ${rule.target}?`)
-                    )
-                      return;
-                    remove.mutate(rule.id);
+                    void confirm({
+                      title: 'Delete Page Rule?',
+                      description: `Delete the rule for ${rule.target}? Its Cloudflare behavior will stop applying.`,
+                      confirmLabel: 'Delete rule',
+                    }).then((confirmed) => {
+                      if (confirmed) remove.mutate(rule.id);
+                    });
                   }}
                 >
                   <Trash2 className="size-4" />
@@ -1291,7 +1333,7 @@ function RedirectRules({
   credentialId: string;
   zoneId: string;
 }): JSX.Element {
-  const { data: settings } = useSettings();
+  const confirm = useConfirmation();
   const client = useQueryClient();
   const [draft, setDraft] = useState<Omit<CloudflareRedirectRule, 'id'>>({
     source: '(http.host eq "example.com")',
@@ -1427,12 +1469,13 @@ function RedirectRules({
                 size="icon"
                 variant="destructive"
                 onClick={() => {
-                  if (
-                    settings?.cloudflare.confirmDelete !== false &&
-                    !window.confirm(`Delete redirect to ${rule.destination}?`)
-                  )
-                    return;
-                  remove.mutate(rule.id);
+                  void confirm({
+                    title: 'Delete redirect rule?',
+                    description: `Delete the redirect to ${rule.destination}? Matching requests will no longer be redirected.`,
+                    confirmLabel: 'Delete redirect',
+                  }).then((confirmed) => {
+                    if (confirmed) remove.mutate(rule.id);
+                  });
                 }}
               >
                 <Trash2 className="size-4" />

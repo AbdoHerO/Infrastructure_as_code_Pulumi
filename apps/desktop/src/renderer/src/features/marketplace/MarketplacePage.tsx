@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, Switch, toast } from '@cloudforge/ui'
 import type { PluginListItem } from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 
 const KIND_ICON = {
   provider: Cloud,
@@ -15,6 +16,7 @@ const KIND_ICON = {
 
 /** The Plugin Marketplace: discover, install and enable extensions. */
 export function MarketplacePage(): JSX.Element {
+  const confirm = useConfirmation();
   const queryClient = useQueryClient();
   const plugins = useQuery({
     queryKey: ['plugins', 'list'],
@@ -59,7 +61,15 @@ export function MarketplacePage(): JSX.Element {
               })
             }
             onToggle={(enabled) => setEnabled.mutate({ id: plugin.id, enabled })}
-            onUninstall={() => uninstall.mutate(plugin.id)}
+            onUninstall={() => {
+              void confirm({
+                title: 'Uninstall extension?',
+                description: `Uninstall “${plugin.name}”? Its contributed capability will no longer be available.`,
+                confirmLabel: 'Uninstall extension',
+              }).then((confirmed) => {
+                if (confirmed) uninstall.mutate(plugin.id);
+              });
+            }}
           />
         ))}
       </div>

@@ -25,6 +25,7 @@ import {
 import type { ContainerAction, RemoteContainer } from '@cloudforge/core';
 import type { ContainerTargetRequest } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useInspectHostKey, useSshCredentials } from '../deployments/useDeployments.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
 import {
@@ -36,6 +37,7 @@ import {
 } from './useContainers.js';
 
 export function ContainersPage(): JSX.Element {
+  const confirm = useConfirmation();
   const credentials = useSshCredentials();
   const targets = useVpsTargets();
   const inspect = useInspectHostKey();
@@ -99,12 +101,19 @@ export function ContainersPage(): JSX.Element {
     // the mutation object itself is stable but would obscure that intent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, hostKeySha256, port, ready, sshCredentialId, username]);
-  const perform = (container: RemoteContainer, operation: ContainerAction): void => {
-    if (
-      (operation === 'remove' || operation === 'stop') &&
-      !window.confirm(`${operation} container "${container.name}"?`)
-    )
-      return;
+  const perform = async (container: RemoteContainer, operation: ContainerAction): Promise<void> => {
+    if (operation === 'remove' || operation === 'stop') {
+      const confirmed = await confirm({
+        title: `${operation === 'remove' ? 'Remove' : 'Stop'} container?`,
+        description:
+          operation === 'remove'
+            ? `Remove “${container.name}” from the VPS? Unsaved container data may be lost.`
+            : `Stop “${container.name}”? Its service will become unavailable until restarted.`,
+        confirmLabel: operation === 'remove' ? 'Remove container' : 'Stop container',
+        destructive: operation === 'remove',
+      });
+      if (!confirmed) return;
+    }
     action.mutate(
       { ...target, containerId: container.id, action: operation },
       { onSuccess: reload, onError: (error) => toast.error(error.message) },
@@ -253,17 +262,17 @@ export function ContainersPage(): JSX.Element {
                   <Action
                     icon={<Play className="size-3.5" />}
                     label="Start"
-                    onClick={() => perform(container, 'start')}
+                    onClick={() => void perform(container, 'start')}
                   />
                   <Action
                     icon={<Square className="size-3.5" />}
                     label="Stop"
-                    onClick={() => perform(container, 'stop')}
+                    onClick={() => void perform(container, 'stop')}
                   />
                   <Action
                     icon={<RotateCw className="size-3.5" />}
                     label="Restart"
-                    onClick={() => perform(container, 'restart')}
+                    onClick={() => void perform(container, 'restart')}
                   />
                   <Action
                     icon={<FileText className="size-3.5" />}
@@ -279,7 +288,7 @@ export function ContainersPage(): JSX.Element {
                     size="sm"
                     variant="destructive"
                     disabled={action.isPending}
-                    onClick={() => perform(container, 'remove')}
+                    onClick={() => void perform(container, 'remove')}
                   >
                     <Trash2 className="size-3.5" /> Remove
                   </Button>

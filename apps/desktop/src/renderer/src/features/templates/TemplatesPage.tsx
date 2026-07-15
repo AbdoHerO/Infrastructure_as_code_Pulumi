@@ -6,6 +6,7 @@ import { Badge, Button, Card, CardContent, Select, toast } from '@cloudforge/ui'
 import type { CustomTemplateSummary, InfrastructureTemplateSummary } from '@cloudforge/core';
 import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
+import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useProjects } from '../projects/useProjects.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import {
@@ -24,6 +25,7 @@ const CATEGORY_ICON = {
 
 /** The Templates module: infrastructure and deployment templates. */
 export function TemplatesPage(): JSX.Element {
+  const confirm = useConfirmation();
   const navigate = useNavigate();
   const { data: projects } = useProjects();
   const { data: credentials } = useCredentials();
@@ -112,7 +114,15 @@ export function TemplatesPage(): JSX.Element {
     );
   };
 
-  const removeCustomTemplate = (template: CustomTemplateSummary): void => {
+  const removeCustomTemplate = async (template: CustomTemplateSummary): Promise<void> => {
+    if (
+      !(await confirm({
+        title: 'Delete template?',
+        description: `Delete the reusable template “${template.name}”? Existing project plans are not changed.`,
+        confirmLabel: 'Delete template',
+      }))
+    )
+      return;
     deleteCustom.mutate(template.id, {
       onSuccess: () => toast.success(`Deleted "${template.name}"`),
       onError: () => toast.error('Failed to delete template'),
@@ -233,7 +243,7 @@ export function TemplatesPage(): JSX.Element {
                       size="icon"
                       title="Delete template"
                       disabled={deleteCustom.isPending}
-                      onClick={() => removeCustomTemplate(template)}
+                      onClick={() => void removeCustomTemplate(template)}
                     >
                       <Trash2 className="size-4" />
                     </Button>

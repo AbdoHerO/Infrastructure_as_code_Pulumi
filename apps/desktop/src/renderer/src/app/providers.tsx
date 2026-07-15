@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { TooltipProvider } from '@cloudforge/ui';
 import { useSettings } from '../features/settings/useSettings.js';
 import { invoke } from '../lib/ipc.js';
+import { ConfirmationDialogProvider } from '../components/ConfirmationDialogProvider.js';
 
 /** Application-wide context providers (data fetching, tooltips, and more). */
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
@@ -23,7 +24,9 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
   return (
     <QueryClientProvider client={queryClient}>
       <SettingsEffects />
-      <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+      <TooltipProvider delayDuration={300}>
+        <ConfirmationDialogProvider>{children}</ConfirmationDialogProvider>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }
