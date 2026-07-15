@@ -210,6 +210,17 @@ export interface IpcContract {
     response: void;
   };
 
+  'terminal:open': {
+    request: { targetId: string; sessionId: string; columns: number; rows: number };
+    response: void;
+  };
+  'terminal:write': { request: { sessionId: string; data: string }; response: void };
+  'terminal:resize': {
+    request: { sessionId: string; columns: number; rows: number };
+    response: void;
+  };
+  'terminal:close': { request: { sessionId: string }; response: void };
+
   'ansible:profiles': { request: void; response: AnsibleProfile[] };
   'ansible:targets': { request: void; response: VpsTargetDto[] };
   'ansible:createTarget': { request: SaveVpsTargetRequest; response: VpsTargetDto };
@@ -381,6 +392,8 @@ export interface IpcEventContract {
   'ssl:log': { streamId: string; event: CertificateEvent };
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
+  'terminal:data': { sessionId: string; data: string };
+  'terminal:closed': { sessionId: string; reason?: string };
 }
 
 export type IpcEventChannel = keyof IpcEventContract;
@@ -395,6 +408,8 @@ export const IPC_EVENT_CHANNELS = [
   'ssl:log',
   'updates:state',
   'vpsTargets:changed',
+  'terminal:data',
+  'terminal:closed',
 ] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */

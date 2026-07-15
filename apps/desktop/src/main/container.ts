@@ -21,6 +21,7 @@ import {
   ProviderConnectionService,
   SettingsService,
   SshKeyService,
+  SshTerminalService,
   VpsTargetService,
   isProvisioningProviderKind,
 } from '@cloudforge/core';
@@ -32,6 +33,7 @@ import {
   SshDeployer,
   SshNginxManager,
   SshCertificateManager,
+  NodeSshTerminalManager,
 } from '@cloudforge/deployment';
 import {
   createPrismaClient,
@@ -74,6 +76,7 @@ export interface AppContainer {
   readonly vpsTargetService: VpsTargetService;
   readonly nginxService: NginxService;
   readonly sslService: SslService;
+  readonly sshTerminalService: SshTerminalService;
   readonly secretsBackedByOsKeychain: boolean;
   synchronizeData(): Promise<{ warnings: readonly string[] }>;
   snapshotDatabase(destination: string): Promise<void>;
@@ -220,6 +223,11 @@ export async function initContainer(): Promise<AppContainer> {
     new SshNginxManager(),
     activityService,
   );
+  const sshTerminalService = new SshTerminalService(
+    remoteTargetResolver,
+    new NodeSshTerminalManager(),
+    activityService,
+  );
   const domainResolver: DomainResolver = {
     async resolve(domain) {
       try {
@@ -266,6 +274,7 @@ export async function initContainer(): Promise<AppContainer> {
     vpsTargetService,
     nginxService,
     sslService,
+    sshTerminalService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
     synchronizeData: () =>
       reconcileManagedTargets(projectService, infrastructureService, vpsTargetService),
@@ -274,6 +283,7 @@ export async function initContainer(): Promise<AppContainer> {
     },
     dispose: async () => {
       clearInterval(sslRenewalTimer);
+      sshTerminalService.closeAll();
       await db.$disconnect();
       container = null;
     },

@@ -10,3 +10,4 @@ export { SshContainerManager } from './ssh-container-manager.js';
 export { SshAnsibleManager } from './ssh-ansible-manager.js';
 export { SshNginxManager } from './ssh-nginx-manager.js';
 export { SshCertificateManager } from './ssh-certificate-manager.js';
+export { NodeSshTerminalManager } from './ssh-terminal-manager.js';

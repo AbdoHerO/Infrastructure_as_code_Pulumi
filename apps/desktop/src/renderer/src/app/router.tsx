@@ -19,6 +19,7 @@ import { NginxPage } from '../features/nginx/NginxPage.js';
 import { FirewallPage } from '../features/firewall/FirewallPage.js';
 import { SslPage } from '../features/ssl/SslPage.js';
 import { DocumentationPage } from '../features/documentation/DocumentationPage.js';
+import { TerminalPage } from '../features/terminal/TerminalPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -40,6 +41,7 @@ export const router = createHashRouter([
       { path: 'nginx', element: <NginxPage /> },
       { path: 'firewall', element: <FirewallPage /> },
       { path: 'ssl', element: <SslPage /> },
+      { path: 'terminal', element: <TerminalPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -15,6 +16,7 @@ import {
   Trash2,
   Wrench,
   XCircle,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Badge,
@@ -91,6 +93,12 @@ export function AnsiblePage(): JSX.Element {
   const report = actions.preflight.data;
   const profileReady = report?.status === 'ready' && report.profileId === profile?.id;
   const nginxReady = report?.status === 'ready' && report.profileId === 'nginx';
+  const managementDestination =
+    profile?.id === 'nginx'
+      ? { path: '/nginx', label: 'Open Nginx Manager' }
+      : profile?.id === 'jenkins'
+        ? { path: '/terminal', label: 'Open SSH Terminal' }
+        : { path: '/containers', label: 'Open Containers' };
   const fail = (error: Error): void => {
     toast.error(error.message);
   };
@@ -185,6 +193,7 @@ export function AnsiblePage(): JSX.Element {
     setSelectedTargetId(id);
     actions.preflight.reset();
     actions.access.reset();
+    actions.run.reset();
     setShowAccessSecret(false);
     const saved = savedTargets.data?.find((item) => item.id === id);
     if (!saved) {
@@ -455,6 +464,7 @@ export function AnsiblePage(): JSX.Element {
                         setVariables({});
                         actions.preflight.reset();
                         actions.access.reset();
+                        actions.run.reset();
                         setShowAccessSecret(false);
                       }}
                       className={`rounded-lg border p-4 text-left transition-colors ${item.id === profileId ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
@@ -510,6 +520,22 @@ export function AnsiblePage(): JSX.Element {
                     {profileReady ? 'Ready to run' : 'Readiness check required'}
                   </Badge>
                 </div>
+                {actions.run.isSuccess ? (
+                  <div className="border-success/30 bg-success/5 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+                    <div>
+                      <p className="font-medium">{profile?.name} is installed</p>
+                      <p className="text-muted-foreground text-xs">
+                        Continue with live state, logs and service management in its dedicated
+                        CloudForge module.
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to={managementDestination.path}>
+                        <ExternalLink className="size-4" /> {managementDestination.label}
+                      </Link>
+                    </Button>
+                  </div>
+                ) : null}
                 {profile?.id === 'jenkins' ? (
                   <div className="space-y-3 rounded-lg border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">

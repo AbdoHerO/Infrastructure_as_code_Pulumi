@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Rocket,
   ScrollText,
+  SquareTerminal,
   Server,
   Settings,
   ShieldCheck,
@@ -57,6 +58,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Nginx', path: '/nginx', icon: Globe2 },
       { label: 'Firewall', path: '/firewall', icon: Shield },
       { label: 'SSL & Domains', path: '/ssl', icon: LockKeyhole },
+      { label: 'SSH Terminal', path: '/terminal', icon: SquareTerminal },
     ],
   },
   {

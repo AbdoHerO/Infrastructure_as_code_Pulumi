@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   FileText,
@@ -54,6 +54,7 @@ export function ContainersPage(): JSX.Element {
   const [composeYaml, setComposeYaml] = useState(
     'services:\n  app:\n    image: nginx:1.27-alpine\n    ports:\n      - "80:80"\n',
   );
+  const lastAutomaticLoad = useRef('');
 
   const selectTarget = useCallback(
     (id: string): void => {
@@ -85,6 +86,19 @@ export function ContainersPage(): JSX.Element {
   const ready = host && username && sshCredentialId && hostKeySha256;
   const reload = (): void =>
     list.mutate(target, { onError: (error) => toast.error(error.message) });
+  useEffect(() => {
+    if (!ready) {
+      lastAutomaticLoad.current = '';
+      return;
+    }
+    const signature = [host, port, username, sshCredentialId, hostKeySha256].join('|');
+    if (lastAutomaticLoad.current === signature) return;
+    lastAutomaticLoad.current = signature;
+    list.mutate(target, { onError: (error) => toast.error(error.message) });
+    // The primitive connection fields deliberately control synchronization;
+    // the mutation object itself is stable but would obscure that intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host, hostKeySha256, port, ready, sshCredentialId, username]);
   const perform = (container: RemoteContainer, operation: ContainerAction): void => {
     if (
       (operation === 'remove' || operation === 'stop') &&
@@ -205,6 +219,21 @@ export function ContainersPage(): JSX.Element {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
+          {list.isPending ? (
+            <Card>
+              <CardContent className="text-muted-foreground flex items-center gap-2 py-8 text-sm">
+                <Loader2 className="size-4 animate-spin" /> Loading Docker containers from the
+                selected VPS…
+              </CardContent>
+            </Card>
+          ) : null}
+          {list.isError ? (
+            <Card className="border-destructive/40">
+              <CardContent className="text-destructive py-5 text-sm">
+                Docker state could not be loaded: {list.error.message}
+              </CardContent>
+            </Card>
+          ) : null}
           {list.data?.map((container) => (
             <Card key={container.id}>
               <CardContent className="space-y-3 py-4">

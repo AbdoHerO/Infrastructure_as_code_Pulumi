@@ -37,6 +37,7 @@ export * from './application/ports/vps-target-repository.js';
 export * from './application/ports/remote-target-resolver.js';
 export * from './application/ports/nginx-manager.js';
 export * from './application/ports/certificate-manager.js';
+export * from './application/ports/ssh-terminal-manager.js';
 
 // Application — DTOs
 export * from './application/dto/project-dto.js';
@@ -64,3 +65,4 @@ export * from './application/vps-targets/vps-target-service.js';
 export * from './application/vps-targets/managed-vps-target-sync-service.js';
 export * from './application/nginx/nginx-service.js';
 export * from './application/ssl/ssl-service.js';
+export * from './application/terminal/ssh-terminal-service.js';

@@ -15,6 +15,7 @@ import { registerUpdateHandlers } from './handlers/updates.handlers.js';
 import { registerAnsibleHandlers } from './handlers/ansible.handlers.js';
 import { registerNginxHandlers } from './handlers/nginx.handlers.js';
 import { registerSslHandlers } from './handlers/ssl.handlers.js';
+import { registerTerminalHandlers } from './handlers/terminal.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -38,4 +39,5 @@ export function registerIpcHandlers(): void {
   registerAnsibleHandlers();
   registerNginxHandlers();
   registerSslHandlers();
+  registerTerminalHandlers();
 }
