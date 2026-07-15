@@ -38,7 +38,34 @@ describe('CloudflareApiProvider', () => {
 
     expect(result.ok && result.value.connected).toBe(true);
     expect(result.ok && result.value.zones?.[0]?.name).toBe('example.com');
+    expect(result.ok && result.value.account?.id).toBe('account-1');
+    expect(api.calls.map(({ path }) => path)).not.toContain('/accounts?per_page=50');
     expect(api.calls.map(({ path }) => path)).not.toContain('/user/tokens/verify');
+  });
+
+  it('connects a zone-scoped API token even when account enumeration is unavailable', async () => {
+    const api = new FakeTransport({
+      '/zones?per_page=50': [
+        {
+          id: 'zone-1',
+          name: 'example.com',
+          status: 'active',
+          account: { id: 'account-1', name: 'Acme' },
+          plan: { name: 'Free' },
+        },
+      ],
+      '/user': { email: 'owner@example.com' },
+      '/zones/zone-1/dns_records?per_page=500': [],
+      '/accounts?per_page=50': err(
+        new ServiceProviderError('Cloudflare API 403: Authentication error'),
+      ),
+    });
+
+    const result = await CloudflareApiProvider.fromTransport(api).testConnection();
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.account).toEqual({ id: 'account-1', name: 'Acme' });
+    expect(api.calls.map(({ path }) => path)).not.toContain('/accounts?per_page=50');
   });
 
   it('reports an account-only policy as connected with limited zone DNS permissions', async () => {

@@ -122,9 +122,10 @@ export class CloudflareApiProvider implements CloudflareProvider {
   }
 
   async testConnection(): Promise<Result<ServiceConnection, ServiceProviderError>> {
-    const [account, zones] = await Promise.all([this.account(), this.zones()]);
-    if (!account.ok) return account;
+    const zones = await this.zones();
     if (!zones.ok) return zones;
+    const account = await this.accountFromZones(zones.value);
+    if (!account.ok) return account;
     const warnings: string[] = [];
     const firstZone = zones.value[0];
     if (firstZone) {
@@ -157,12 +158,44 @@ export class CloudflareApiProvider implements CloudflareProvider {
   }
 
   async account(): Promise<Result<CloudflareAccount, ServiceProviderError>> {
+    const zones = await this.zones();
+    if (!zones.ok) return zones;
+    return this.accountFromZones(zones.value);
+  }
+
+  private async accountFromZones(
+    zones: readonly CloudflareZone[],
+  ): Promise<Result<CloudflareAccount, ServiceProviderError>> {
+    const zone = this.accountId
+      ? zones.find((item) => item.accountId === this.accountId)
+      : zones.find((item) => Boolean(item.accountId));
+    if (zone?.accountId) {
+      const user = await this.api.request<{ email?: string }>('/user');
+      return ok({
+        id: zone.accountId,
+        name: zone.accountName || 'Cloudflare account',
+        email: user.ok ? (user.value.email ?? null) : null,
+      });
+    }
+
+    // A valid account-scoped token can have no zones yet. When an Account ID
+    // was configured explicitly, preserve that identity after the successful
+    // zone capability check instead of incorrectly requiring account listing.
+    if (this.accountId) {
+      const user = await this.api.request<{ email?: string }>('/user');
+      return ok({
+        id: this.accountId,
+        name: 'Cloudflare account',
+        email: user.ok ? (user.value.email ?? null) : null,
+      });
+    }
+
+    // Legacy global API keys may still enumerate accounts. Keep this fallback
+    // for backward compatibility, but Bearer API tokens do not depend on it.
     const accounts =
       await this.api.request<readonly { id: string; name: string }[]>('/accounts?per_page=50');
     if (!accounts.ok) return accounts;
-    const selected = this.accountId
-      ? accounts.value.find((item) => item.id === this.accountId)
-      : accounts.value[0];
+    const selected = accounts.value[0];
     if (!selected)
       return err(new ServiceProviderError('No Cloudflare account is available to this token'));
     const user = await this.api.request<{ email?: string }>('/user');
@@ -206,9 +239,10 @@ export class CloudflareApiProvider implements CloudflareProvider {
   }
 
   async dashboard(zoneId?: string): Promise<Result<CloudflareDashboard, ServiceProviderError>> {
-    const [account, zones] = await Promise.all([this.account(), this.zones()]);
-    if (!account.ok) return account;
+    const zones = await this.zones();
     if (!zones.ok) return zones;
+    const account = await this.accountFromZones(zones.value);
+    if (!account.ok) return account;
     const zone = zoneId
       ? zones.value.find((item) => item.id === zoneId)
       : (zones.value.find(
