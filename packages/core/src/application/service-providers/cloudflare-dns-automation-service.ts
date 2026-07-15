@@ -42,7 +42,7 @@ export class CloudflareDnsAutomationService {
   ): Promise<Result<CloudflareDnsPropagation, CloudflareDnsAutomationFailure>> {
     const context = await this.context(domain, expectedIp, credentialId, zoneId);
     if (!context.ok) return context;
-    const { credential, zone, config, normalized } = context.value;
+    const { credential, zone, zoneStatus, config, normalized } = context.value;
     const records = await this.cloudflare.dnsRecords(credential, zone);
     if (!records.ok) return records;
     const type = expectedIp.includes(':') ? 'AAAA' : 'A';
@@ -71,7 +71,7 @@ export class CloudflareDnsAutomationService {
         metadata: { zoneId: zone, domain: normalized, proxied: saved.value.proxied },
       });
     return config.waitForPropagation
-      ? this.wait(saved.value, expectedIp, config.propagationTimeoutSeconds, sslMode)
+      ? this.wait(saved.value, expectedIp, config.propagationTimeoutSeconds, sslMode, zoneStatus)
       : ok(this.status(saved.value, expectedIp, [], 'pending', sslMode));
   }
 
@@ -112,7 +112,9 @@ export class CloudflareDnsAutomationService {
     const publicAnswers = answers.ok ? answers.value : [];
     const propagated =
       record.content === expectedIp &&
-      (record.proxied ? publicAnswers.length > 0 : publicAnswers.includes(expectedIp));
+      (record.proxied
+        ? context.value.zoneStatus === 'active' || publicAnswers.length > 0
+        : publicAnswers.includes(expectedIp));
     return ok(
       this.status(
         record,
@@ -134,6 +136,7 @@ export class CloudflareDnsAutomationService {
       {
         credential: string;
         zone: string;
+        zoneStatus: string;
         normalized: string;
         config: AppSettings['cloudflare'];
       },
@@ -162,7 +165,16 @@ export class CloudflareDnsAutomationService {
       .sort((a, b) => b.name.length - a.name.length)[0]?.id;
     const zone = requestedZone ?? configuredZone ?? matchingZone;
     if (!zone) return err(new ValidationError('No Cloudflare zone matches this domain'));
-    return ok({ credential, zone, normalized, config: settings.value.cloudflare });
+    const selectedZone = zones.value.find((item) => item.id === zone);
+    if (!selectedZone)
+      return err(new ValidationError('The selected Cloudflare zone is no longer available'));
+    return ok({
+      credential,
+      zone,
+      zoneStatus: selectedZone.status.toLowerCase(),
+      normalized,
+      config: settings.value.cloudflare,
+    });
   }
 
   private async wait(
@@ -170,12 +182,18 @@ export class CloudflareDnsAutomationService {
     expectedIp: string,
     timeoutSeconds: number,
     sslMode: string,
+    zoneStatus: string,
   ): Promise<Result<CloudflareDnsPropagation, ServiceProviderError>> {
     const attempts = Math.max(1, Math.ceil(timeoutSeconds / 5));
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const answers = await this.dns.resolve(record.name);
       const values = answers.ok ? answers.value : [];
-      if (record.proxied ? values.length > 0 : values.includes(expectedIp))
+      if (
+        record.content === expectedIp &&
+        (record.proxied
+          ? zoneStatus === 'active' || values.length > 0
+          : values.includes(expectedIp))
+      )
         return ok(this.status(record, expectedIp, values, 'propagated', sslMode));
       if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 5_000));
     }
@@ -200,9 +218,13 @@ export class CloudflareDnsAutomationService {
       warning:
         record.content !== expectedIp
           ? 'The Cloudflare origin record does not match the expected VPS public IP.'
-          : record.proxied
-            ? 'Cloudflare proxy is enabled; public DNS correctly returns Cloudflare edge addresses.'
-            : null,
+          : status === 'pending'
+            ? 'The Cloudflare origin record matches this VPS. Waiting for public edge DNS propagation.'
+            : record.proxied
+              ? answers.length > 0
+                ? 'Cloudflare proxy is enabled; public DNS correctly returns Cloudflare edge addresses.'
+                : 'Cloudflare confirms an active zone and a proxied origin record matching this VPS.'
+              : null,
       sslMode,
       certificateRequirement:
         !record.proxied || sslMode === 'off' || sslMode === 'full' || sslMode === 'strict'

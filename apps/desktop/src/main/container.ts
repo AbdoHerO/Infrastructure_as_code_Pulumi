@@ -1,6 +1,6 @@
 import { copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { resolve4, resolve6 } from 'node:dns/promises';
+import { lookup, resolve4, resolve6 } from 'node:dns/promises';
 import { app } from 'electron';
 import { DeploymentError, err, InfrastructureError, ok, unwrap } from '@cloudforge/shared';
 import {
@@ -256,7 +256,11 @@ export async function initContainer(): Promise<AppContainer> {
           resolve4(domain).catch(() => []),
           resolve6(domain).catch(() => []),
         ]);
-        const addresses = [...ipv4, ...ipv6];
+        let addresses = [...ipv4, ...ipv6];
+        if (addresses.length === 0) {
+          const systemAddresses = await lookup(domain, { all: true }).catch(() => []);
+          addresses = systemAddresses.map((item) => item.address);
+        }
         return addresses.length > 0
           ? ok(addresses)
           : err(new DeploymentError(`DNS has no A or AAAA record for ${domain}`));

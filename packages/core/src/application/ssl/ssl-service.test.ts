@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ok } from '@cloudforge/shared';
+import { DeploymentError, err, ok } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { CertificateManager } from '../ports/certificate-manager.js';
 import { SslService } from './ssl-service.js';
@@ -85,5 +85,38 @@ describe('SslService', () => {
     expect(result.ok && result.value.matches).toBe(true);
     expect(result.ok && result.value.provider).toBe('cloudflare');
     expect(result.ok && result.value.sslMode).toBe('strict');
+  });
+
+  it('uses managed Cloudflare verification before public DNS is available', async () => {
+    const publicDns = vi
+      .fn()
+      .mockResolvedValue(err(new DeploymentError('DNS has no A or AAAA record')));
+    const service = new SslService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { resolve: publicDns },
+      {} as CertificateManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      undefined,
+      {
+        verify: vi.fn().mockResolvedValue(
+          ok({
+            status: 'propagated',
+            warning: null,
+            current: target.host,
+            proxied: true,
+            publicAnswers: ['104.16.1.10'],
+            sslMode: 'strict',
+            certificateRequirement: 'required',
+          }),
+        ),
+      } as never,
+    );
+
+    const result = await service.verifyDns('target', config.domain);
+
+    expect(result.ok && result.value.matches).toBe(true);
+    expect(result.ok && result.value.provider).toBe('cloudflare');
+    expect(publicDns).not.toHaveBeenCalled();
   });
 });

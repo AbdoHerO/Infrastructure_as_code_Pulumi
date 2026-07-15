@@ -447,6 +447,7 @@ export interface IpcContract {
       domainIps: readonly string[];
       targetIps: readonly string[];
       matches: boolean;
+      status: 'pending' | 'propagated' | 'error';
       provider: 'cloudflare' | 'public-dns';
       proxied: boolean;
       sslMode: string;

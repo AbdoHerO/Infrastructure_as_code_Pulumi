@@ -33,6 +33,7 @@ export class SslService {
         domainIps: readonly string[];
         targetIps: readonly string[];
         matches: boolean;
+        status: 'pending' | 'propagated' | 'error';
         provider: 'cloudflare' | 'public-dns';
         proxied: boolean;
         sslMode: string;
@@ -46,8 +47,6 @@ export class SslService {
     if (!normalized.ok) return normalized;
     const target = await this.targets.resolve(targetId);
     if (!target.ok) return target;
-    const domainIps = await this.dns.resolve(normalized.value.replace(/^\*\./, ''));
-    if (!domainIps.ok) return domainIps;
     const targetIps = isIp(target.value.host)
       ? ok([target.value.host])
       : await this.dns.resolve(target.value.host);
@@ -55,30 +54,36 @@ export class SslService {
     const expectedIp = targetIps.value[0];
     if (expectedIp && this.managedDns?.verify) {
       const cloudflare = await this.managedDns.verify(normalized.value, expectedIp);
-      if (cloudflare.ok && cloudflare.value.status !== 'error') {
+      if (cloudflare.ok) {
         const matches =
           cloudflare.value.current === expectedIp && cloudflare.value.status === 'propagated';
         return ok({
           domainIps: cloudflare.value.publicAnswers,
           targetIps: targetIps.value,
           matches,
+          status: cloudflare.value.status,
           provider: 'cloudflare',
           proxied: cloudflare.value.proxied,
           sslMode: cloudflare.value.sslMode,
           certificateRequirement: cloudflare.value.certificateRequirement,
-          message: cloudflareSslMessage(
-            cloudflare.value.proxied,
-            cloudflare.value.sslMode,
-            cloudflare.value.certificateRequirement,
-          ),
+          message:
+            cloudflare.value.warning ??
+            cloudflareSslMessage(
+              cloudflare.value.proxied,
+              cloudflare.value.sslMode,
+              cloudflare.value.certificateRequirement,
+            ),
         });
       }
     }
+    const domainIps = await this.dns.resolve(normalized.value.replace(/^\*\./, ''));
+    if (!domainIps.ok) return domainIps;
     const matches = domainIps.value.some((ip) => targetIps.value.includes(ip));
     return ok({
       domainIps: domainIps.value,
       targetIps: targetIps.value,
       matches,
+      status: matches ? 'propagated' : 'error',
       provider: 'public-dns',
       proxied: false,
       sslMode: 'not-applicable',

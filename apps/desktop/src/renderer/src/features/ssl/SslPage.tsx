@@ -38,12 +38,14 @@ export function SslPage(): JSX.Element {
   const [certificateVolume, setCertificateVolume] = useState('/opt/cloudforge/certs');
   const [webrootVolume, setWebrootVolume] = useState('/opt/cloudforge/www');
   const [forceRenewal, setForceRenewal] = useState(false);
+  const [verificationStartedAt, setVerificationStartedAt] = useState<number | null>(null);
   const [certificates, setCertificates] = useState<CertificateDetails[]>([]);
   const [sites, setSites] = useState<ManagedNginxSite[]>([]);
   const [dns, setDns] = useState<{
     matches: boolean;
     domainIps: readonly string[];
     targetIps: readonly string[];
+    status: 'pending' | 'propagated' | 'error';
     provider: 'cloudflare' | 'public-dns';
     proxied: boolean;
     sslMode: string;
@@ -73,12 +75,37 @@ export function SslPage(): JSX.Element {
   );
   const verify = useMutation({
     mutationFn: () => invoke('ssl:verifyDns', { targetId, domain }),
-    onSuccess: setDns,
+    onSuccess: (result) => {
+      setDns(result);
+      if (result.matches) {
+        setVerificationStartedAt(null);
+        toast.success('DNS matches the selected VPS');
+      }
+    },
     onError: (error) => toast.error(error.message),
   });
+  const verifyDns = verify.mutate;
+  useEffect(() => {
+    if (
+      dns?.status !== 'pending' ||
+      verify.isPending ||
+      verificationStartedAt === null ||
+      Date.now() - verificationStartedAt >= 300_000
+    )
+      return;
+    const timer = window.setTimeout(() => verifyDns(), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [dns?.status, verificationStartedAt, verify.isPending, verifyDns]);
   const list = useMutation({
     mutationFn: () => invoke('ssl:list', { targetId, certificateVolume }),
-    onSuccess: setCertificates,
+    onSuccess: (items) => {
+      setCertificates(items);
+      if (items.length === 0) {
+        toast.info('No certificates have been issued in this volume yet');
+      } else {
+        toast.success(`Loaded ${items.length} certificate${items.length === 1 ? '' : 's'}`);
+      }
+    },
     onError: (error) => toast.error(error.message),
   });
   const issue = useMutation({
@@ -145,6 +172,7 @@ export function SslPage(): JSX.Element {
               onChange={(event) => {
                 setTargetId(event.target.value);
                 setDns(null);
+                setVerificationStartedAt(null);
               }}
             >
               <option value="">Select target</option>
@@ -158,11 +186,11 @@ export function SslPage(): JSX.Element {
           <Button
             className="self-end"
             variant="outline"
-            disabled={!targetId}
+            disabled={!targetId || list.isPending}
             onClick={() => list.mutate()}
           >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Load certificates
+            <RefreshCw className={`mr-2 h-4 w-4 ${list.isPending ? 'animate-spin' : ''}`} />
+            {list.isPending ? 'Loading…' : 'Load certificates'}
           </Button>
         </CardContent>
       </Card>
@@ -196,6 +224,7 @@ export function SslPage(): JSX.Element {
               onChange={(event) => {
                 setDomain(event.target.value);
                 setDns(null);
+                setVerificationStartedAt(null);
               }}
             >
               <option value="">Choose a CloudForge Nginx site</option>
@@ -229,19 +258,34 @@ export function SslPage(): JSX.Element {
             <Button
               variant="outline"
               disabled={!targetId || !domain || verify.isPending}
-              onClick={() => verify.mutate()}
+              onClick={() => {
+                setVerificationStartedAt(Date.now());
+                verify.mutate();
+              }}
             >
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Verify DNS
+              {verify.isPending ? (
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="mr-2 h-4 w-4" />
+              )}
+              {verify.isPending ? 'Checking DNS…' : 'Verify DNS'}
             </Button>
             {dns && (
-              <Badge variant={dns.matches ? 'success' : 'destructive'}>
+              <Badge
+                variant={
+                  dns.matches ? 'success' : dns.status === 'pending' ? 'warning' : 'destructive'
+                }
+              >
                 {dns.matches ? (
                   <CheckCircle2 className="mr-1 h-3 w-3" />
                 ) : (
                   <XCircle className="mr-1 h-3 w-3" />
                 )}
-                {dns.matches ? 'DNS matches VPS' : 'DNS mismatch'}
+                {dns.matches
+                  ? 'DNS matches VPS'
+                  : dns.status === 'pending'
+                    ? 'Propagation pending · checking automatically'
+                    : 'DNS mismatch'}
               </Badge>
             )}
             <Button
