@@ -152,3 +152,9 @@ apps/desktop/src/
 packages/
   shared core ui database providers pulumi deployment
 ```
+
+Service-provider adapters live in `packages/service-providers`. Add a new
+service by defining its port and use-case service in `core`, implementing the
+port in that package, wiring it only in the desktop composition root, and
+exposing individual use cases through typed IPC. Do not add non-provisioning
+services to `CloudProvider` or Pulumi.

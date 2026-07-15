@@ -71,6 +71,7 @@ Full documentation lives in [`docs/`](docs/README.md):
   **[Configuration & Credentials](docs/CONFIGURATION.md)** — keys & how to get them
 - [Overview](docs/OVERVIEW.md) · [Architecture](docs/ARCHITECTURE.md) ·
   [Packages](docs/PACKAGES.md) · [Modules](docs/MODULES.md)
+- [Cloudflare](docs/CLOUDFLARE.md) — zones, DNS, SSL/TLS, caching and service-provider architecture
 - [IPC Reference](docs/IPC.md) · [Data Model](docs/DATA-MODEL.md) ·
   [Security](docs/SECURITY.md)
 - [Development](docs/DEVELOPMENT.md) · [Packaging](docs/PACKAGING.md) ·

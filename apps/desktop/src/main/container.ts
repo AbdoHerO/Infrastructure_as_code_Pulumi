@@ -5,6 +5,8 @@ import { app } from 'electron';
 import { DeploymentError, err, InfrastructureError, ok, unwrap } from '@cloudforge/shared';
 import {
   ActivityService,
+  CloudflareService,
+  CloudflareDnsAutomationService,
   CredentialService,
   type ContainerManager,
   type AnsibleManager,
@@ -27,6 +29,7 @@ import {
   isProvisioningProviderKind,
 } from '@cloudforge/core';
 import { DefaultProviderFactory } from '@cloudforge/providers';
+import { DefaultServiceProviderFactory } from '@cloudforge/service-providers';
 import {
   NodeSshKeyGenerator,
   SshAnsibleManager,
@@ -79,6 +82,8 @@ export interface AppContainer {
   readonly nginxService: NginxService;
   readonly sslService: SslService;
   readonly sshTerminalService: SshTerminalService;
+  readonly cloudflareService: CloudflareService;
+  readonly cloudflareDnsAutomationService: CloudflareDnsAutomationService;
   readonly secretsBackedByOsKeychain: boolean;
   synchronizeData(): Promise<{ warnings: readonly string[] }>;
   snapshotDatabase(destination: string): Promise<void>;
@@ -180,6 +185,14 @@ export async function initContainer(): Promise<AppContainer> {
     );
   }
   const activityService = new ActivityService(new PrismaActivityRepository(db));
+  const cloudflareService = new CloudflareService(
+    credentialService,
+    new DefaultServiceProviderFactory(
+      process.env.CLOUDFLARE_API_BASE_URL ?? 'https://api.cloudflare.com/client/v4',
+    ),
+    activityService,
+    settingsService,
+  );
   const pluginService = new PluginService(new PrismaPluginRepository(db));
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
@@ -252,6 +265,12 @@ export async function initContainer(): Promise<AppContainer> {
       }
     },
   };
+  const cloudflareDnsAutomationService = new CloudflareDnsAutomationService(
+    cloudflareService,
+    settingsService,
+    domainResolver,
+    activityService,
+  );
   const sslService = new SslService(
     remoteTargetResolver,
     domainResolver,
@@ -259,6 +278,7 @@ export async function initContainer(): Promise<AppContainer> {
     activityService,
     settingsService,
     nginxService,
+    cloudflareDnsAutomationService,
   );
   const sslRenewalTimer = setInterval(
     () => void sslService.renewDue(),
@@ -266,6 +286,98 @@ export async function initContainer(): Promise<AppContainer> {
   );
   sslRenewalTimer.unref();
   setTimeout(() => void sslService.renewDue(), 30_000).unref();
+
+  let cloudflareSnapshot = '';
+  const synchronizeCloudflare = async (): Promise<{ warnings: readonly string[] }> => {
+    const settings = await settingsService.get();
+    if (!settings.ok) return { warnings: [settings.error.message] };
+    const config = settings.value.cloudflare;
+    if (!config.autoSync || !config.defaultCredentialId) return { warnings: [] };
+    const zones = await cloudflareService.zones(config.defaultCredentialId);
+    if (!zones.ok) return { warnings: [zones.error.message] };
+    const state: {
+      zoneId: string;
+      records: readonly { id: string; modifiedAt: string }[];
+      ssl: string;
+      cache: string;
+      security: string;
+    }[] = [];
+    for (const zone of zones.value) {
+      const [records, zoneSettings, security] = await Promise.all([
+        cloudflareService.dnsRecords(config.defaultCredentialId, zone.id),
+        cloudflareService.zoneSettings(config.defaultCredentialId, zone.id),
+        cloudflareService.security(config.defaultCredentialId, zone.id),
+      ]);
+      if (!records.ok) return { warnings: [records.error.message] };
+      state.push({
+        zoneId: zone.id,
+        records: records.value.map((record) => ({ id: record.id, modifiedAt: record.modifiedAt })),
+        ssl: zoneSettings.ok
+          ? JSON.stringify({
+              mode: zoneSettings.value.sslMode,
+              minimumTls: zoneSettings.value.minimumTls,
+              tls13: zoneSettings.value.tls13,
+              hsts: zoneSettings.value.hsts,
+              alwaysHttps: zoneSettings.value.alwaysHttps,
+              rewrites: zoneSettings.value.automaticHttpsRewrites,
+            })
+          : '',
+        cache: zoneSettings.ok
+          ? JSON.stringify({
+              level: zoneSettings.value.cacheLevel,
+              browserTtl: zoneSettings.value.browserCacheTtl,
+              development: zoneSettings.value.developmentMode,
+              brotli: zoneSettings.value.brotli,
+            })
+          : '',
+        security: security.ok
+          ? JSON.stringify({
+              level: security.value.securityLevel,
+              browserIntegrity: security.value.browserIntegrityCheck,
+              rules: security.value.rules.map((rule) => `${rule.id}:${rule.status}`),
+            })
+          : '',
+      });
+    }
+    const next = JSON.stringify(state);
+    if (cloudflareSnapshot && next !== cloudflareSnapshot) {
+      const previous = JSON.parse(cloudflareSnapshot) as typeof state;
+      const previousZones = new Set(previous.map((item) => item.zoneId));
+      const nextZones = new Set(state.map((item) => item.zoneId));
+      const changedSetting = (field: 'ssl' | 'cache' | 'security'): boolean =>
+        state.some(
+          (item) =>
+            previous.find((candidate) => candidate.zoneId === item.zoneId)?.[field] !== item[field],
+        );
+      const reason = state.some((item) => !previousZones.has(item.zoneId))
+        ? 'zone-added'
+        : previous.some((item) => !nextZones.has(item.zoneId))
+          ? 'zone-deleted'
+          : changedSetting('ssl')
+            ? 'ssl-changed'
+            : changedSetting('cache')
+              ? 'cache-changed'
+              : changedSetting('security')
+                ? 'security-changed'
+                : 'dns-changed';
+      if (config.activityLogging)
+        activityService.recordSafe({
+          type: 'cloudflare.synchronization.changed',
+          message: `Cloudflare ${reason.replace('-', ' ')} detected outside CloudForge`,
+          metadata: { zones: zones.value.length, reason },
+        });
+      emitEvent('cloudflare:changed', { reason });
+    } else {
+      emitEvent('cloudflare:changed', { reason: 'synchronized' });
+    }
+    cloudflareSnapshot = next;
+    return { warnings: [] };
+  };
+  const cloudflareSyncTimer = setInterval(
+    () => void synchronizeCloudflare(),
+    appSettings.cloudflare.autoRefreshMinutes * 60_000,
+  );
+  cloudflareSyncTimer.unref();
 
   container = {
     projectService,
@@ -284,14 +396,22 @@ export async function initContainer(): Promise<AppContainer> {
     nginxService,
     sslService,
     sshTerminalService,
+    cloudflareService,
+    cloudflareDnsAutomationService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
-    synchronizeData: () =>
-      reconcileManagedTargets(projectService, infrastructureService, vpsTargetService),
+    synchronizeData: async () => {
+      const [targets, cloudflare] = await Promise.all([
+        reconcileManagedTargets(projectService, infrastructureService, vpsTargetService),
+        synchronizeCloudflare(),
+      ]);
+      return { warnings: [...targets.warnings, ...cloudflare.warnings] };
+    },
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
     },
     dispose: async () => {
       clearInterval(sslRenewalTimer);
+      clearInterval(cloudflareSyncTimer);
       sshTerminalService.closeAll();
       await db.$disconnect();
       container = null;
@@ -301,6 +421,7 @@ export async function initContainer(): Promise<AppContainer> {
   setTimeout(() => {
     void reconcileManagedTargets(projectService, infrastructureService, vpsTargetService);
   }, 2_000).unref();
+  setTimeout(() => void synchronizeCloudflare(), 5_000).unref();
   return container;
 }
 

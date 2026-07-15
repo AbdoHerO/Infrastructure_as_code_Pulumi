@@ -61,7 +61,7 @@ export function ociRequestPage<T>(
           } else {
             finish(
               err(
-                new ProviderError(`OCI request failed with status ${status}`, {
+                new ProviderError(ociErrorMessage(status, text), {
                   context: { status, body: text.slice(0, 400) },
                 }),
               ),
@@ -80,4 +80,18 @@ export function ociRequestPage<T>(
     if (options.body) req.write(options.body);
     req.end();
   });
+}
+
+export function ociErrorMessage(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; message?: unknown };
+    const code = typeof parsed.code === 'string' ? parsed.code.trim() : '';
+    const message = typeof parsed.message === 'string' ? parsed.message.trim() : '';
+    const detail = [code, message].filter(Boolean).join(': ');
+    return detail
+      ? `OCI request failed with status ${status}: ${detail.slice(0, 600)}`
+      : `OCI request failed with status ${status}`;
+  } catch {
+    return `OCI request failed with status ${status}`;
+  }
 }

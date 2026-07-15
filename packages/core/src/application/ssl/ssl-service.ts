@@ -1,4 +1,4 @@
-import { err, ok, type DeploymentError, type Result, ValidationError } from '@cloudforge/shared';
+import { DeploymentError, err, ok, type Result, ValidationError } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
 import type {
   CertificateDetails,
@@ -6,6 +6,7 @@ import type {
   CertificateIssueConfig,
   CertificateManager,
   DomainResolver,
+  ManagedDnsCoordinator,
 } from '../ports/certificate-manager.js';
 import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
 import type { SettingsService } from '../settings/settings-service.js';
@@ -20,6 +21,7 @@ export class SslService {
     private readonly activities: ActivityService,
     private readonly settings?: SettingsService,
     private readonly nginx?: NginxService,
+    private readonly managedDns?: ManagedDnsCoordinator,
   ) {}
 
   async verifyDns(
@@ -27,7 +29,16 @@ export class SslService {
     domain: string,
   ): Promise<
     Result<
-      { domainIps: readonly string[]; targetIps: readonly string[]; matches: boolean },
+      {
+        domainIps: readonly string[];
+        targetIps: readonly string[];
+        matches: boolean;
+        provider: 'cloudflare' | 'public-dns';
+        proxied: boolean;
+        sslMode: string;
+        certificateRequirement: 'required' | 'recommended';
+        message: string;
+      },
       ValidationError | DeploymentError
     >
   > {
@@ -41,8 +52,39 @@ export class SslService {
       ? ok([target.value.host])
       : await this.dns.resolve(target.value.host);
     if (!targetIps.ok) return targetIps;
+    const expectedIp = targetIps.value[0];
+    if (expectedIp && this.managedDns?.verify) {
+      const cloudflare = await this.managedDns.verify(normalized.value, expectedIp);
+      if (cloudflare.ok && cloudflare.value.status !== 'error') {
+        const matches =
+          cloudflare.value.current === expectedIp && cloudflare.value.status === 'propagated';
+        return ok({
+          domainIps: cloudflare.value.publicAnswers,
+          targetIps: targetIps.value,
+          matches,
+          provider: 'cloudflare',
+          proxied: cloudflare.value.proxied,
+          sslMode: cloudflare.value.sslMode,
+          certificateRequirement: cloudflare.value.certificateRequirement,
+          message: cloudflareSslMessage(
+            cloudflare.value.proxied,
+            cloudflare.value.sslMode,
+            cloudflare.value.certificateRequirement,
+          ),
+        });
+      }
+    }
     const matches = domainIps.value.some((ip) => targetIps.value.includes(ip));
-    return ok({ domainIps: domainIps.value, targetIps: targetIps.value, matches });
+    return ok({
+      domainIps: domainIps.value,
+      targetIps: targetIps.value,
+      matches,
+      provider: 'public-dns',
+      proxied: false,
+      sslMode: 'not-applicable',
+      certificateRequirement: 'required',
+      message: 'DNS-only traffic connects directly to the VPS, so the origin needs a certificate.',
+    });
   }
 
   async issue(
@@ -52,16 +94,38 @@ export class SslService {
   ): Promise<Result<CertificateDetails, ValidationError | DeploymentError>> {
     const valid = validateConfig(config);
     if (!valid.ok) return valid;
-    const dns = await this.verifyDns(targetId, valid.value.domain);
-    if (!dns.ok) return dns;
-    if (!dns.value.matches)
-      return err(
-        new ValidationError(
-          `DNS does not point to this VPS (domain: ${dns.value.domainIps.join(', ') || 'none'}; VPS: ${dns.value.targetIps.join(', ') || 'none'})`,
-        ),
-      );
     const target = await this.targets.resolve(targetId);
     if (!target.ok) return target;
+    const currentSettings = this.settings ? await this.settings.get() : null;
+    const automaticDns = currentSettings?.ok
+      ? currentSettings.value.cloudflare.automaticDnsCreation
+      : false;
+    if (automaticDns && this.managedDns) {
+      const targetIps = isIp(target.value.host)
+        ? ok([target.value.host])
+        : await this.dns.resolve(target.value.host);
+      if (!targetIps.ok) return targetIps;
+      const expectedIp = targetIps.value[0];
+      if (!expectedIp) return err(new ValidationError('The VPS has no resolvable public IP'));
+      const prepared = await this.managedDns.ensure(valid.value.domain, expectedIp);
+      if (!prepared.ok)
+        return err(
+          new DeploymentError('Automatic Cloudflare DNS preparation failed', {
+            cause: prepared.error,
+          }),
+        );
+      if (prepared.value.status !== 'propagated')
+        return err(new ValidationError('Cloudflare DNS exists but propagation is still pending'));
+    } else {
+      const dns = await this.verifyDns(targetId, valid.value.domain);
+      if (!dns.ok) return dns;
+      if (!dns.value.matches)
+        return err(
+          new ValidationError(
+            `DNS does not point to this VPS (domain: ${dns.value.domainIps.join(', ') || 'none'}; VPS: ${dns.value.targetIps.join(', ') || 'none'})`,
+          ),
+        );
+    }
     let nginxSite: ManagedNginxSite | undefined;
     if (this.nginx) {
       const sites = await this.nginx.listSites(targetId);
@@ -119,7 +183,9 @@ export class SslService {
             ...nginxSite,
             acmeWebroot: valid.value.webrootVolume,
             ssl: true,
-            httpRedirect: true,
+            httpRedirect: currentSettings?.ok
+              ? currentSettings.value.cloudflare.automaticHttpsRedirect
+              : true,
             certificatePath: `${valid.value.certificateVolume}/live/${valid.value.domain}`,
             lastModified: new Date().toISOString(),
           },
@@ -184,6 +250,24 @@ export class SslService {
       });
     }
   }
+}
+
+function cloudflareSslMessage(
+  proxied: boolean,
+  sslMode: string,
+  requirement: 'required' | 'recommended',
+): string {
+  if (!proxied)
+    return 'The record is DNS-only. Visitors connect directly to the VPS, so an origin certificate is required.';
+  if (sslMode === 'strict')
+    return 'Cloudflare edge SSL is active. Full (strict) also requires a valid certificate on this VPS.';
+  if (sslMode === 'full')
+    return 'Cloudflare edge SSL is active. Full mode requires HTTPS on this VPS; a trusted certificate is recommended.';
+  if (sslMode === 'flexible')
+    return 'Cloudflare edge SSL is active, but Flexible mode leaves the Cloudflare-to-VPS connection unencrypted. Install an origin certificate and use Full (strict).';
+  return requirement === 'required'
+    ? 'HTTPS requires a certificate on this VPS and an enabled Cloudflare SSL mode.'
+    : 'Cloudflare edge SSL is active; an origin certificate is recommended.';
 }
 
 const DOMAIN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;

@@ -88,7 +88,9 @@ interface OciSecurityRule {
   isStateless?: boolean;
   protocol: string;
   source?: string;
+  sourceType?: 'CIDR_BLOCK';
   destination?: string;
+  destinationType?: 'CIDR_BLOCK';
   description?: string;
   tcpOptions?: { destinationPortRange?: OciPortRange };
   udpOptions?: { destinationPortRange?: OciPortRange };
@@ -499,7 +501,7 @@ function mapOciRule(
     stateless: rule.isStateless ?? false,
   };
 }
-function toOciRule(rule: LiveFirewallRule): OciSecurityRule {
+export function toOciRule(rule: LiveFirewallRule): OciSecurityRule {
   const protocol =
     rule.protocol === 'tcp'
       ? '6'
@@ -512,11 +514,14 @@ function toOciRule(rule: LiveFirewallRule): OciSecurityRule {
     rule.portFrom !== null && rule.portTo !== null
       ? { destinationPortRange: { min: rule.portFrom, max: rule.portTo } }
       : undefined;
+  const description = rule.description.trim();
   return {
     protocol,
     isStateless: rule.stateless,
-    description: rule.description,
-    ...(rule.direction === 'ingress' ? { source: rule.cidr } : { destination: rule.cidr }),
+    ...(description ? { description } : {}),
+    ...(rule.direction === 'ingress'
+      ? { source: rule.cidr, sourceType: 'CIDR_BLOCK' as const }
+      : { destination: rule.cidr, destinationType: 'CIDR_BLOCK' as const }),
     ...(rule.protocol === 'tcp' && ports ? { tcpOptions: ports } : {}),
     ...(rule.protocol === 'udp' && ports ? { udpOptions: ports } : {}),
   };

@@ -288,6 +288,7 @@ export function FirewallPage(): JSX.Element {
                       <TableCell>
                         <Input
                           value={rule.description}
+                          maxLength={255}
                           onChange={(event) => update(rule.id, { description: event.target.value })}
                         />
                       </TableCell>
@@ -409,6 +410,14 @@ function firewallWarnings(rules: readonly LiveFirewallRule[]): string[] {
         rule.portFrom === 22
           ? 'SSH is open to the entire internet.'
           : 'All inbound traffic is open to the entire internet.',
+      );
+    if (
+      rule.direction === 'ingress' &&
+      rule.stateless &&
+      (rule.protocol === 'tcp' || rule.protocol === 'udp')
+    )
+      warnings.push(
+        `Stateless inbound ${rule.protocol.toUpperCase()} ${rule.portFrom ?? 'all ports'} requires a matching stateless outbound response rule. Use stateful for normal web services.`,
       );
   }
   for (let index = 0; index < rules.length; index += 1) {

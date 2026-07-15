@@ -21,6 +21,7 @@ import roadmap from '@docs/ROADMAP.md?raw';
 import privacy from '@docs/PRIVACY.md?raw';
 import license from '@docs/LICENSE.md?raw';
 import aws from '@docs/AWS.md?raw';
+import cloudflare from '@docs/CLOUDFLARE.md?raw';
 
 export type DocumentationCategory = 'Start here' | 'Operate' | 'Reference' | 'Develop';
 
@@ -121,6 +122,14 @@ export const DOCUMENTATION: readonly DocumentationArticle[] = [
     'DNS verification, certificates, renewal, and Nginx integration.',
     'Operate',
     ssl,
+  ),
+  article(
+    'cloudflare',
+    'CLOUDFLARE.md',
+    'Cloudflare',
+    'Manage zones, DNS, SSL/TLS, cache, analytics and edge services.',
+    'Operate',
+    cloudflare,
   ),
   article(
     'infrastructure-updates',

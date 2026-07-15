@@ -34,6 +34,10 @@ const workspaceAliases = {
   '@cloudforge/database': resolve(__dirname, '../../packages/database/src/index.ts'),
   '@cloudforge/deployment': resolve(__dirname, '../../packages/deployment/src/index.ts'),
   '@cloudforge/providers': resolve(__dirname, '../../packages/providers/src/index.ts'),
+  '@cloudforge/service-providers': resolve(
+    __dirname,
+    '../../packages/service-providers/src/index.ts',
+  ),
   '@cloudforge/pulumi': resolve(__dirname, '../../packages/pulumi/src/index.ts'),
   '@cloudforge/ui': resolve(__dirname, '../../packages/ui/src/index.ts'),
 };

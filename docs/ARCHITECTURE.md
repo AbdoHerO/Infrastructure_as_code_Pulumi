@@ -123,3 +123,12 @@ merger, and shared presentational components. Apps consume the preset and point
 - One public entry per package (`src/index.ts` barrel).
 - Every module ships tests for pure logic and documentation for its feature.
 - Nothing is merged with a failing typecheck, lint, test or build.
+
+## 9. Service providers
+
+External application services are separate from infrastructure providers.
+`ServiceProvider` is an Application port; Cloudflare implements it in
+`@cloudforge/service-providers`. It is never accepted by `CloudProvider`,
+`InfrastructureEngine`, or Pulumi. The renderer sends credential IDs over typed
+IPC and the main process resolves/decrypts tokens immediately before an adapter
+call. This boundary is reusable for GitHub, GitLab, registries, and AI services.

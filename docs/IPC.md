@@ -218,6 +218,14 @@ typed `AppError` for the registry to serialize).
 `nginx:log` and `ssl:log` are correlated streams. Firewall updates include the
 previously observed rules and fail if the provider changed concurrently.
 
+### Cloudflare service-provider channels
+
+`cloudflare:test`, `cloudflare:dashboard`, and `cloudflare:zones` discover the
+account. `cloudflare:dnsRecords` plus create/update/delete channels manage DNS.
+Zone settings, cache purge, security, analytics, Page Rules, Redirect Rules and platform
+inventory have separate typed channels. Every request contains only a stored
+credential ID and resource identifiers; API tokens never cross IPC.
+
 ## Adding a channel (checklist)
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,

@@ -147,6 +147,8 @@ export function validateFirewallRules(
       return err(new ProviderError('Firewall rules must have unique identifiers'));
     ids.add(rule.id);
     if (!isValidCidr(rule.cidr)) return err(new ProviderError(`Invalid CIDR: ${rule.cidr}`));
+    if (rule.description.trim().length > 255)
+      return err(new ProviderError('Firewall rule descriptions must be 255 characters or fewer'));
     if ((rule.portFrom === null) !== (rule.portTo === null))
       return err(new ProviderError('Both ends of a port range are required'));
     if (

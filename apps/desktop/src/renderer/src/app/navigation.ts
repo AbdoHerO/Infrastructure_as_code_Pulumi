@@ -20,6 +20,7 @@ import {
   Globe2,
   Shield,
   LockKeyhole,
+  CloudCog,
 } from 'lucide-react';
 
 /** A single navigable module in the sidebar. */
@@ -58,6 +59,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Nginx', path: '/nginx', icon: Globe2 },
       { label: 'Firewall', path: '/firewall', icon: Shield },
       { label: 'SSL & Domains', path: '/ssl', icon: LockKeyhole },
+      { label: 'Cloudflare', path: '/cloudflare', icon: CloudCog },
       { label: 'SSH Terminal', path: '/terminal', icon: SquareTerminal },
     ],
   },

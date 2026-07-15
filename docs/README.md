@@ -22,6 +22,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Nginx Manager](NGINX-MANAGER.md)                   | Dedicated per-target Nginx dashboard, editor, logs, backups, validation, reload, and rollback                     |
 | [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
 | [SSL & Domains](SSL-DOMAINS.md)                     | DNS-gated Certbot issuance, certificate inspection, Nginx integration, and automatic renewal                      |
+| [Cloudflare](CLOUDFLARE.md)                         | Account, zones, DNS, SSL/TLS, cache, analytics, security and edge-service integration                             |
 | [Infrastructure updates](INFRASTRUCTURE-UPDATES.md) | Pulumi identity, update/replace behavior, destructive previews, and mandatory preview approval                    |
 | [Configuration & Credentials](CONFIGURATION.md)     | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
 | [Overview](OVERVIEW.md)                             | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |

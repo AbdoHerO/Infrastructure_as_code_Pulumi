@@ -94,7 +94,14 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
   cloudflare: {
     kind: 'cloudflare',
     label: 'Cloudflare',
-    fields: [field('apiToken', 'API Token', { secret: true })],
+    fields: [
+      field('apiToken', 'API Token', { secret: true }),
+      field('accountId', 'Account ID', { required: false }),
+      field('defaultZone', 'Default Zone', {
+        required: false,
+        placeholder: 'example.com or Zone ID',
+      }),
+    ],
   },
   openai: {
     kind: 'openai',

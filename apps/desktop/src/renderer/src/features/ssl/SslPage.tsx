@@ -42,6 +42,11 @@ export function SslPage(): JSX.Element {
     matches: boolean;
     domainIps: readonly string[];
     targetIps: readonly string[];
+    provider: 'cloudflare' | 'public-dns';
+    proxied: boolean;
+    sslMode: string;
+    certificateRequirement: 'required' | 'recommended';
+    message: string;
   } | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   useEffect(() => {
@@ -240,8 +245,17 @@ export function SslPage(): JSX.Element {
             </Button>
           </div>
           {dns && (
-            <div className="text-muted-foreground col-span-full text-xs">
-              Domain: {dns.domainIps.join(', ')} · VPS: {dns.targetIps.join(', ')}
+            <div className="border-border col-span-full space-y-1 rounded-md border p-3 text-sm">
+              <p className="font-medium">
+                {dns.provider === 'cloudflare'
+                  ? `Cloudflare ${dns.proxied ? 'proxied' : 'DNS-only'} · SSL ${dns.sslMode}`
+                  : 'Public DNS · direct to VPS'}
+              </p>
+              <p>{dns.message}</p>
+              <p className="text-muted-foreground text-xs">
+                Public DNS: {dns.domainIps.join(', ') || 'pending'} · Origin VPS:{' '}
+                {dns.targetIps.join(', ')} · Origin certificate: {dns.certificateRequirement}
+              </p>
             </div>
           )}
         </CardContent>

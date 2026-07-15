@@ -57,6 +57,19 @@ import type {
   CertificateDetails,
   CertificateEvent,
   CertificateIssueConfig,
+  CloudflareAnalytics,
+  CloudflareDashboard,
+  CloudflareDnsRecord,
+  CloudflareDnsRecordInput,
+  CloudflareDnsBatchAction,
+  CloudflarePageRule,
+  CloudflareRedirectRule,
+  CloudflarePlatformSummary,
+  CloudflareSecurityOverview,
+  CloudflareZone,
+  CloudflareZoneSettings,
+  ServiceConnection,
+  CloudflareDnsPropagation,
 } from '@cloudforge/core';
 
 /**
@@ -91,6 +104,120 @@ export interface IpcContract {
 
   'settings:get': { request: void; response: AppSettings };
   'settings:update': { request: SettingsPatch; response: AppSettings };
+
+  'cloudflare:test': { request: { credentialId: string }; response: ServiceConnection };
+  'cloudflare:dashboard': {
+    request: { credentialId: string; zoneId?: string };
+    response: CloudflareDashboard;
+  };
+  'cloudflare:zones': { request: { credentialId: string }; response: readonly CloudflareZone[] };
+  'cloudflare:createZone': {
+    request: { credentialId: string; name: string; accountId?: string };
+    response: CloudflareZone;
+  };
+  'cloudflare:deleteZone': {
+    request: { credentialId: string; zoneId: string };
+    response: void;
+  };
+  'cloudflare:dnsRecords': {
+    request: { credentialId: string; zoneId: string };
+    response: readonly CloudflareDnsRecord[];
+  };
+  'cloudflare:createDnsRecord': {
+    request: { credentialId: string; zoneId: string; input: CloudflareDnsRecordInput };
+    response: CloudflareDnsRecord;
+  };
+  'cloudflare:updateDnsRecord': {
+    request: {
+      credentialId: string;
+      zoneId: string;
+      recordId: string;
+      input: CloudflareDnsRecordInput;
+    };
+    response: CloudflareDnsRecord;
+  };
+  'cloudflare:deleteDnsRecord': {
+    request: { credentialId: string; zoneId: string; recordId: string };
+    response: void;
+  };
+  'cloudflare:batchDnsRecords': {
+    request: { credentialId: string; zoneId: string; action: CloudflareDnsBatchAction };
+    response: { changed: number };
+  };
+  'cloudflare:ensureDns': {
+    request: {
+      credentialId?: string;
+      zoneId?: string;
+      domain: string;
+      expectedIp: string;
+    };
+    response: CloudflareDnsPropagation;
+  };
+  'cloudflare:verifyDns': {
+    request: {
+      credentialId?: string;
+      zoneId?: string;
+      domain: string;
+      expectedIp: string;
+    };
+    response: CloudflareDnsPropagation;
+  };
+  'cloudflare:zoneSettings': {
+    request: { credentialId: string; zoneId: string };
+    response: CloudflareZoneSettings;
+  };
+  'cloudflare:updateZoneSettings': {
+    request: { credentialId: string; zoneId: string; patch: Partial<CloudflareZoneSettings> };
+    response: CloudflareZoneSettings;
+  };
+  'cloudflare:purgeCache': {
+    request: { credentialId: string; zoneId: string };
+    response: void;
+  };
+  'cloudflare:security': {
+    request: { credentialId: string; zoneId: string };
+    response: CloudflareSecurityOverview;
+  };
+  'cloudflare:analytics': {
+    request: { credentialId: string; zoneId: string; since: string; until: string };
+    response: CloudflareAnalytics;
+  };
+  'cloudflare:pageRules': {
+    request: { credentialId: string; zoneId: string };
+    response: readonly CloudflarePageRule[];
+  };
+  'cloudflare:savePageRule': {
+    request: {
+      credentialId: string;
+      zoneId: string;
+      rule: CloudflarePageRule | Omit<CloudflarePageRule, 'id'>;
+    };
+    response: CloudflarePageRule;
+  };
+  'cloudflare:deletePageRule': {
+    request: { credentialId: string; zoneId: string; ruleId: string };
+    response: void;
+  };
+  'cloudflare:redirectRules': {
+    request: { credentialId: string; zoneId: string };
+    response: readonly CloudflareRedirectRule[];
+  };
+  'cloudflare:saveRedirectRule': {
+    request: {
+      credentialId: string;
+      zoneId: string;
+      rule: CloudflareRedirectRule | Omit<CloudflareRedirectRule, 'id'>;
+    };
+    response: CloudflareRedirectRule;
+  };
+  'cloudflare:deleteRedirectRule': {
+    request: { credentialId: string; zoneId: string; ruleId: string };
+    response: void;
+  };
+  'cloudflare:platform': {
+    request: { credentialId: string; zoneId: string; accountId: string };
+    response: CloudflarePlatformSummary;
+  };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
   'backup:create': { request: { passphrase: string }; response: { path: string | null } };
@@ -316,7 +443,16 @@ export interface IpcContract {
   };
   'ssl:verifyDns': {
     request: { targetId: string; domain: string };
-    response: { domainIps: readonly string[]; targetIps: readonly string[]; matches: boolean };
+    response: {
+      domainIps: readonly string[];
+      targetIps: readonly string[];
+      matches: boolean;
+      provider: 'cloudflare' | 'public-dns';
+      proxied: boolean;
+      sslMode: string;
+      certificateRequirement: 'required' | 'recommended';
+      message: string;
+    };
   };
   'ssl:list': {
     request: { targetId: string; certificateVolume: string };
@@ -397,6 +533,16 @@ export interface IpcEventContract {
   'ssl:log': { streamId: string; event: CertificateEvent };
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
+  'cloudflare:changed': {
+    reason:
+      | 'zone-added'
+      | 'zone-deleted'
+      | 'dns-changed'
+      | 'security-changed'
+      | 'ssl-changed'
+      | 'cache-changed'
+      | 'synchronized';
+  };
   'terminal:data': { sessionId: string; data: string };
   'terminal:closed': { sessionId: string; reason?: string };
 }
@@ -413,6 +559,7 @@ export const IPC_EVENT_CHANNELS = [
   'ssl:log',
   'updates:state',
   'vpsTargets:changed',
+  'cloudflare:changed',
   'terminal:data',
   'terminal:closed',
 ] as const satisfies readonly IpcEventChannel[];
@@ -503,6 +650,30 @@ export const IPC_CHANNELS = [
   'credentials:delete',
   'settings:get',
   'settings:update',
+  'cloudflare:test',
+  'cloudflare:dashboard',
+  'cloudflare:zones',
+  'cloudflare:createZone',
+  'cloudflare:deleteZone',
+  'cloudflare:dnsRecords',
+  'cloudflare:createDnsRecord',
+  'cloudflare:updateDnsRecord',
+  'cloudflare:deleteDnsRecord',
+  'cloudflare:batchDnsRecords',
+  'cloudflare:ensureDns',
+  'cloudflare:verifyDns',
+  'cloudflare:zoneSettings',
+  'cloudflare:updateZoneSettings',
+  'cloudflare:purgeCache',
+  'cloudflare:security',
+  'cloudflare:analytics',
+  'cloudflare:pageRules',
+  'cloudflare:savePageRule',
+  'cloudflare:deletePageRule',
+  'cloudflare:redirectRules',
+  'cloudflare:saveRedirectRule',
+  'cloudflare:deleteRedirectRule',
+  'cloudflare:platform',
   'security:status',
   'backup:create',
   'backup:restore',

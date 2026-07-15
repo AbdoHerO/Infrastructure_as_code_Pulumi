@@ -216,3 +216,10 @@ Three processes plus a shared app-internal folder:
   command palette) and `features/` (one folder per module).
 
 See [Architecture](ARCHITECTURE.md) and [Modules](MODULES.md) for detail.
+
+## `@cloudforge/service-providers`
+
+Infrastructure adapters for external non-provisioning services. The Cloudflare
+adapter authenticates with an encrypted API token resolved in the Electron main
+process and implements the `CloudflareProvider` Application port. This package
+does not depend on Pulumi or the Oracle/AWS provider package.

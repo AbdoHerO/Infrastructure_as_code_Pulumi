@@ -40,4 +40,23 @@ describe('SettingsService', () => {
       autoDownload: true,
     });
   });
+
+  it('merges and bounds Cloudflare automation preferences', async () => {
+    const service = new SettingsService(new MemorySettings());
+    const result = await service.update({
+      cloudflare: {
+        defaultCredentialId: ' credential-1 ',
+        defaultZoneId: ' zone-1 ',
+        defaultTtl: 10,
+        propagationTimeoutSeconds: 9_999,
+        autoRefreshMinutes: 0,
+      },
+    });
+    expect(result.ok && result.value.cloudflare.defaultCredentialId).toBe('credential-1');
+    expect(result.ok && result.value.cloudflare.defaultZoneId).toBe('zone-1');
+    expect(result.ok && result.value.cloudflare.defaultTtl).toBe(60);
+    expect(result.ok && result.value.cloudflare.propagationTimeoutSeconds).toBe(3600);
+    expect(result.ok && result.value.cloudflare.autoRefreshMinutes).toBe(15);
+    expect(result.ok && result.value.cloudflare.defaultProxy).toBe(true);
+  });
 });

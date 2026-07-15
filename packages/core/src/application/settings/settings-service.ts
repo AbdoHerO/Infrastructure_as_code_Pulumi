@@ -46,6 +46,7 @@ function merge(base: AppSettings, patch: SettingsPatch): AppSettings {
     logs: { ...base.logs, ...patch.logs },
     updates: { ...base.updates, ...patch.updates },
     ssl: { ...base.ssl, ...patch.ssl },
+    cloudflare: { ...base.cloudflare, ...patch.cloudflare },
   };
 }
 
@@ -67,6 +68,24 @@ function normalize(settings: AppSettings): AppSettings {
         Math.max(1, Math.trunc(settings.ssl.checkIntervalHours) || 24),
       ),
       managed: settings.ssl.managed.slice(0, 500),
+    },
+    cloudflare: {
+      ...settings.cloudflare,
+      defaultCredentialId: settings.cloudflare.defaultCredentialId.trim().slice(0, 100),
+      defaultZoneId: settings.cloudflare.defaultZoneId.trim().slice(0, 100),
+      defaultTtl:
+        settings.cloudflare.defaultTtl === 1
+          ? 1
+          : Math.min(86400, Math.max(60, Math.trunc(settings.cloudflare.defaultTtl) || 300)),
+      propagationTimeoutSeconds: Math.min(
+        3600,
+        Math.max(30, Math.trunc(settings.cloudflare.propagationTimeoutSeconds) || 300),
+      ),
+      autoRefreshMinutes: Math.min(
+        1440,
+        Math.max(1, Math.trunc(settings.cloudflare.autoRefreshMinutes) || 15),
+      ),
+      cacheTtl: Math.min(31536000, Math.max(0, Math.trunc(settings.cloudflare.cacheTtl) || 0)),
     },
   };
 }

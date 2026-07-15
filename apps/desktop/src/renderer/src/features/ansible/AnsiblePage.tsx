@@ -576,6 +576,13 @@ export function AnsiblePage(): JSX.Element {
                     {spec.description ? (
                       <p className="text-muted-foreground text-xs">{spec.description}</p>
                     ) : null}
+                    {spec.key === 'manage_host_firewall' &&
+                    profileState?.hostFirewallOpen === false ? (
+                      <p className="text-warning text-xs">
+                        Enabled is the desired setting for the next successful playbook run. Run
+                        Check readiness, then Re-run / update to apply it on the VPS.
+                      </p>
+                    ) : null}
                   </Field>
                 ))}
                 <div className="flex flex-wrap gap-2">

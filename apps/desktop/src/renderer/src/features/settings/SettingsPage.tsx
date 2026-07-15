@@ -17,7 +17,7 @@ import { THEME_MODES } from '@cloudforge/shared';
 import type { UpdateState } from '@shared/ipc/contract.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useThemeStore } from '../../app/theme/theme-store.js';
-import { useSecurityStatus } from '../secrets/useCredentials.js';
+import { useCredentials, useSecurityStatus } from '../secrets/useCredentials.js';
 import { useSettings, useUpdateSettings } from './useSettings.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { toast } from '@cloudforge/ui';
@@ -29,6 +29,7 @@ export function SettingsPage(): JSX.Element {
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   const { data: security } = useSecurityStatus();
+  const { data: credentials } = useCredentials();
   const [backupPassphrase, setBackupPassphrase] = useState('');
   const backupReady = backupPassphrase.length >= 12;
   const [updateState, setUpdateState] = useState<UpdateState>({
@@ -69,6 +70,7 @@ export function SettingsPage(): JSX.Element {
           <TabsTrigger value="deployment">Deployment</TabsTrigger>
           <TabsTrigger value="updates">Updates</TabsTrigger>
           <TabsTrigger value="ssl">SSL</TabsTrigger>
+          <TabsTrigger value="cloudflare">Cloudflare</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
 
@@ -255,6 +257,226 @@ export function SettingsPage(): JSX.Element {
                   defaultValue={settings?.ssl.checkIntervalHours ?? 24}
                   onBlur={(event) =>
                     update.mutate({ ssl: { checkIntervalHours: Number(event.target.value) || 24 } })
+                  }
+                />
+              </Row>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cloudflare">
+          <Card>
+            <CardContent className="divide-border/60 divide-y py-2">
+              <Row
+                title="Default credential"
+                description="Cloudflare credential selected by automatic workflows."
+              >
+                <Select
+                  className="w-56"
+                  value={settings?.cloudflare.defaultCredentialId ?? ''}
+                  onChange={(event) =>
+                    update.mutate({ cloudflare: { defaultCredentialId: event.target.value } })
+                  }
+                >
+                  <option value="">None</option>
+                  {credentials
+                    ?.filter((item) => item.kind === 'cloudflare')
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </Select>
+              </Row>
+              <Row
+                title="Default zone"
+                description="Zone ID used by automatic DNS and SSL workflows."
+              >
+                <Input
+                  className="w-64"
+                  defaultValue={settings?.cloudflare.defaultZoneId ?? ''}
+                  onBlur={(event) =>
+                    update.mutate({ cloudflare: { defaultZoneId: event.target.value.trim() } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Default TTL"
+                description="1 means Cloudflare Automatic; otherwise 60–86400 seconds."
+              >
+                <Input
+                  className="w-28"
+                  type="number"
+                  defaultValue={settings?.cloudflare.defaultTtl ?? 1}
+                  onBlur={(event) =>
+                    update.mutate({ cloudflare: { defaultTtl: Number(event.target.value) || 1 } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Proxy new records"
+                description="Enable the Cloudflare proxy by default for eligible records."
+              >
+                <Switch
+                  checked={settings?.cloudflare.defaultProxy ?? true}
+                  onCheckedChange={(defaultProxy) =>
+                    update.mutate({ cloudflare: { defaultProxy } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Automatic synchronization"
+                description="Refresh Cloudflare changes in the background."
+              >
+                <Switch
+                  checked={settings?.cloudflare.autoSync ?? true}
+                  onCheckedChange={(autoSync) => update.mutate({ cloudflare: { autoSync } })}
+                />
+              </Row>
+              <Row
+                title="Auto refresh interval"
+                description="Minutes between background synchronization checks."
+              >
+                <Input
+                  className="w-28"
+                  type="number"
+                  min={1}
+                  max={1440}
+                  defaultValue={settings?.cloudflare.autoRefreshMinutes ?? 15}
+                  onBlur={(event) =>
+                    update.mutate({
+                      cloudflare: { autoRefreshMinutes: Number(event.target.value) || 15 },
+                    })
+                  }
+                />
+              </Row>
+              <Row
+                title="Wait for propagation"
+                description="Verify public DNS before starting certificate issuance."
+              >
+                <Switch
+                  checked={settings?.cloudflare.waitForPropagation ?? true}
+                  onCheckedChange={(waitForPropagation) =>
+                    update.mutate({ cloudflare: { waitForPropagation } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Propagation timeout"
+                description="Maximum seconds to wait for the expected DNS answer."
+              >
+                <Input
+                  className="w-28"
+                  type="number"
+                  min={30}
+                  max={3600}
+                  defaultValue={settings?.cloudflare.propagationTimeoutSeconds ?? 300}
+                  onBlur={(event) =>
+                    update.mutate({
+                      cloudflare: { propagationTimeoutSeconds: Number(event.target.value) || 300 },
+                    })
+                  }
+                />
+              </Row>
+              <Row
+                title="Automatic DNS creation"
+                description="Allow managed workflows to create missing DNS records."
+              >
+                <Switch
+                  checked={settings?.cloudflare.automaticDnsCreation ?? false}
+                  onCheckedChange={(automaticDnsCreation) =>
+                    update.mutate({ cloudflare: { automaticDnsCreation } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Automatic SSL"
+                description="Continue from propagated DNS to the SSL workflow."
+              >
+                <Switch
+                  checked={settings?.cloudflare.automaticSsl ?? false}
+                  onCheckedChange={(automaticSsl) =>
+                    update.mutate({ cloudflare: { automaticSsl } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Automatic HTTPS redirect"
+                description="Enable HTTPS redirect after a certificate is installed."
+              >
+                <Switch
+                  checked={settings?.cloudflare.automaticHttpsRedirect ?? true}
+                  onCheckedChange={(automaticHttpsRedirect) =>
+                    update.mutate({ cloudflare: { automaticHttpsRedirect } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Preferred SSL mode"
+                description="Default encryption mode for managed Cloudflare zones."
+              >
+                <Select
+                  className="w-40"
+                  value={settings?.cloudflare.preferredSslMode ?? 'strict'}
+                  onChange={(event) =>
+                    update.mutate({
+                      cloudflare: {
+                        preferredSslMode: event.target.value as
+                          'off' | 'flexible' | 'full' | 'strict',
+                      },
+                    })
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="flexible">Flexible</option>
+                  <option value="full">Full</option>
+                  <option value="strict">Full (strict)</option>
+                </Select>
+              </Row>
+              <Row
+                title="Browser cache TTL"
+                description="Default browser cache duration for managed zones."
+              >
+                <Input
+                  className="w-28"
+                  type="number"
+                  min={0}
+                  defaultValue={settings?.cloudflare.cacheTtl ?? 14400}
+                  onBlur={(event) =>
+                    update.mutate({ cloudflare: { cacheTtl: Number(event.target.value) || 0 } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Development mode"
+                description="Preferred development-mode state for managed zones."
+              >
+                <Switch
+                  checked={settings?.cloudflare.developmentMode ?? false}
+                  onCheckedChange={(developmentMode) =>
+                    update.mutate({ cloudflare: { developmentMode } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Confirm destructive actions"
+                description="Require confirmation before DNS or zone deletion."
+              >
+                <Switch
+                  checked={settings?.cloudflare.confirmDelete ?? true}
+                  onCheckedChange={(confirmDelete) =>
+                    update.mutate({ cloudflare: { confirmDelete } })
+                  }
+                />
+              </Row>
+              <Row
+                title="Activity logging"
+                description="Record Cloudflare changes without storing tokens or secret values."
+              >
+                <Switch
+                  checked={settings?.cloudflare.activityLogging ?? true}
+                  onCheckedChange={(activityLogging) =>
+                    update.mutate({ cloudflare: { activityLogging } })
                   }
                 />
               </Row>

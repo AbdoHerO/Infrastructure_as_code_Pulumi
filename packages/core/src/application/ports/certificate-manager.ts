@@ -28,6 +28,34 @@ export type CertificateEventSink = (event: CertificateEvent) => void;
 export interface DomainResolver {
   resolve(domain: string): Promise<Result<readonly string[], DeploymentError>>;
 }
+export interface ManagedDnsCoordinator {
+  ensure(
+    domain: string,
+    expectedIp: string,
+  ): Promise<
+    Result<
+      { readonly status: 'pending' | 'propagated' | 'error'; readonly warning: string | null },
+      unknown
+    >
+  >;
+  verify?(
+    domain: string,
+    expectedIp: string,
+  ): Promise<
+    Result<
+      {
+        readonly status: 'pending' | 'propagated' | 'error';
+        readonly warning: string | null;
+        readonly current: string;
+        readonly proxied: boolean;
+        readonly publicAnswers: readonly string[];
+        readonly sslMode: string;
+        readonly certificateRequirement: 'required' | 'recommended';
+      },
+      unknown
+    >
+  >;
+}
 export interface CertificateManager {
   issue(
     target: DeploymentTarget,

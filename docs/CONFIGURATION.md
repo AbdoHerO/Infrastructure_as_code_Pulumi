@@ -300,3 +300,10 @@ To exercise the **full** end-to-end flow you'll want:
 
 With those in place, follow the walkthrough in
 [Getting Started §6](GETTING-STARTED.md#6-using-the-app-end-to-end-walkthrough).
+
+## Cloudflare credential
+
+Create an API Token in **Cloudflare Dashboard → My Profile → API Tokens** and
+store it under **Secrets → Cloudflare**. API Token is required; Account ID and a
+default zone are optional. See [Cloudflare](CLOUDFLARE.md) for least-privilege
+scopes and troubleshooting.

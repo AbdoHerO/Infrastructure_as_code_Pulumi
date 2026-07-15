@@ -22,5 +22,6 @@ describe('validateFirewallRules', () => {
     expect(validateFirewallRules([{ ...rule, cidr: '999.1.1.1/32' }]).ok).toBe(false);
     expect(validateFirewallRules([{ ...rule, portFrom: 100, portTo: 10 }]).ok).toBe(false);
     expect(validateFirewallRules([rule, rule]).ok).toBe(false);
+    expect(validateFirewallRules([{ ...rule, description: 'x'.repeat(256) }]).ok).toBe(false);
   });
 });

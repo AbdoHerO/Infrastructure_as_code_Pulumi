@@ -58,4 +58,32 @@ describe('SslService', () => {
     expect(issue.mock.calls).toHaveLength(1);
     expect(recordSafe.mock.calls).toHaveLength(1);
   });
+
+  it('verifies a proxied Cloudflare record against its origin instead of edge IPs', async () => {
+    const service = new SslService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { resolve: vi.fn().mockResolvedValue(ok(['104.16.1.10', '104.16.2.10'])) },
+      {} as CertificateManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      undefined,
+      {
+        verify: vi.fn().mockResolvedValue(
+          ok({
+            status: 'propagated',
+            warning: null,
+            current: target.host,
+            proxied: true,
+            publicAnswers: ['104.16.1.10', '104.16.2.10'],
+            sslMode: 'strict',
+            certificateRequirement: 'required',
+          }),
+        ),
+      } as never,
+    );
+    const result = await service.verifyDns('target', config.domain);
+    expect(result.ok && result.value.matches).toBe(true);
+    expect(result.ok && result.value.provider).toBe('cloudflare');
+    expect(result.ok && result.value.sslMode).toBe('strict');
+  });
 });

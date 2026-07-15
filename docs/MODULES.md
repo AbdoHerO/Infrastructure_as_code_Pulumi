@@ -174,6 +174,14 @@ Product/branding information (name, subtitle, tagline, version).
 
 The legacy Ansible Nginx routes remain available for backward compatibility.
 
+### Cloudflare
+
+The dedicated Cloudflare module manages accounts, zones, DNS records, SSL/TLS
+zone settings, caching, analytics and Page Rules. Security/WAF, Workers, R2 and
+Zero Trust inventories are read-only foundations. All mutations go through
+`CloudflareService`, typed IPC, structured errors and Activity history; React
+never receives an API token.
+
 ## Cross-cutting UI
 
 - **App shell** (`app/layout/`) — resizable sidebar rail + draggable titlebar +

@@ -12,6 +12,7 @@ export const ErrorCode = {
   TIMEOUT: 'TIMEOUT',
   CANCELLED: 'CANCELLED',
   PROVIDER: 'PROVIDER',
+  SERVICE_PROVIDER: 'SERVICE_PROVIDER',
   INFRASTRUCTURE: 'INFRASTRUCTURE',
   DEPLOYMENT: 'DEPLOYMENT',
   CREDENTIAL: 'CREDENTIAL',
@@ -120,6 +121,11 @@ export class CancelledError extends AppError {
 /** A cloud provider SDK/API returned an error. */
 export class ProviderError extends AppError {
   readonly code = ErrorCode.PROVIDER;
+}
+
+/** A non-infrastructure service API (Cloudflare, GitHub, etc.) returned an error. */
+export class ServiceProviderError extends AppError {
+  readonly code = ErrorCode.SERVICE_PROVIDER;
 }
 
 /** Infrastructure provisioning (Pulumi) failed. */

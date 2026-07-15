@@ -122,6 +122,11 @@ exports.default = function verifyPackagedRuntime(context) {
   if (!directoryContains(join(app, 'out', 'main'), 'CloudForge firewall')) {
     throw new Error('Packaged main process does not contain the AWS Pulumi resource program');
   }
+  if (!directoryContains(join(app, 'out', 'main'), 'Cloudflare API request failed')) {
+    throw new Error(
+      'Packaged main process does not contain the bundled Cloudflare service-provider adapter',
+    );
+  }
 
   const packageCount = verifyDependencyClosure(app);
   console.log(

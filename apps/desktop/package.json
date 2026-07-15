@@ -25,6 +25,7 @@
     "@cloudforge/database": "workspace:*",
     "@cloudforge/deployment": "workspace:*",
     "@cloudforge/providers": "workspace:*",
+    "@cloudforge/service-providers": "workspace:*",
     "@cloudforge/pulumi": "workspace:*",
     "@cloudforge/shared": "workspace:*",
     "@cloudforge/ui": "workspace:*",
