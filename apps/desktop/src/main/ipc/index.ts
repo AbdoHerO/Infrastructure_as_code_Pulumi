@@ -10,6 +10,7 @@ import { registerPluginHandlers } from './handlers/plugins.handlers.js';
 import { registerLogHandlers } from './handlers/logs.handlers.js';
 import { registerSshKeyHandlers } from './handlers/ssh-keys.handlers.js';
 import { registerContainerHandlers } from './handlers/containers.handlers.js';
+import { registerRuntimeHandlers } from './handlers/runtime.handlers.js';
 import { registerBackupHandlers } from './handlers/backup.handlers.js';
 import { registerUpdateHandlers } from './handlers/updates.handlers.js';
 import { registerAnsibleHandlers } from './handlers/ansible.handlers.js';
@@ -36,6 +37,7 @@ export function registerIpcHandlers(): void {
   registerLogHandlers();
   registerSshKeyHandlers();
   registerContainerHandlers();
+  registerRuntimeHandlers();
   registerBackupHandlers();
   registerUpdateHandlers();
   registerAnsibleHandlers();

@@ -535,9 +535,8 @@ export function JenkinsPage(): JSX.Element {
                         onChange={(event) => setForm({ ...form, domain: event.target.value })}
                       />
                       <p className="text-muted-foreground text-xs">
-                        For the landing page, enter the root domain (for example hanoutplus.ma). For
-                        another application, enter its full subdomain (for example
-                        api.hanoutplus.ma).
+                        For a landing page, enter the root domain (for example example.com). For
+                        another application, enter its full subdomain (for example api.example.com).
                       </p>
                     </Field>
                     <Field label="Application port on VPS">

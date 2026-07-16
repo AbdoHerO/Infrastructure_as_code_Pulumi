@@ -33,10 +33,29 @@ describe('SshCertificateManager', () => {
 
     expect(result.ok).toBe(true);
     const command = String(runPrivilegedRemote.mock.calls[0]?.[1]);
-    expect(command).toContain('cloudforge_open_tcp_port 80');
-    expect(command).toContain('cloudforge_open_tcp_port 443');
+    expect(command).toContain('cloudforge_open 80 tcp');
+    expect(command).toContain('cloudforge_open 443 tcp');
     expect(command).toContain('netfilter-persistent save');
     expect(command).toContain('certbot/certbot certonly');
+    // The firewall step is best-effort and must not abort an issuance that would
+    // otherwise have worked: this whole script runs under `set -e`.
+    expect(command).toContain('|| true');
+  });
+
+  it('opens the firewall before Certbot runs, not after', async () => {
+    // An ACME HTTP-01 challenge arrives on port 80 while certbot waits. Opening
+    // it afterwards is opening it too late.
+    runPrivilegedRemote
+      .mockResolvedValueOnce(ok({ stdout: '', stderr: '' }))
+      .mockResolvedValueOnce(ok({ stdout: 'sha256 Fingerprint=AA:BB', stderr: '' }));
+    const { SshCertificateManager } = await import('./ssh-certificate-manager.js');
+
+    await new SshCertificateManager().issue(target, config);
+
+    const command = String(runPrivilegedRemote.mock.calls[0]?.[1]);
+    expect(command.indexOf('cloudforge_open 80 tcp')).toBeLessThan(
+      command.indexOf('certbot/certbot certonly'),
+    );
   });
 
   it('generates an Origin CA private key on the VPS and returns only its CSR', async () => {

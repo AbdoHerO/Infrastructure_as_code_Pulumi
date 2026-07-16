@@ -1,8 +1,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const rendererRoot = join(process.cwd(), 'src', 'renderer', 'src');
+// Resolve from this file, not the working directory: the suite runs both from
+// the package (`pnpm test`) and from the repository root (`pnpm test:coverage`).
+const rendererRoot = fileURLToPath(new URL('../../renderer/src', import.meta.url));
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {

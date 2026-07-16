@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
@@ -7,6 +6,7 @@ import type {
   SshTerminalSink,
   SshTerminalSize,
 } from '@cloudforge/core';
+import { sshConnectionConfig } from './ssh-transport.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 
@@ -45,18 +45,12 @@ export class NodeSshTerminalManager implements SshTerminalManager {
         () => fail('Timed out while opening the SSH terminal'),
         CONNECT_TIMEOUT_MS,
       );
-      const config: ConnectConfig = {
-        host: target.host,
-        port: target.port,
-        username: target.username,
-        readyTimeout: CONNECT_TIMEOUT_MS,
-        hostVerifier: (key: Buffer) =>
-          normalizeFingerprint(fingerprintHostKey(key)) ===
-          normalizeFingerprint(target.hostKeySha256),
-        ...(target.privateKey ? { privateKey: target.privateKey } : {}),
-        ...(target.passphrase ? { passphrase: target.passphrase } : {}),
-        ...(target.password ? { password: target.password } : {}),
-      };
+      let config: ConnectConfig;
+      try {
+        config = sshConnectionConfig(target, CONNECT_TIMEOUT_MS);
+      } catch (cause) {
+        return fail('Invalid SSH target', cause);
+      }
       client.once('error', (cause) => {
         if (!settled) fail('SSH terminal connection failed', cause);
         else this.endSession(sessionId, 'SSH connection lost');
@@ -116,16 +110,4 @@ export class NodeSshTerminalManager implements SshTerminalManager {
     session.client.end();
     session.sink.onClosed(reason);
   }
-}
-
-function fingerprintHostKey(key: Buffer): string {
-  const digest = createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
-  return `SHA256:${digest}`;
-}
-
-function normalizeFingerprint(value: string): string {
-  return value
-    .trim()
-    .replace(/^SHA256:/i, '')
-    .replace(/=+$/, '');
 }

@@ -9,6 +9,8 @@ import {
   CloudflareDnsAutomationService,
   CredentialService,
   type ContainerManager,
+  ContainerService,
+  RuntimePlanService,
   type AnsibleManager,
   NginxService,
   SslService,
@@ -35,6 +37,9 @@ import {
   NodeSshKeyGenerator,
   SshAnsibleManager,
   SshContainerManager,
+  SshHostFirewallManager,
+  SshRuntimeApplier,
+  SshRuntimeInspector,
   SshDeployer,
   SshNginxManager,
   SshCertificateManager,
@@ -50,6 +55,7 @@ import {
   PrismaCredentialRepository,
   PrismaDeploymentRepository,
   PrismaPlanStore,
+  PrismaRuntimePlanStore,
   PrismaPluginRepository,
   PrismaProjectRepository,
   PrismaSettingsRepository,
@@ -80,6 +86,8 @@ export interface AppContainer {
   readonly pluginService: PluginService;
   readonly sshKeyService: SshKeyService;
   readonly containerManager: ContainerManager;
+  readonly containerService: ContainerService;
+  readonly runtimePlanService: RuntimePlanService;
   readonly ansibleManager: AnsibleManager;
   readonly vpsTargetService: VpsTargetService;
   readonly nginxService: NginxService;
@@ -248,6 +256,21 @@ export async function initContainer(): Promise<AppContainer> {
     new SshNginxManager(),
     activityService,
   );
+  const runtimeInspector = new SshRuntimeInspector();
+  const containerService = new ContainerService(
+    remoteTargetResolver,
+    containerManager,
+    runtimeInspector,
+    activityService,
+  );
+  const runtimePlanService = new RuntimePlanService(
+    new PrismaRuntimePlanStore(db),
+    remoteTargetResolver,
+    runtimeInspector,
+    activityService,
+    new SshRuntimeApplier(),
+    new SshHostFirewallManager(),
+  );
   const sshTerminalService = new SshTerminalService(
     remoteTargetResolver,
     new NodeSshTerminalManager(),
@@ -409,6 +432,8 @@ export async function initContainer(): Promise<AppContainer> {
     pluginService,
     sshKeyService,
     containerManager,
+    containerService,
+    runtimePlanService,
     ansibleManager,
     vpsTargetService,
     nginxService,

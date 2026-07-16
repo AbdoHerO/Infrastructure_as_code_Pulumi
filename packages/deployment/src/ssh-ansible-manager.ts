@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
+import { randomUUID } from 'node:crypto';
+import type { Client } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
   AnsibleEventSink,
@@ -13,9 +13,22 @@ import type {
   AnsibleStatus,
   DeploymentTarget,
   JenkinsServiceAction,
+  ManagedNginxSite,
   NginxSite,
   VpsPreflightReport,
 } from '@cloudforge/core';
+import {
+  decodeManagedNginxSite,
+  NGINX_SITE_MARKER,
+  renderManagedNginxSite,
+  validateManagedNginxSite,
+} from '@cloudforge/core';
+import {
+  managedSiteFilePath,
+  siteFilePaths,
+  toManagedNginxSite,
+  toNginxSite,
+} from './nginx-site-file.js';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
 import {
   buildPreflightReport,
@@ -25,9 +38,18 @@ import {
   profilePort,
   profileRepositoryHost,
 } from './vps-preflight.js';
+import {
+  execCommand,
+  inspectHostKeyFingerprint,
+  privilegedScript as buildPrivilegedScript,
+  quote,
+  type SshCommandOutput,
+  uploadFile,
+  withSshConnection,
+} from './ssh-transport.js';
 
-const CONNECT_TIMEOUT_MS = 20_000;
 const COMMAND_TIMEOUT_MS = 30 * 60_000;
+const LABEL = 'Ansible';
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const HOST_PATTERN =
   /^(?:localhost|[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?|\[[0-9a-fA-F:]+\])$/;
@@ -262,31 +284,25 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
     });
   }
 
+  /**
+   * Read every CloudForge-owned site, in either metadata format.
+   *
+   * Sites written before the two writers were unified carry a plain-text
+   * `# cloudforge-domain:` header rather than the encoded model, and must stay
+   * listable so a user can still see and remove them.
+   */
   async listNginxSites(target: DeploymentTarget): Promise<Result<NginxSite[], DeploymentError>> {
-    const command = `if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo -n'; fi; $SUDO sh -c 'for f in /etc/nginx/conf.d/cloudforge-*.conf; do [ -f "$f" ] || continue; sed -n "1,4p" "$f"; echo "# cloudforge-end"; done'`;
+    const command = privilegedScript(
+      `for f in /etc/nginx/conf.d/cloudforge-*.conf; do [ -f "$f" ] || continue; sed -n "1,6p" "$f"; echo "# cloudforge-end"; done`,
+    );
     const result = await withConnection(target, undefined, (client) => execute(client, command));
     if (!result.ok) return result;
-    try {
-      const sites = result.value.stdout.split('# cloudforge-end').flatMap((block) => {
-        const value = (key: string): string | undefined =>
-          new RegExp(`^# cloudforge-${key}: (.+)$`, 'm').exec(block)?.[1]?.trim();
-        const domain = value('domain');
-        const upstream = value('upstream');
-        if (!domain || !upstream) return [];
-        const separator = upstream.lastIndexOf(':');
-        return [
-          {
-            domain,
-            upstreamHost: upstream.slice(0, separator),
-            upstreamPort: Number(upstream.slice(separator + 1)),
-            websocket: value('websocket') === 'true',
-          },
-        ];
-      });
-      return ok(sites);
-    } catch (cause) {
-      return err(new DeploymentError('Could not parse managed Nginx sites', { cause }));
+    const byDomain = new Map<string, NginxSite>();
+    for (const block of result.value.stdout.split('# cloudforge-end')) {
+      const site = parseSiteBlock(block);
+      if (site) byDomain.set(site.domain, site);
     }
+    return ok([...byDomain.values()]);
   }
 
   async upsertNginxSite(
@@ -299,24 +315,52 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
     if (!checked.ok) return checked;
     const nginx = await this.run(target, 'nginx', {}, onEvent, options);
     if (!nginx.ok) return nginx;
+
+    // Preserve anything configured through the Nginx Manager for this domain:
+    // this tab edits a route, not the whole site.
+    const existing = await this.readManagedSite(target, site.domain, options.signal);
+    if (!existing.ok) return existing;
+    const merged = toManagedNginxSite(site, existing.value ?? undefined);
+    const validated = validateManagedNginxSite(merged);
+    if (!validated.ok) return err(new DeploymentError(validated.error.message));
+
     const job = `/tmp/cloudforge-nginx-${randomUUID()}`;
-    const file = `/etc/nginx/conf.d/cloudforge-${site.domain.replaceAll('.', '-')}.conf`;
+    const file = managedSiteFilePath(site.domain);
+    const stale = siteFilePaths(site.domain).filter((path) => path !== file);
     const result = await withConnection(target, options.signal, async (client) => {
-      await upload(client, job, renderManagedNginxSite(site));
+      await upload(client, job, renderManagedNginxSite(validated.value));
       onEvent?.({ stream: 'step', message: `Validating Nginx configuration for ${site.domain}…` });
+      // Removing the pre-unification file is part of the same transaction: two
+      // files claiming one server_name is a conflict, and a rollback must undo
+      // the removal as well as the write.
+      const removeStale = stale
+        .map(
+          (path) => `if [ -f ${quote(path)} ]; then mv ${quote(path)} ${quote(`${path}.old`)}; fi`,
+        )
+        .join('\n');
+      const restoreStale = stale
+        .map(
+          (path) =>
+            `if [ -f ${quote(`${path}.old`)} ]; then mv ${quote(`${path}.old`)} ${quote(path)}; fi`,
+        )
+        .join('\n');
+      const discardStale = stale.map((path) => `rm -f ${quote(`${path}.old`)}`).join('\n');
       const command = privilegedScript(`
 set -eu
 backup='${job}.backup'
 had=0
-if [ -f '${file}' ]; then cp '${file}' "$backup"; had=1; fi
-install -m 0644 '${job}' '${file}'
+if [ -f ${quote(file)} ]; then cp ${quote(file)} "$backup"; had=1; fi
+${removeStale}
+install -m 0644 '${job}' ${quote(file)}
 if ! nginx -t; then
-  if [ "$had" -eq 1 ]; then cp "$backup" '${file}'; else rm -f '${file}'; fi
+  if [ "$had" -eq 1 ]; then cp "$backup" ${quote(file)}; else rm -f ${quote(file)}; fi
+${restoreStale}
   nginx -t >/dev/null 2>&1 || true
   rm -f '${job}' "$backup"
   exit 1
 fi
 systemctl reload nginx
+${discardStale}
 rm -f '${job}' "$backup"
 `);
       return execute(client, command, onEvent, options.signal);
@@ -337,12 +381,16 @@ rm -f '${job}' "$backup"
   ): Promise<Result<AnsibleOutcome, DeploymentError>> {
     if (!DOMAIN_PATTERN.test(domain))
       return err(new DeploymentError('Enter a valid lowercase domain name'));
-    const file = `/etc/nginx/conf.d/cloudforge-${domain.replaceAll('.', '-')}.conf`;
+    // Remove the file under every name this domain could have been written to,
+    // or a site "removed" here would still be served from the older path.
+    const files = siteFilePaths(domain)
+      .map((path) => `rm -f ${quote(path)}`)
+      .join('\n');
     onEvent?.({ stream: 'step', message: `Removing ${domain}…` });
     const result = await withConnection(target, options.signal, (client) =>
       execute(
         client,
-        privilegedScript(`set -eu; rm -f '${file}'; nginx -t; systemctl reload nginx`),
+        privilegedScript(`set -eu\n${files}\nnginx -t\nsystemctl reload nginx`),
         onEvent,
         options.signal,
       ),
@@ -353,6 +401,58 @@ rm -f '${job}' "$backup"
       summary: 'Site removed, configuration validated, and Nginx reloaded.',
     });
   }
+
+  /** Read the full model for one domain, if this VPS already has an owned site for it. */
+  private async readManagedSite(
+    target: DeploymentTarget,
+    domain: string,
+    signal?: AbortSignal,
+  ): Promise<Result<ManagedNginxSite | null, DeploymentError>> {
+    const result = await withConnection(target, signal, (client) =>
+      execute(
+        client,
+        privilegedScript(`grep -Rhs '^${NGINX_SITE_MARKER}' /etc/nginx/conf.d 2>/dev/null || true`),
+        undefined,
+        signal,
+      ),
+    );
+    if (!result.ok) return result;
+    for (const line of result.value.stdout.split('\n')) {
+      const encoded = line.replace(/^# cloudforge-site:\s*/, '').trim();
+      if (!encoded) continue;
+      const site = decodeManagedNginxSite(encoded);
+      if (site?.domain === domain.trim().toLowerCase()) return ok(site);
+    }
+    return ok(null);
+  }
+}
+
+/**
+ * Read one config header block in either metadata format.
+ *
+ * The encoded model is authoritative when present; the plain-text header is the
+ * pre-unification format and is read only so those sites remain visible.
+ */
+function parseSiteBlock(block: string): NginxSite | null {
+  const encoded = new RegExp(`^${NGINX_SITE_MARKER}(.+)$`, 'm').exec(block)?.[1]?.trim();
+  if (encoded) {
+    const site = decodeManagedNginxSite(encoded);
+    if (site) return toNginxSite(site);
+  }
+  const value = (key: string): string | undefined =>
+    new RegExp(`^# cloudforge-${key}: (.+)$`, 'm').exec(block)?.[1]?.trim();
+  const domain = value('domain');
+  const upstream = value('upstream');
+  if (!domain || !upstream) return null;
+  const separator = upstream.lastIndexOf(':');
+  const port = Number(upstream.slice(separator + 1));
+  if (separator < 1 || !Number.isInteger(port)) return null;
+  return {
+    domain,
+    upstreamHost: upstream.slice(0, separator),
+    upstreamPort: port,
+    websocket: value('websocket') === 'true',
+  };
 }
 
 const PROFILE_STATE_COMMAND = `set -u
@@ -535,36 +635,9 @@ export function validateNginxSite(site: NginxSite): Result<void, DeploymentError
   return ok(undefined);
 }
 
-export function renderManagedNginxSite(site: NginxSite): string {
-  const websocket = site.websocket
-    ? `
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";`
-    : '';
-  return `# cloudforge-domain: ${site.domain}
-# cloudforge-upstream: ${site.upstreamHost}:${site.upstreamPort}
-# cloudforge-websocket: ${String(site.websocket)}
-# Managed by CloudForge. Changes may be overwritten.
-server {
-  listen 80;
-  listen [::]:80;
-  server_name ${site.domain};
-  location / {
-    proxy_pass http://${site.upstreamHost}:${site.upstreamPort};
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;${websocket}
-  }
-}
-`;
-}
-
+/** Thin bindings of the shared SSH transport to this adapter's label and timeout. */
 function privilegedScript(script: string): string {
-  const encoded = Buffer.from(script, 'utf8').toString('base64');
-  const path = `/tmp/cloudforge-root-${randomUUID()}.sh`;
-  return `printf '%s' '${encoded}' | base64 -d > ${path} && chmod 700 ${path} && if [ "$(id -u)" -eq 0 ]; then ${path}; else sudo -n ${path}; fi; code=$?; rm -f ${path}; exit $code`;
+  return buildPrivilegedScript(script, 'cloudforge-root');
 }
 
 function withConnection<T>(
@@ -572,59 +645,7 @@ function withConnection<T>(
   signal: AbortSignal | undefined,
   action: (client: Client) => Promise<T>,
 ): Promise<Result<T, DeploymentError>> {
-  return new Promise((resolve) => {
-    const client = new Client();
-    let settled = false;
-    const finish = (result: Result<T, DeploymentError>): void => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener('abort', abort);
-      client.end();
-      resolve(result);
-    };
-    const abort = (): void => finish(err(new DeploymentError('Ansible operation cancelled')));
-    if (signal?.aborted) return abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    client.once('error', (cause) =>
-      finish(
-        err(
-          new DeploymentError('Ansible SSH connection or host-key verification failed', { cause }),
-        ),
-      ),
-    );
-    client.once(
-      'ready',
-      () =>
-        void action(client)
-          .then((value) => finish(ok(value)))
-          .catch((cause) =>
-            finish(
-              err(
-                cause instanceof DeploymentError
-                  ? cause
-                  : new DeploymentError('Remote Ansible operation failed', { cause }),
-              ),
-            ),
-          ),
-    );
-    client.connect(connectionConfig(target));
-  });
-}
-
-function connectionConfig(target: DeploymentTarget): ConnectConfig {
-  if (!target.privateKey && !target.password)
-    throw new DeploymentError('An SSH private key or password is required');
-  return {
-    host: target.host,
-    port: target.port,
-    username: target.username,
-    readyTimeout: CONNECT_TIMEOUT_MS,
-    hostVerifier: (key: Buffer) =>
-      normalizeFingerprint(fingerprintHostKey(key)) === normalizeFingerprint(target.hostKeySha256),
-    ...(target.privateKey ? { privateKey: target.privateKey } : {}),
-    ...(target.passphrase ? { passphrase: target.passphrase } : {}),
-    ...(target.password ? { password: target.password } : {}),
-  };
+  return withSshConnection(target, { label: LABEL, ...(signal ? { signal } : {}) }, action);
 }
 
 function execute(
@@ -632,102 +653,21 @@ function execute(
   command: string,
   onEvent?: AnsibleEventSink,
   signal?: AbortSignal,
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    client.exec(command, (error, stream) => {
-      if (error) return reject(error);
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      let settled = false;
-      const finish = (cause?: Error): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', abort);
-        if (cause) reject(cause);
-        else
-          resolve({
-            stdout: Buffer.concat(stdout).toString('utf8'),
-            stderr: Buffer.concat(stderr).toString('utf8'),
-          });
-      };
-      const abort = (): void => {
-        stream.close();
-        finish(new DeploymentError('Ansible operation cancelled'));
-      };
-      const timer = setTimeout(() => {
-        stream.close();
-        finish(new DeploymentError('Remote Ansible command timed out'));
-      }, COMMAND_TIMEOUT_MS);
-      signal?.addEventListener('abort', abort, { once: true });
-      stream.on('data', (chunk: Buffer) => {
-        stdout.push(chunk);
-        onEvent?.({ stream: 'stdout', message: chunk.toString('utf8') });
-      });
-      stream.stderr.on('data', (chunk: Buffer) => {
-        stderr.push(chunk);
-        onEvent?.({ stream: 'stderr', message: chunk.toString('utf8') });
-      });
-      stream.on('close', (code: number | null) => {
-        if (code === 0) finish();
-        else
-          finish(
-            new DeploymentError(
-              Buffer.concat(stderr).toString('utf8').trim() ||
-                `Remote command failed with exit ${code ?? 'unknown'}`,
-            ),
-          );
-      });
-    });
+): Promise<SshCommandOutput> {
+  return execCommand(client, command, {
+    label: LABEL,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    onEvent,
+    signal,
   });
 }
 
 function upload(client: Client, path: string, content: string): Promise<void> {
-  return new Promise((resolve, reject) =>
-    client.sftp((error, sftp: SFTPWrapper) => {
-      if (error) return reject(error);
-      sftp.writeFile(path, Buffer.from(content, 'utf8'), { mode: 0o600 }, (writeError) =>
-        writeError ? reject(writeError) : resolve(),
-      );
-    }),
-  );
+  return uploadFile(client, path, content);
 }
 
 function inspectHostKey(host: string, port: number): Promise<Result<string, DeploymentError>> {
-  return new Promise((resolve) => {
-    const client = new Client();
-    let settled = false;
-    const finish = (result: Result<string, DeploymentError>): void => {
-      if (settled) return;
-      settled = true;
-      client.end();
-      resolve(result);
-    };
-    client.once('error', (cause) =>
-      finish(err(new DeploymentError('Failed to inspect SSH host key', { cause }))),
-    );
-    client.connect({
-      host,
-      port,
-      username: 'cloudforge-host-key-inspection',
-      readyTimeout: CONNECT_TIMEOUT_MS,
-      hostVerifier: (key: Buffer) => {
-        finish(ok(fingerprintHostKey(key)));
-        return false;
-      },
-    });
-  });
-}
-
-function fingerprintHostKey(key: Buffer): string {
-  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
-}
-
-function normalizeFingerprint(value: string): string {
-  return value
-    .trim()
-    .replace(/^SHA256:/i, '')
-    .replace(/=+$/, '');
+  return inspectHostKeyFingerprint(host, port);
 }
 
 function recap(stdout: string): string {

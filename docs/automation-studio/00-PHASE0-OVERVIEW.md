@@ -7,15 +7,15 @@
 
 ## Document set
 
-| Doc | Contents |
-|---|---|
-| [01-FEATURE-INVENTORY.md](01-FEATURE-INVENTORY.md) | Every feature in CloudForge, by module, as implemented in code |
-| [02-SERVICE-INVENTORY.md](02-SERVICE-INVENTORY.md) | Every application service: purpose, methods, dependencies, streaming, workflow relevance |
-| [03-IPC-INVENTORY.md](03-IPC-INVENTORY.md) | All 149 invoke channels + 10 event channels, typed, with owning service |
-| [04-UI-INVENTORY.md](04-UI-INVENTORY.md) | Every renderer page/action and the IPC channel it calls |
-| [05-DOMAIN-DATABASE-INVENTORY.md](05-DOMAIN-DATABASE-INVENTORY.md) | Domain entities/VOs, all 13 Prisma models, all repositories, gaps for a workflow engine |
-| [06-AUTOMATION-MATRIX.md](06-AUTOMATION-MATRIX.md) | Every automatable capability scored as a workflow-node candidate |
-| [07-DOCS-DISCREPANCIES.md](07-DOCS-DISCREPANCIES.md) | Where `docs/` diverges from the code, and architecture conventions to follow |
+-| Doc                                                                | Contents                                                                                 |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [01-FEATURE-INVENTORY.md](01-FEATURE-INVENTORY.md)                 | Every feature in CloudForge, by module, as implemented in code                           |
+| [02-SERVICE-INVENTORY.md](02-SERVICE-INVENTORY.md)                 | Every application service: purpose, methods, dependencies, streaming, workflow relevance |
+| [03-IPC-INVENTORY.md](03-IPC-INVENTORY.md)                         | All 149 invoke channels + 10 event channels, typed, with owning service                  |
+| [04-UI-INVENTORY.md](04-UI-INVENTORY.md)                           | Every renderer page/action and the IPC channel it calls                                  |
+| [05-DOMAIN-DATABASE-INVENTORY.md](05-DOMAIN-DATABASE-INVENTORY.md) | Domain entities/VOs, all 13 Prisma models, all repositories, gaps for a workflow engine  |
+| [06-AUTOMATION-MATRIX.md](06-AUTOMATION-MATRIX.md)                 | Every automatable capability scored as a workflow-node candidate                         |
+| [07-DOCS-DISCREPANCIES.md](07-DOCS-DISCREPANCIES.md)               | Where `docs/` diverges from the code, and architecture conventions to follow             |
 
 ## What CloudForge is (from the code)
 
@@ -85,12 +85,12 @@ main-side from encrypted credential IDs, with SHA-256 host-key pinning on every 
 
 ### Runtime state locations
 
-| What | Where |
-|---|---|
-| Database | `<userData>/cloudforge.db` (SQLite; pre-migration backups `*.bak-<ts>`) |
-| Secret key (cipher fallback) | `<userData>/secret.key` (0600) |
-| Pulumi home/state/passphrase | `<userData>/pulumi/` (local `file://` backend) |
-| Logs | `<userData>/logs/cloudforge.log` (pino, trace-level, 10 MiB rotation, retention pruning) |
-| Remote Ansible runtime | `/opt/cloudforge/ansible` venv on each VPS |
-| Remote compose projects | `/opt/cloudforge/compose/<project>`, `/opt/cloudforge/apps/<profile>` |
-| Remote nginx backups | `/var/lib/cloudforge/nginx/backups` (tar.gz) |
+| What                         | Where                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| Database                     | `<userData>/cloudforge.db` (SQLite; pre-migration backups `*.bak-<ts>`)                  |
+| Secret key (cipher fallback) | `<userData>/secret.key` (0600)                                                           |
+| Pulumi home/state/passphrase | `<userData>/pulumi/` (local `file://` backend)                                           |
+| Logs                         | `<userData>/logs/cloudforge.log` (pino, trace-level, 10 MiB rotation, retention pruning) |
+| Remote Ansible runtime       | `/opt/cloudforge/ansible` venv on each VPS                                               |
+| Remote compose projects      | `/opt/cloudforge/compose/<project>`, `/opt/cloudforge/apps/<profile>`                    |
+| Remote nginx backups         | `/var/lib/cloudforge/nginx/backups` (tar.gz)                                             |
