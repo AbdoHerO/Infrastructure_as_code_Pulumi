@@ -37,6 +37,11 @@ export interface CreateCredentialInput {
   readonly data: Record<string, string>;
 }
 
+/** Attributes supplied when replacing an existing encrypted credential. */
+export interface UpdateCredentialInput extends CreateCredentialInput {
+  readonly id: string;
+}
+
 /**
  * A Credential holds the (to-be-encrypted) secret material for one external
  * service. The entity validates its fields against the kind's schema; encryption

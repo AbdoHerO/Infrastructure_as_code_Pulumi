@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, KeyRound, Plus, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react';
+import { Eye, KeyRound, Pencil, Plus, ShieldCheck, ShieldAlert, Trash2 } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -24,6 +24,7 @@ import { useCredentials, useDeleteCredential, useSecurityStatus } from './useCre
 export function SecretsPage(): JSX.Element {
   const [adding, setAdding] = useState(false);
   const [revealing, setRevealing] = useState<CredentialSummaryDto | null>(null);
+  const [editing, setEditing] = useState<CredentialSummaryDto | null>(null);
   const { data: credentials, isLoading } = useCredentials();
   const { data: security } = useSecurityStatus();
   const deleteCredential = useDeleteCredential();
@@ -88,6 +89,14 @@ export function SecretsPage(): JSX.Element {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Edit"
+                        onClick={() => setEditing(credential)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         title="Reveal"
                         onClick={() => setRevealing(credential)}
                       >
@@ -124,6 +133,13 @@ export function SecretsPage(): JSX.Element {
       )}
 
       <CredentialDialog open={adding} onOpenChange={setAdding} />
+      <CredentialDialog
+        open={Boolean(editing)}
+        credential={editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+      />
       <RevealDialog credential={revealing} onClose={() => setRevealing(null)} />
     </>
   );

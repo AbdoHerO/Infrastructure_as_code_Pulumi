@@ -15,6 +15,7 @@ import type {
   CredentialServiceError,
 } from '../credentials/credential-service.js';
 import type { NginxService } from '../nginx/nginx-service.js';
+import type { NginxLocation } from '../ports/nginx-manager.js';
 import type { ManagedDnsCoordinator } from '../ports/certificate-manager.js';
 import type {
   JenkinsConnection,
@@ -25,6 +26,7 @@ import type {
 import type {
   JenkinsPipelineRecord,
   JenkinsPipelineRepository,
+  JenkinsApplicationRoute,
 } from '../ports/jenkins-pipeline-repository.js';
 import type { VpsTargetService } from '../vps-targets/vps-target-service.js';
 
@@ -43,11 +45,13 @@ export interface SaveJenkinsPipelineInput {
   readonly definitionMode: 'scm' | 'inline';
   readonly parameters: readonly JenkinsParameter[];
   readonly environment: Readonly<Record<string, string>>;
+  readonly environmentCredentialId?: string | null;
   readonly domain: string;
   readonly applicationPort?: number | null;
   readonly cloudflareCredentialId?: string | null;
   readonly cloudflareZoneId?: string | null;
   readonly configureDomain: boolean;
+  readonly applicationRoutes?: readonly JenkinsApplicationRoute[];
 }
 
 export type JenkinsPipelineServiceError =
@@ -85,7 +89,7 @@ export class JenkinsPipelineService {
     if (!target.ok) return target;
     const connection = await this.connection(valid.value.targetId, valid.value.jenkinsCredentialId);
     if (!connection.ok) return connection;
-    const jobParameters = synchronizeApplicationPortParameter(
+    let jobParameters = synchronizeApplicationPortParameter(
       valid.value.parameters,
       valid.value.configureDomain,
       valid.value.applicationPort,
@@ -116,6 +120,32 @@ export class JenkinsPipelineService {
         token,
       );
       if (!stored.ok) return stored;
+    }
+    if (valid.value.environmentCredentialId) {
+      const environmentCredential = await this.credentials.getDecrypted(
+        valid.value.environmentCredentialId,
+      );
+      if (!environmentCredential.ok) return environmentCredential;
+      if (environmentCredential.value.kind !== 'environment-file')
+        return err(new ValidationError('Select a deployment environment file credential'));
+      const content = environmentCredential.value.data.content;
+      if (!content?.trim())
+        return err(new ValidationError('The deployment environment file is empty'));
+      const remoteCredentialId = `cloudforge-env-${id}`;
+      const stored = await this.jenkins.ensureSecretTextCredential(
+        connection.value,
+        folder,
+        remoteCredentialId,
+        Buffer.from(content, 'utf8').toString('base64'),
+        `CloudForge ${environmentCredential.value.data.filename ?? '.env.production'}`,
+      );
+      if (!stored.ok) return stored;
+      jobParameters = synchronizeStringParameter(
+        jobParameters,
+        'CLOUDFORGE_ENV_CREDENTIAL_ID',
+        remoteCredentialId,
+        'Jenkins secret-text credential managed by CloudForge',
+      );
     }
     const configured = await this.jenkins.upsertJob(connection.value, {
       folder,
@@ -201,6 +231,7 @@ export class JenkinsPipelineService {
               upstreamHost: '127.0.0.1',
               upstreamPort: record.applicationPort ?? 80,
               websocket: true,
+              locations: toNginxLocations(record.applicationRoutes),
               lastModified: now,
             }
           : {
@@ -214,7 +245,7 @@ export class JenkinsPipelineService {
               httpRedirect: false,
               headers: [],
               extraDirectives: [],
-              locations: [],
+              locations: toNginxLocations(record.applicationRoutes),
               proxyTimeoutSeconds: 60,
               clientMaxBodySize: '50m',
               compression: true,
@@ -446,6 +477,8 @@ function validatePipeline(
     (!applicationPort || applicationPort < 1 || applicationPort > 65_535)
   )
     return err(new ValidationError('Enter the application port exposed on the VPS'));
+  const applicationRoutes = validateApplicationRoutes(input.applicationRoutes ?? []);
+  if (!applicationRoutes.ok) return applicationRoutes;
   return ok({
     name,
     description: input.description.trim(),
@@ -471,12 +504,55 @@ function validatePipeline(
       return parameter;
     }),
     environment,
+    environmentCredentialId: input.environmentCredentialId ?? null,
     domain,
     applicationPort,
     cloudflareCredentialId: input.cloudflareCredentialId ?? null,
     cloudflareZoneId: input.cloudflareZoneId ?? null,
     configureDomain: input.configureDomain,
+    applicationRoutes: applicationRoutes.value,
   });
+}
+
+function validateApplicationRoutes(
+  routes: readonly JenkinsApplicationRoute[],
+): Result<readonly JenkinsApplicationRoute[], ValidationError> {
+  const unique = new Map<string, JenkinsApplicationRoute>();
+  for (const route of routes) {
+    const path = route.path.trim();
+    if (!/^\/[a-zA-Z0-9/_-]*$/.test(path))
+      return err(new ValidationError(`Invalid application route: ${path}`));
+    if (route.port < 1 || route.port > 65_535)
+      return err(new ValidationError(`Invalid application route port: ${route.port}`));
+    unique.set(path, { path, port: route.port });
+  }
+  return ok([...unique.values()]);
+}
+
+function toNginxLocations(routes: readonly JenkinsApplicationRoute[]): readonly NginxLocation[] {
+  return routes.map((route) => ({
+    path: route.path,
+    upstreamHost: '127.0.0.1',
+    upstreamPort: route.port,
+  }));
+}
+
+function synchronizeStringParameter(
+  parameters: readonly JenkinsParameter[],
+  name: string,
+  defaultValue: string,
+  description: string,
+): readonly JenkinsParameter[] {
+  const next: JenkinsParameter = {
+    name,
+    type: 'string',
+    defaultValue,
+    description,
+    choices: [],
+  };
+  return parameters.some((parameter) => parameter.name === name)
+    ? parameters.map((parameter) => (parameter.name === name ? next : parameter))
+    : [...parameters, next];
 }
 
 function slug(value: string): string {

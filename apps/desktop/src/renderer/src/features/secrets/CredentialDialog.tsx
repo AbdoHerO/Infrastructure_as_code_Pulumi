@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Button,
@@ -14,21 +14,42 @@ import {
   Textarea,
   toast,
 } from '@cloudforge/ui';
-import { CREDENTIAL_KINDS, CREDENTIAL_SCHEMAS, type CredentialKind } from '@cloudforge/core';
+import {
+  CREDENTIAL_KINDS,
+  CREDENTIAL_SCHEMAS,
+  type CredentialKind,
+  type CredentialSummaryDto,
+} from '@cloudforge/core';
 import { IpcCallError } from '../../lib/ipc.js';
-import { useCreateCredential } from './useCredentials.js';
+import { revealCredential, useCreateCredential, useUpdateCredential } from './useCredentials.js';
 
 interface CredentialDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  credential?: CredentialSummaryDto | null;
 }
 
-/** Dialog to add a credential; fields are generated from the kind's schema. */
-export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps): JSX.Element {
+/** Dialog to add or replace a credential; fields are generated from the kind's schema. */
+export function CredentialDialog({
+  open,
+  onOpenChange,
+  credential = null,
+}: CredentialDialogProps): JSX.Element {
   const [kind, setKind] = useState<CredentialKind>('oracle');
   const [name, setName] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
   const create = useCreateCredential();
+  const update = useUpdateCredential();
+  const editing = Boolean(credential);
+
+  useEffect(() => {
+    if (!open || !credential) return;
+    setKind(credential.kind);
+    setName(credential.name);
+    void revealCredential(credential.id)
+      .then(setValues)
+      .catch(() => toast.error('Failed to load the encrypted credential'));
+  }, [credential, open]);
 
   const spec = CREDENTIAL_SCHEMAS[kind];
 
@@ -40,8 +61,12 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
 
   const submit = async (): Promise<void> => {
     try {
-      await create.mutateAsync({ kind, name, data: values });
-      toast.success('Credential saved securely');
+      if (credential) {
+        await update.mutateAsync({ id: credential.id, kind, name, data: values });
+      } else {
+        await create.mutateAsync({ kind, name, data: values });
+      }
+      toast.success(editing ? 'Credential updated securely' : 'Credential saved securely');
       reset();
       onOpenChange(false);
     } catch (error) {
@@ -59,7 +84,7 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
     >
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0">
         <DialogHeader className="shrink-0 p-6 pb-4">
-          <DialogTitle>Add credential</DialogTitle>
+          <DialogTitle>{editing ? 'Edit credential' : 'Add credential'}</DialogTitle>
           <DialogDescription>
             Secrets are encrypted with your OS keychain and never stored in plaintext.
           </DialogDescription>
@@ -69,6 +94,7 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
           <div className="space-y-1.5">
             <Label>Provider</Label>
             <Select
+              disabled={editing}
               value={kind}
               onChange={(event) => {
                 setKind(event.target.value as CredentialKind);
@@ -142,8 +168,12 @@ export function CredentialDialog({ open, onOpenChange }: CredentialDialogProps):
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={create.isPending} onClick={() => void submit()}>
-            {create.isPending ? 'Saving…' : 'Save credential'}
+          <Button disabled={create.isPending || update.isPending} onClick={() => void submit()}>
+            {create.isPending || update.isPending
+              ? 'Saving…'
+              : editing
+                ? 'Update credential'
+                : 'Save credential'}
           </Button>
         </DialogFooter>
       </DialogContent>

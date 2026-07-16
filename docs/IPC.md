@@ -240,6 +240,12 @@ When domain automation is enabled, `jenkins:save` synchronizes the selected
 application port into the job's `HOST_PORT` parameter. `jenkins:trigger` sends
 declared defaults for omitted values, keeping Jenkins and Nginx routing aligned.
 
+`credentials:update` replaces an existing encrypted credential after domain
+validation. Jenkins pipeline payloads may reference an `environment-file`
+credential and additional application routes. The main process installs the
+environment as a folder-scoped Jenkins secret-text credential; neither the IPC
+response nor the persisted pipeline contains its plaintext content.
+
 ## Adding a channel (checklist)
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,

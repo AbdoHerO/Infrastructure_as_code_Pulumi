@@ -78,6 +78,44 @@ export class JenkinsHttpManager implements JenkinsManager {
     return created.ok ? ok(undefined) : created;
   }
 
+  async ensureSecretTextCredential(
+    connection: JenkinsConnection,
+    folder: string,
+    credentialId: string,
+    secret: string,
+    description: string,
+  ): Promise<Result<void, DeploymentError>> {
+    const path = `/job/${segment(folder)}/credentials/store/folder/domain/_/credential/${segment(credentialId)}/config.xml`;
+    const updated = await request(connection, path, {
+      method: 'POST',
+      contentType: 'application/xml',
+      body: secretTextCredentialXml(credentialId, secret, description),
+      acceptNotFound: true,
+    });
+    if (!updated.ok) return updated;
+    if (updated.value.status !== 404) return ok(undefined);
+    const payload = JSON.stringify({
+      '': '0',
+      credentials: {
+        scope: 'GLOBAL',
+        id: credentialId,
+        secret,
+        description,
+        $class: 'org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl',
+      },
+    });
+    const created = await request(
+      connection,
+      `/job/${segment(folder)}/credentials/store/folder/domain/_/createCredentials`,
+      {
+        method: 'POST',
+        contentType: 'application/x-www-form-urlencoded',
+        body: new URLSearchParams({ json: payload }).toString(),
+      },
+    );
+    return created.ok ? ok(undefined) : created;
+  }
+
   async upsertJob(
     connection: JenkinsConnection,
     definition: JenkinsJobDefinition,
@@ -279,6 +317,13 @@ function githubCredentialXml(id: string, token: string): string {
 <scope>GLOBAL</scope><id>${xml(id)}</id><description>Managed by CloudForge</description>
 <username>x-access-token</username><password>${xml(token)}</password>
 </com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>`;
+}
+
+function secretTextCredentialXml(id: string, secret: string, description: string): string {
+  return `<org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl>
+<scope>GLOBAL</scope><id>${xml(id)}</id><description>${xml(description)}</description>
+<secret>${xml(secret)}</secret>
+</org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl>`;
 }
 
 function jobXml(definition: JenkinsJobDefinition): string {

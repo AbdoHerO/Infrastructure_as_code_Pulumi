@@ -10,6 +10,7 @@ export const CREDENTIAL_KINDS = [
   'anthropic',
   'dockerhub',
   'gitlab',
+  'environment-file',
   'ssh',
   'ssh-password',
 ] as const;
@@ -139,6 +140,20 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
     kind: 'gitlab',
     label: 'GitLab',
     fields: [field('token', 'Access Token', { secret: true })],
+  },
+  'environment-file': {
+    kind: 'environment-file',
+    label: 'Deployment Environment File',
+    fields: [
+      field('filename', 'Environment filename', {
+        placeholder: '.env.production',
+      }),
+      field('content', 'Environment file content', {
+        secret: true,
+        multiline: true,
+        placeholder: 'APP_ENV=production\nAPP_KEY=base64:...\nDB_PASSWORD=...',
+      }),
+    ],
   },
   ssh: {
     kind: 'ssh',

@@ -3,7 +3,7 @@ import { ok } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { CredentialService } from '../credentials/credential-service.js';
 import type { NginxService } from '../nginx/nginx-service.js';
-import type { JenkinsManager } from '../ports/jenkins-manager.js';
+import type { JenkinsJobDefinition, JenkinsManager } from '../ports/jenkins-manager.js';
 import type {
   JenkinsPipelineRecord,
   JenkinsPipelineRepository,
@@ -56,11 +56,13 @@ const input: SaveJenkinsPipelineInput = {
     { name: 'IMAGE_TAG', type: 'string', defaultValue: 'latest', description: '', choices: [] },
   ],
   environment: { APP_ENV: 'production' },
+  environmentCredentialId: null,
   domain: '',
   applicationPort: null,
   cloudflareCredentialId: null,
   cloudflareZoneId: null,
   configureDomain: false,
+  applicationRoutes: [],
 };
 
 describe('JenkinsPipelineService', () => {
@@ -101,6 +103,8 @@ describe('JenkinsPipelineService', () => {
 
     const result = await service.save({
       ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
       repositoryAccess: 'private',
       githubCredentialId: null,
     });
@@ -163,12 +167,75 @@ describe('JenkinsPipelineService', () => {
     expect(JSON.stringify([...repository.records.values()])).not.toContain('jenkins-secret');
   });
 
+  it('synchronizes an encrypted environment file as a folder-scoped Jenkins secret', async () => {
+    const repository = new MemoryPipelines();
+    const ensureSecretTextCredential = vi.fn().mockResolvedValue(ok(undefined));
+    const upsertJob = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn((id: string) =>
+          Promise.resolve(
+            id === 'jenkins-1'
+              ? ok({
+                  kind: 'jenkins',
+                  data: {
+                    username: 'admin',
+                    apiToken: 'jenkins-secret',
+                    baseUrl: 'http://jenkins:8080',
+                  },
+                })
+              : ok({
+                  kind: 'environment-file',
+                  data: { filename: '.env.production', content: 'APP_ENV=production' },
+                }),
+          ),
+        ),
+      } as unknown as CredentialService,
+      {
+        ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+        ensureGithubCredential: vi.fn().mockResolvedValue(ok(undefined)),
+        ensureSecretTextCredential,
+        upsertJob,
+      } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.save({
+      ...input,
+      githubCredentialId: null,
+      environmentCredentialId: 'env-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(ensureSecretTextCredential).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('cloudforge-production-vps'),
+      expect.stringMatching(/^cloudforge-env-/),
+      Buffer.from('APP_ENV=production').toString('base64'),
+      'CloudForge .env.production',
+    );
+    expect(upsertJob).toHaveBeenCalled();
+    const definition = upsertJob.mock.calls[0]?.[1] as unknown as JenkinsJobDefinition;
+    expect(definition.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'CLOUDFORGE_ENV_CREDENTIAL_ID' })]),
+    );
+    expect(JSON.stringify([...repository.records.values()])).not.toContain('APP_ENV=production');
+  });
+
   it('deletes the remote job and empty folder before removing local state', async () => {
     const repository = new MemoryPipelines();
     const record: JenkinsPipelineRecord = {
       id: 'pipeline-1',
       folder: 'cloudforge-production-vps-target-1',
       ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
       githubCredentialId: null,
       applicationPort: null,
       cloudflareCredentialId: null,
@@ -217,6 +284,8 @@ describe('JenkinsPipelineService', () => {
       id: 'pipeline-existing',
       folder: 'cloudforge-production-vps-target-1',
       ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
       githubCredentialId: null,
       domain: 'hanoutplus.ma',
       applicationPort: 3000,
@@ -371,6 +440,8 @@ describe('JenkinsPipelineService', () => {
       id: 'pipeline-1',
       folder: 'cloudforge-production-vps-target-1',
       ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
       githubCredentialId: null,
       applicationPort: null,
       cloudflareCredentialId: null,

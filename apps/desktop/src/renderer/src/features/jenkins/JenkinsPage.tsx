@@ -42,11 +42,13 @@ const empty: SaveJenkinsPipelineInput = {
   definitionMode: 'scm',
   parameters: [],
   environment: {},
+  environmentCredentialId: null,
   domain: '',
   applicationPort: null,
   cloudflareCredentialId: null,
   cloudflareZoneId: null,
   configureDomain: false,
+  applicationRoutes: [],
 };
 
 export function JenkinsPage(): JSX.Element {
@@ -67,6 +69,8 @@ export function JenkinsPage(): JSX.Element {
   const githubCredentials = credentials.data?.filter((item) => item.kind === 'github') ?? [];
   const cloudflareCredentials =
     credentials.data?.filter((item) => item.kind === 'cloudflare') ?? [];
+  const environmentCredentials =
+    credentials.data?.filter((item) => item.kind === 'environment-file') ?? [];
   const selected = pipelines.data?.find((item) => item.id === selectedId);
   const selectedTarget = targets.data?.find((target) => target.id === form.targetId);
 
@@ -159,11 +163,13 @@ export function JenkinsPage(): JSX.Element {
       definitionMode: pipeline.definitionMode,
       parameters: pipeline.parameters,
       environment: pipeline.environment,
+      environmentCredentialId: pipeline.environmentCredentialId,
       domain: pipeline.domain,
       applicationPort: pipeline.applicationPort,
       cloudflareCredentialId: pipeline.cloudflareCredentialId,
       cloudflareZoneId: pipeline.cloudflareZoneId,
       configureDomain: pipeline.configureDomain,
+      applicationRoutes: pipeline.applicationRoutes,
     });
     setEnvironmentText(
       Object.entries(pipeline.environment)
@@ -393,6 +399,41 @@ export function JenkinsPage(): JSX.Element {
                   />
                 </Field>
               </div>
+              <div className="border-border space-y-3 rounded-md border p-4 md:col-span-2">
+                <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+                  <Field label="Encrypted deployment environment file">
+                    <Select
+                      value={form.environmentCredentialId ?? ''}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          environmentCredentialId: event.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">No environment file</option>
+                      {environmentCredentials.map((credential) => (
+                        <option key={credential.id} value={credential.id}>
+                          {credential.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => void credentials.refetch()}>
+                      <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+                    </Button>
+                    <Button variant="outline" onClick={() => navigate('/secrets')}>
+                      <Plus className="mr-2 h-4 w-4" /> Add or edit env
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Save .env.production under Secrets → Deployment Environment File. CloudForge
+                  encrypts it, creates a folder-scoped Jenkins secret, and never writes its contents
+                  into the job configuration.
+                </p>
+              </div>
               <div className="space-y-3 md:col-span-2">
                 <div className="flex items-center justify-between">
                   <Label>Build parameters</Label>
@@ -497,6 +538,84 @@ export function JenkinsPage(): JSX.Element {
                         }
                       />
                     </Field>
+                    <div className="space-y-3 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Additional application routes</Label>
+                          <p className="text-muted-foreground text-xs">
+                            Route paths such as /app and /apps to a separate WebSocket port.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              applicationRoutes: [
+                                ...(form.applicationRoutes ?? []),
+                                { path: '/app', port: 8081 },
+                              ],
+                            })
+                          }
+                        >
+                          <Plus className="mr-1 h-3 w-3" /> Route
+                        </Button>
+                      </div>
+                      {(form.applicationRoutes ?? []).map((route, index) => (
+                        <div
+                          key={`${route.path}-${index}`}
+                          className="grid gap-2 md:grid-cols-[1fr_180px_auto]"
+                        >
+                          <Input
+                            value={route.path}
+                            placeholder="/app"
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                applicationRoutes: (form.applicationRoutes ?? []).map(
+                                  (item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, path: event.target.value }
+                                      : item,
+                                ),
+                              })
+                            }
+                          />
+                          <Input
+                            type="number"
+                            min={1}
+                            max={65535}
+                            value={route.port}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                applicationRoutes: (form.applicationRoutes ?? []).map(
+                                  (item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, port: Number(event.target.value) || 1 }
+                                      : item,
+                                ),
+                              })
+                            }
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                applicationRoutes: (form.applicationRoutes ?? []).filter(
+                                  (_, itemIndex) => itemIndex !== index,
+                                ),
+                              })
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -52,6 +52,13 @@ export interface JenkinsManager {
     credentialId: string,
     token: string,
   ): Promise<Result<void, DeploymentError>>;
+  ensureSecretTextCredential(
+    connection: JenkinsConnection,
+    folder: string,
+    credentialId: string,
+    secret: string,
+    description: string,
+  ): Promise<Result<void, DeploymentError>>;
   upsertJob(
     connection: JenkinsConnection,
     definition: JenkinsJobDefinition,

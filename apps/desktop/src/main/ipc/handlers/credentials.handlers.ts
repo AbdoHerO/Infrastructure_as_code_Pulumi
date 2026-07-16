@@ -12,6 +12,10 @@ export function registerCredentialHandlers(): void {
     orThrow(await getContainer().credentialService.create(input)),
   );
 
+  registerHandler('credentials:update', async (input) =>
+    orThrow(await getContainer().credentialService.update(input)),
+  );
+
   registerHandler('credentials:reveal', async ({ id }) =>
     orThrow(await getContainer().credentialService.reveal(id)),
   );

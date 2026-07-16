@@ -1,6 +1,11 @@
 import type { PersistenceError, Result } from '@cloudforge/shared';
 import type { JenkinsParameter } from './jenkins-manager.js';
 
+export interface JenkinsApplicationRoute {
+  readonly path: string;
+  readonly port: number;
+}
+
 export interface JenkinsPipelineRecord {
   readonly id: string;
   readonly name: string;
@@ -16,11 +21,13 @@ export interface JenkinsPipelineRecord {
   readonly definitionMode: 'scm' | 'inline';
   readonly parameters: readonly JenkinsParameter[];
   readonly environment: Readonly<Record<string, string>>;
+  readonly environmentCredentialId: string | null;
   readonly domain: string;
   readonly applicationPort: number | null;
   readonly cloudflareCredentialId: string | null;
   readonly cloudflareZoneId: string | null;
   readonly configureDomain: boolean;
+  readonly applicationRoutes: readonly JenkinsApplicationRoute[];
   readonly lastStatus: string;
   readonly createdAt: string;
   readonly updatedAt: string;

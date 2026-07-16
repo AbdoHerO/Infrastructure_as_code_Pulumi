@@ -17,6 +17,7 @@ import type {
   ContainerAction,
   ContainerStats,
   CreateCredentialInput,
+  UpdateCredentialInput,
   CreateProjectInput,
   CredentialSummaryDto,
   CustomTemplateSummary,
@@ -102,6 +103,7 @@ export interface IpcContract {
 
   'credentials:list': { request: void; response: CredentialSummaryDto[] };
   'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
+  'credentials:update': { request: UpdateCredentialInput; response: CredentialSummaryDto };
   'credentials:reveal': { request: { id: string }; response: RevealedCredentialDto };
   'credentials:delete': { request: { id: string }; response: void };
 
@@ -670,6 +672,7 @@ export const IPC_CHANNELS = [
   'projects:count',
   'credentials:list',
   'credentials:create',
+  'credentials:update',
   'credentials:reveal',
   'credentials:delete',
   'settings:get',

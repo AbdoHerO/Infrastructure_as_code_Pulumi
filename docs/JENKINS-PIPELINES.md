@@ -45,6 +45,9 @@ duplicate VPS or SSH records. Every target receives an isolated folder named
 7. For private repositories, create a **GitHub** credential in Secrets. CloudForge installs it
    into the target's Jenkins folder; after credential creation, the token is never returned to
    the renderer or written to pipeline persistence/logs.
+8. Create a **Deployment Environment File** credential for `.env.production`.
+   Paste the complete file in CloudForge. You can edit it later from **Secrets**
+   without recreating the pipeline or committing production secrets to Git.
 
 The commonly required Jenkins plugin IDs are `workflow-aggregator`, `git`,
 `cloudbees-folder`, `credentials`, and `plain-credentials`. GitHub or GitLab
@@ -67,6 +70,15 @@ pipeline form.
 Add any number of typed build parameters (`string`, `boolean`, `choice`, or `password`) and
 environment values. Parameter names use environment-variable syntax such as `IMAGE_TAG` or
 `DEPLOY_ENV`. Saving is idempotent: an existing job is updated in place.
+
+Select an **Encrypted deployment environment file** when the repository needs
+`.env.production`, `.env`, or another runtime configuration file. CloudForge
+decrypts it only in the main process, stores a base64 secret-text credential in
+the isolated Jenkins folder, and synchronizes its generated ID through
+`CLOUDFORGE_ENV_CREDENTIAL_ID`. The Jenkinsfile decodes it with owner-only
+permissions for the build and deletes the temporary file after every run.
+Updating the CloudForge credential and saving the pipeline updates the existing
+Jenkins secret in place.
 
 **Save to Jenkins** only creates or updates the remote job. It does not start a
 build. Pushing a commit also does not start a job unless a GitHub webhook or an
@@ -101,6 +113,17 @@ environment {
 
 The fallback matters on the very first Jenkins build because parameters declared
 by a Jenkinsfile may not be available until Jenkins has evaluated that file once.
+
+Applications with a second internal service, such as Laravel Reverb, may add
+**Additional application routes**. For HanoutPlus, the main HTTP route uses VPS
+loopback port `8001`; `/app` and `/apps` route to Reverb on loopback port `8081`.
+Redis uses container-internal port `9000` and is not opened in OCI, UFW, or
+Nginx. MySQL and Redis stay private to the Docker network.
+
+For Laravel Compose applications, CloudForge and Jenkins manage the runtime
+without manual commands: Compose creates the private network and named volumes,
+Supervisor runs Apache, queue workers, Reverb, and `artisan schedule:work`, and
+Jenkins performs idempotent builds, migrations, health checks, and cleanup.
 
 ## Run and observe
 

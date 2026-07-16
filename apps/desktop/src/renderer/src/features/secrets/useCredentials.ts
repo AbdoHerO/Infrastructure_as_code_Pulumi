@@ -5,7 +5,11 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { CreateCredentialInput, CredentialSummaryDto } from '@cloudforge/core';
+import type {
+  CreateCredentialInput,
+  CredentialSummaryDto,
+  UpdateCredentialInput,
+} from '@cloudforge/core';
 import { invoke } from '../../lib/ipc.js';
 
 const CREDENTIALS_KEY = ['credentials'] as const;
@@ -36,6 +40,18 @@ export function useCreateCredential(): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateCredentialInput) => invoke('credentials:create', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CREDENTIALS_KEY }),
+  });
+}
+
+export function useUpdateCredential(): UseMutationResult<
+  CredentialSummaryDto,
+  Error,
+  UpdateCredentialInput
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateCredentialInput) => invoke('credentials:update', input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: CREDENTIALS_KEY }),
   });
 }

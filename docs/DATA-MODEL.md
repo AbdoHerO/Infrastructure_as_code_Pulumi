@@ -197,9 +197,11 @@ tokens remain only in encrypted `Credential` records and Jenkins' credential sto
 | `repositoryUrl`, `branch`, `jenkinsfilePath` | String          | SCM pipeline configuration                           |
 | `pipelineScript`, `definitionMode`           | String          | Inline script or `scm` definition                    |
 | `parameters`, `environment`                  | String          | Validated JSON; secret environment keys are rejected |
+| `environmentCredentialId`                    | String?         | Encrypted deployment environment file reference      |
 | `domain`, `applicationPort`                  | String/Int      | Optional Nginx/Cloudflare integration                |
 | `cloudflareCredentialId`, `cloudflareZoneId` | String?         | Optional service-provider references                 |
 | `configureDomain`                            | Boolean         | Enables DNS and Nginx orchestration                  |
+| `applicationRoutes`                          | String          | JSON path/loopback-port routes for Nginx             |
 | `lastStatus`, timestamps                     | String/DateTime | Jenkins state and audit timestamps                   |
 
 ### Setting

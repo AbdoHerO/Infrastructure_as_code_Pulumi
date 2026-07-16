@@ -87,11 +87,13 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
       "definitionMode" TEXT NOT NULL DEFAULT 'scm',
       "parameters" TEXT NOT NULL DEFAULT '[]',
       "environment" TEXT NOT NULL DEFAULT '{}',
+      "environmentCredentialId" TEXT,
       "domain" TEXT NOT NULL DEFAULT '',
       "applicationPort" INTEGER,
       "cloudflareCredentialId" TEXT,
       "cloudflareZoneId" TEXT,
       "configureDomain" BOOLEAN NOT NULL DEFAULT false,
+      "applicationRoutes" TEXT NOT NULL DEFAULT '[]',
       "lastStatus" TEXT NOT NULL DEFAULT 'configured',
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL
@@ -106,6 +108,21 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
       'CREATE INDEX "JenkinsPipeline_updatedAt_idx" ON "JenkinsPipeline"("updatedAt")',
     );
     migrated = true;
+  }
+  if (jenkinsTables.length > 0) {
+    const columns = await db.$queryRawUnsafe<ColumnRow[]>('PRAGMA table_info("JenkinsPipeline")');
+    if (!columns.some((column) => column.name === 'environmentCredentialId')) {
+      await db.$executeRawUnsafe(
+        'ALTER TABLE "JenkinsPipeline" ADD COLUMN "environmentCredentialId" TEXT',
+      );
+      migrated = true;
+    }
+    if (!columns.some((column) => column.name === 'applicationRoutes')) {
+      await db.$executeRawUnsafe(
+        `ALTER TABLE "JenkinsPipeline" ADD COLUMN "applicationRoutes" TEXT NOT NULL DEFAULT '[]'`,
+      );
+      migrated = true;
+    }
   }
   if (targetTables.length === 0) {
     await db.$executeRawUnsafe(`CREATE TABLE "VpsTarget" (

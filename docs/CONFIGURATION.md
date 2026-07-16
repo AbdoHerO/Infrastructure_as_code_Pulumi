@@ -53,25 +53,32 @@ The built-in deployment templates target **Debian/Ubuntu** (they use `apt` +
 Add these under **Secrets → Add Credential**. Fields marked 🔒 are secret (masked;
 revealed only on request). Fields marked _(optional)_ can be left blank.
 
-| Provider (kind)                   | Fields                                                                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Oracle Cloud** (`oracle`)       | Tenancy OCID · User OCID · Compartment OCID · Fingerprint · 🔒 API Private Key (PEM) · Region · Profile Name _(optional)_ |
-| **AWS** (`aws`)                   | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_ · Default Region                                     |
-| **Azure** (`azure`)               | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
-| **GitHub** (`github`)             | 🔒 Personal Access Token                                                                                                  |
-| **Jenkins** (`jenkins`)           | Username · 🔒 API Token · Jenkins URL _(optional when the selected VPS uses port 8080)_                                   |
-| **Cloudflare** (`cloudflare`)     | 🔒 API Token · Account ID _(optional)_ · Default Zone name/ID _(optional)_                                                |
-| **OpenAI** (`openai`)             | 🔒 API Key                                                                                                                |
-| **Anthropic** (`anthropic`)       | 🔒 API Key                                                                                                                |
-| **Docker Hub** (`dockerhub`)      | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
-| **GitLab** (`gitlab`)             | 🔒 Access Token                                                                                                           |
-| **SSH Key** (`ssh`)               | 🔒 Private Key (OpenSSH or PEM) · 🔒 Passphrase _(optional)_                                                              |
-| **SSH Password** (`ssh-password`) | 🔒 Password                                                                                                               |
+| Provider (kind)                                      | Fields                                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Oracle Cloud** (`oracle`)                          | Tenancy OCID · User OCID · Compartment OCID · Fingerprint · 🔒 API Private Key (PEM) · Region · Profile Name _(optional)_ |
+| **AWS** (`aws`)                                      | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_ · Default Region                                     |
+| **Azure** (`azure`)                                  | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
+| **GitHub** (`github`)                                | 🔒 Personal Access Token                                                                                                  |
+| **Jenkins** (`jenkins`)                              | Username · 🔒 API Token · Jenkins URL _(optional when the selected VPS uses port 8080)_                                   |
+| **Cloudflare** (`cloudflare`)                        | 🔒 API Token · Account ID _(optional)_ · Default Zone name/ID _(optional)_                                                |
+| **OpenAI** (`openai`)                                | 🔒 API Key                                                                                                                |
+| **Anthropic** (`anthropic`)                          | 🔒 API Key                                                                                                                |
+| **Docker Hub** (`dockerhub`)                         | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
+| **GitLab** (`gitlab`)                                | 🔒 Access Token                                                                                                           |
+| **Deployment Environment File** (`environment-file`) | Filename · 🔒 complete multiline environment content                                                                      |
+| **SSH Key** (`ssh`)                                  | 🔒 Private Key (OpenSSH or PEM) · 🔒 Passphrase _(optional)_                                                              |
+| **SSH Password** (`ssh-password`)                    | 🔒 Password                                                                                                               |
 
 > **Oracle Cloud** and **AWS** provide complete project attachment,
 > Preview/Apply/Destroy and resource discovery workflows. Other provider kinds are
 > service integrations or stored extension points. Cloudflare manages DNS/edge
 > services, while Jenkins and GitHub credentials power per-VPS application pipelines.
+
+Deployment environment files are application credentials, not cloud-provider
+credentials. They are editable, encrypted with the same security model, and may
+be attached to any Jenkins pipeline. CloudForge synchronizes only a derived
+Jenkins credential ID to the job; plaintext file content never enters pipeline
+persistence, Activity history, or logs.
 
 ---
 

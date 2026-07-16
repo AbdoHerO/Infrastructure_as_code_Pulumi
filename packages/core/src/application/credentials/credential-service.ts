@@ -6,6 +6,7 @@ import {
   NotFoundError,
   ok,
   parseUuid,
+  toIsoDateString,
   type PersistenceError,
   type Result,
   type Uuid,
@@ -17,6 +18,7 @@ import {
   type CredentialData,
   type CredentialId,
 } from '../../domain/credential/credential.js';
+import type { UpdateCredentialInput } from '../../domain/credential/credential.js';
 import { CREDENTIAL_SCHEMAS } from '../../domain/credential/credential-kind.js';
 import type { CredentialRecord, CredentialRepository } from '../ports/credential-repository.js';
 import type { SecretCipher } from '../ports/secret-cipher.js';
@@ -68,6 +70,32 @@ export class CredentialService {
     const found = await this.credentials.findAll();
     if (!found.ok) return found;
     return ok(found.value.map(toSummary));
+  }
+
+  async update(
+    input: UpdateCredentialInput,
+  ): Promise<Result<CredentialSummaryDto, CredentialServiceError>> {
+    const credentialId = parseCredentialId(input.id);
+    if (!credentialId.ok) return credentialId;
+    const found = await this.credentials.findById(credentialId.value);
+    if (!found.ok) return found;
+    if (!found.value) return err(new NotFoundError('Credential not found'));
+
+    const validated = Credential.create(input);
+    if (!validated.ok) return validated;
+    const ciphertext = this.cipher.encrypt(JSON.stringify(validated.value.data));
+    if (!ciphertext.ok) return ciphertext;
+    const updatedAt = toIsoDateString(new Date());
+    const record: CredentialRecord = {
+      ...found.value,
+      kind: validated.value.kind,
+      name: validated.value.name,
+      providerId: input.providerId ?? found.value.providerId,
+      ciphertext: ciphertext.value,
+      updatedAt,
+    };
+    const saved = await this.credentials.save(record);
+    return saved.ok ? ok(toSummary(record)) : saved;
   }
 
   async reveal(id: string): Promise<Result<RevealedCredentialDto, CredentialServiceError>> {

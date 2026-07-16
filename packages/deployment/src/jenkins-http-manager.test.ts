@@ -75,6 +75,30 @@ describe('JenkinsHttpManager', () => {
     expect(body).not.toContain('jenkins-secret');
   });
 
+  it('updates a folder-scoped secret-text credential without exposing it in a job', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new JenkinsHttpManager().ensureSecretTextCredential(
+      connection,
+      'cloudforge-vps',
+      'cloudforge-env-app',
+      'QVBQX0VOVj1wcm9kdWN0aW9u',
+      'CloudForge .env.production',
+    );
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/credential/cloudforge-env-app/config.xml');
+    const body = fetchMock.mock.calls[1]?.[1]?.body;
+    expect(typeof body === 'string' && body).toContain(
+      'org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl',
+    );
+    expect(typeof body === 'string' && body).toContain('QVBQX0VOVj1wcm9kdWN0aW9u');
+  });
+
   it('maps a missing Jenkins job to a safe not-found status', async () => {
     vi.stubGlobal(
       'fetch',

@@ -79,6 +79,30 @@ describe('CredentialService', () => {
     if (revealed.ok) expect(revealed.value.data.apiKey).toBe('sk-123');
   });
 
+  it('updates an encrypted deployment environment file in place', async () => {
+    const created = await service.create({
+      kind: 'environment-file',
+      name: 'HanoutPlus production',
+      data: { filename: '.env.production', content: 'REDIS_PORT=6379' },
+    });
+    if (!created.ok) return;
+
+    const updated = await service.update({
+      id: created.value.id,
+      kind: 'environment-file',
+      name: 'HanoutPlus production',
+      data: { filename: '.env.production', content: 'REDIS_PORT=9000' },
+    });
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.id).toBe(created.value.id);
+    const revealed = await service.reveal(created.value.id);
+    expect(revealed.ok && revealed.value.data.content).toBe('REDIS_PORT=9000');
+    const stored = await repo.findAll();
+    expect(stored.ok && stored.value[0]?.ciphertext).not.toContain('REDIS_PORT=9000');
+  });
+
   it('rejects missing required fields', async () => {
     const result = await service.create({ kind: 'aws', name: 'prod', data: { accessKeyId: 'AK' } });
     expect(result.ok).toBe(false);

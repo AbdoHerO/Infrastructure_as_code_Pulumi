@@ -74,11 +74,13 @@ CREATE TABLE "JenkinsPipeline" (
     "definitionMode" TEXT NOT NULL DEFAULT 'scm',
     "parameters" TEXT NOT NULL DEFAULT '[]',
     "environment" TEXT NOT NULL DEFAULT '{}',
+    "environmentCredentialId" TEXT,
     "domain" TEXT NOT NULL DEFAULT '',
     "applicationPort" INTEGER,
     "cloudflareCredentialId" TEXT,
     "cloudflareZoneId" TEXT,
     "configureDomain" BOOLEAN NOT NULL DEFAULT false,
+    "applicationRoutes" TEXT NOT NULL DEFAULT '[]',
     "lastStatus" TEXT NOT NULL DEFAULT 'configured',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL

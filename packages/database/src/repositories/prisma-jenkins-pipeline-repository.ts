@@ -21,11 +21,13 @@ interface Row {
   readonly definitionMode: string;
   readonly parameters: string;
   readonly environment: string;
+  readonly environmentCredentialId: string | null;
   readonly domain: string;
   readonly applicationPort: number | null;
   readonly cloudflareCredentialId: string | null;
   readonly cloudflareZoneId: string | null;
   readonly configureDomain: number | boolean;
+  readonly applicationRoutes: string;
   readonly lastStatus: string;
   readonly createdAt: Date | string;
   readonly updatedAt: Date | string;
@@ -73,10 +75,10 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
         `INSERT INTO "JenkinsPipeline" (
           "id","name","folder","description","targetId","jenkinsCredentialId",
           "githubCredentialId","repositoryUrl","branch","jenkinsfilePath","pipelineScript",
-          "definitionMode","parameters","environment","domain","applicationPort",
+          "definitionMode","parameters","environment","environmentCredentialId","domain","applicationPort",
           "cloudflareCredentialId","cloudflareZoneId","configureDomain","lastStatus",
-          "createdAt","updatedAt"
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          "applicationRoutes","createdAt","updatedAt"
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT("id") DO UPDATE SET
           "name"=excluded."name", "folder"=excluded."folder",
           "description"=excluded."description", "targetId"=excluded."targetId",
@@ -86,11 +88,14 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
           "jenkinsfilePath"=excluded."jenkinsfilePath",
           "pipelineScript"=excluded."pipelineScript",
           "definitionMode"=excluded."definitionMode", "parameters"=excluded."parameters",
-          "environment"=excluded."environment", "domain"=excluded."domain",
+          "environment"=excluded."environment",
+          "environmentCredentialId"=excluded."environmentCredentialId",
+          "domain"=excluded."domain",
           "applicationPort"=excluded."applicationPort",
           "cloudflareCredentialId"=excluded."cloudflareCredentialId",
           "cloudflareZoneId"=excluded."cloudflareZoneId",
           "configureDomain"=excluded."configureDomain",
+          "applicationRoutes"=excluded."applicationRoutes",
           "lastStatus"=excluded."lastStatus", "updatedAt"=excluded."updatedAt"`,
         record.id,
         record.name,
@@ -106,12 +111,14 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
         record.definitionMode,
         JSON.stringify(record.parameters),
         JSON.stringify(record.environment),
+        record.environmentCredentialId,
         record.domain,
         record.applicationPort,
         record.cloudflareCredentialId,
         record.cloudflareZoneId,
         record.configureDomain ? 1 : 0,
         record.lastStatus,
+        JSON.stringify(record.applicationRoutes),
         record.createdAt,
         record.updatedAt,
       );
@@ -131,6 +138,8 @@ function toRecord(row: Row): JenkinsPipelineRecord {
     definitionMode: row.definitionMode === 'inline' ? 'inline' : 'scm',
     parameters: parse<JenkinsParameter[]>(row.parameters, []),
     environment: parse<Record<string, string>>(row.environment, {}),
+    environmentCredentialId: row.environmentCredentialId ?? null,
+    applicationRoutes: parse(row.applicationRoutes ?? '[]', []),
     configureDomain: Boolean(row.configureDomain),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
