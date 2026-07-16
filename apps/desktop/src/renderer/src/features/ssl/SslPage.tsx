@@ -27,10 +27,16 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
+import { useCredentials } from '../secrets/useCredentials.js';
 
 export function SslPage(): JSX.Element {
   const confirm = useConfirmation();
   const targets = useVpsTargets();
+  const credentials = useCredentials();
+  const cloudflareCredentials = useMemo(
+    () => credentials.data?.filter((credential) => credential.kind === 'cloudflare') ?? [],
+    [credentials.data],
+  );
   const streamId = useMemo(() => crypto.randomUUID(), []);
   const [targetId, setTargetId] = useState('');
   const [domain, setDomain] = useState('');
@@ -38,6 +44,11 @@ export function SslPage(): JSX.Element {
   const [certificateVolume, setCertificateVolume] = useState('/opt/cloudforge/certs');
   const [webrootVolume, setWebrootVolume] = useState('/opt/cloudforge/www');
   const [forceRenewal, setForceRenewal] = useState(false);
+  const [authority, setAuthority] = useState<'letsencrypt' | 'cloudflare-origin-ca'>('letsencrypt');
+  const [cloudflareCredentialId, setCloudflareCredentialId] = useState('');
+  const [includeWildcard, setIncludeWildcard] = useState(false);
+  const [keyAlgorithm, setKeyAlgorithm] = useState<'rsa' | 'ecc'>('ecc');
+  const [validityDays, setValidityDays] = useState<7 | 30 | 90 | 365 | 730 | 1095 | 5475>(5475);
   const [verificationStartedAt, setVerificationStartedAt] = useState<number | null>(null);
   const [certificates, setCertificates] = useState<CertificateDetails[]>([]);
   const [sites, setSites] = useState<ManagedNginxSite[]>([]);
@@ -60,6 +71,14 @@ export function SslPage(): JSX.Element {
     }
   }, [targetId, targets.data]);
   useEffect(() => {
+    if (
+      cloudflareCredentialId &&
+      cloudflareCredentials.some((credential) => credential.id === cloudflareCredentialId)
+    )
+      return;
+    setCloudflareCredentialId(cloudflareCredentials[0]?.id ?? '');
+  }, [cloudflareCredentialId, cloudflareCredentials]);
+  useEffect(() => {
     if (!targetId) return;
     void invoke('nginx:listSites', { targetId })
       .then((items) => setSites(items.filter((item) => item.managed !== false)))
@@ -74,7 +93,14 @@ export function SslPage(): JSX.Element {
     [streamId],
   );
   const verify = useMutation({
-    mutationFn: () => invoke('ssl:verifyDns', { targetId, domain }),
+    mutationFn: () =>
+      invoke('ssl:verifyDns', {
+        targetId,
+        domain,
+        ...(authority === 'cloudflare-origin-ca' && cloudflareCredentialId
+          ? { cloudflareCredentialId }
+          : {}),
+      }),
     onSuccess: (result) => {
       setDns(result);
       if (result.matches) {
@@ -113,7 +139,18 @@ export function SslPage(): JSX.Element {
       invoke('ssl:issue', {
         targetId,
         streamId,
-        config: { domain, email, certificateVolume, webrootVolume, forceRenewal },
+        config: {
+          domain,
+          email,
+          certificateVolume,
+          webrootVolume,
+          forceRenewal,
+          authority,
+          cloudflareCredentialId,
+          includeWildcard,
+          keyAlgorithm,
+          validityDays,
+        },
       }),
     onSuccess: (certificate) => {
       toast.success(`Certificate issued for ${certificate.domain}`);
@@ -161,7 +198,7 @@ export function SslPage(): JSX.Element {
     <div className="space-y-6">
       <PageHeader
         title="SSL & Domains"
-        description="Verify DNS and issue configured Certbot certificates on a saved VPS target."
+        description="Secure managed Nginx domains with Cloudflare Origin CA or public Let’s Encrypt certificates."
       />
       <Card>
         <CardContent className="grid gap-3 pt-6 md:grid-cols-[1fr_auto]">
@@ -213,11 +250,26 @@ export function SslPage(): JSX.Element {
         <CardHeader>
           <CardTitle>New certificate</CardTitle>
           <CardDescription>
-            DNS must resolve to the selected VPS before Certbot can run. No email, domain, or volume
-            is hardcoded.
+            CloudForge generates keys on the VPS, installs the certificate, validates Nginx, reloads
+            safely, and keeps secrets out of the renderer.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
+          <Field label="Certificate authority">
+            <Select
+              value={authority}
+              onChange={(event) => {
+                setAuthority(event.target.value as typeof authority);
+                setDns(null);
+                setVerificationStartedAt(null);
+              }}
+            >
+              <option value="cloudflare-origin-ca">
+                Cloudflare Origin CA · proxied Cloudflare domains
+              </option>
+              <option value="letsencrypt">Let’s Encrypt · direct/public domains</option>
+            </Select>
+          </Field>
           <Field label="Domain">
             <Select
               value={domain}
@@ -235,25 +287,77 @@ export function SslPage(): JSX.Element {
               ))}
             </Select>
           </Field>
-          <Field label="Let's Encrypt email">
-            <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-          </Field>
+          {authority === 'letsencrypt' ? (
+            <Field label="Let’s Encrypt email">
+              <Input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </Field>
+          ) : (
+            <Field label="Cloudflare credential">
+              <Select
+                value={cloudflareCredentialId}
+                onChange={(event) => setCloudflareCredentialId(event.target.value)}
+              >
+                <option value="">Select Cloudflare credential</option>
+                {cloudflareCredentials.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {credential.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Certificate volume">
             <Input
               value={certificateVolume}
               onChange={(event) => setCertificateVolume(event.target.value)}
             />
           </Field>
-          <Field label="Webroot volume">
-            <Input
-              value={webrootVolume}
-              onChange={(event) => setWebrootVolume(event.target.value)}
-            />
-          </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={forceRenewal} onCheckedChange={setForceRenewal} />
-            Force renewal
-          </label>
+          {authority === 'letsencrypt' ? (
+            <>
+              <Field label="Webroot volume">
+                <Input
+                  value={webrootVolume}
+                  onChange={(event) => setWebrootVolume(event.target.value)}
+                />
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={forceRenewal} onCheckedChange={setForceRenewal} />
+                Force renewal
+              </label>
+            </>
+          ) : (
+            <>
+              <Field label="Private key algorithm">
+                <Select
+                  value={keyAlgorithm}
+                  onChange={(event) => setKeyAlgorithm(event.target.value as 'rsa' | 'ecc')}
+                >
+                  <option value="ecc">ECDSA P-256 · recommended</option>
+                  <option value="rsa">RSA 2048</option>
+                </Select>
+              </Field>
+              <Field label="Origin certificate validity">
+                <Select
+                  value={String(validityDays)}
+                  onChange={(event) =>
+                    setValidityDays(Number(event.target.value) as typeof validityDays)
+                  }
+                >
+                  <option value="365">1 year</option>
+                  <option value="1095">3 years</option>
+                  <option value="5475">15 years</option>
+                </Select>
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={includeWildcard} onCheckedChange={setIncludeWildcard} />
+                Also cover *.{domain || 'example.com'}
+              </label>
+            </>
+          )}
           <div className="col-span-full flex items-center gap-3">
             <Button
               variant="outline"
@@ -289,11 +393,15 @@ export function SslPage(): JSX.Element {
               </Badge>
             )}
             <Button
-              disabled={!dns?.matches || !email || issue.isPending}
+              disabled={
+                !dns?.matches ||
+                issue.isPending ||
+                (authority === 'letsencrypt' ? !email : !cloudflareCredentialId)
+              }
               onClick={() => {
                 void confirm({
                   title: 'Issue and apply SSL certificate?',
-                  description: `Issue or renew the certificate for ${domain || 'this domain'}, update its managed Nginx configuration, validate it, and reload Nginx?`,
+                  description: `${authority === 'cloudflare-origin-ca' ? 'Create a Cloudflare Origin CA certificate' : 'Issue a Let’s Encrypt certificate'} for ${domain || 'this domain'}, update its managed Nginx configuration, validate it, and reload Nginx?`,
                   confirmLabel: 'Issue certificate',
                   destructive: false,
                 }).then((confirmed) => {
@@ -369,7 +477,7 @@ export function SslPage(): JSX.Element {
       {logs.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Certbot output</CardTitle>
+            <CardTitle>Certificate operation output</CardTitle>
           </CardHeader>
           <CardContent>
             <LogTerminal lines={logs} />

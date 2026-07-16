@@ -296,6 +296,7 @@ export async function initContainer(): Promise<AppContainer> {
     settingsService,
     nginxService,
     cloudflareDnsAutomationService,
+    cloudflareService,
   );
   const sslRenewalTimer = setInterval(
     () => void sslService.renewDue(),

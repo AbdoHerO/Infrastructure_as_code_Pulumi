@@ -21,7 +21,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Ansible & Nginx](ANSIBLE.md)                       | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
 | [Nginx Manager](NGINX-MANAGER.md)                   | Dedicated per-target Nginx dashboard, editor, logs, backups, validation, reload, and rollback                     |
 | [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
-| [SSL & Domains](SSL-DOMAINS.md)                     | DNS-gated Certbot issuance, certificate inspection, Nginx integration, and automatic renewal                      |
+| [SSL & Domains](SSL-DOMAINS.md)                     | Cloudflare Origin CA and Let’s Encrypt issuance, inspection, Nginx integration, rollback, and renewal             |
 | [Cloudflare](CLOUDFLARE.md)                         | Account, zones, DNS, SSL/TLS, cache, analytics, security and edge-service integration                             |
 | [Jenkins Pipelines](JENKINS-PIPELINES.md)           | Per-VPS Jenkins folders, private Git checkout, parameterized builds, domain automation, and status                |
 | [Infrastructure updates](INFRASTRUCTURE-UPDATES.md) | Pulumi identity, update/replace behavior, destructive previews, and mandatory preview approval                    |

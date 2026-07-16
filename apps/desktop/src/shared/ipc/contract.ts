@@ -471,7 +471,7 @@ export interface IpcContract {
     response: NginxOperationOutcome;
   };
   'ssl:verifyDns': {
-    request: { targetId: string; domain: string };
+    request: { targetId: string; domain: string; cloudflareCredentialId?: string };
     response: {
       domainIps: readonly string[];
       targetIps: readonly string[];

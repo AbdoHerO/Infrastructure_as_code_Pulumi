@@ -12,6 +12,7 @@ import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
 import type { SettingsService } from '../settings/settings-service.js';
 import type { NginxService } from '../nginx/nginx-service.js';
 import type { ManagedNginxSite } from '../ports/nginx-manager.js';
+import type { CloudflareService } from '../service-providers/cloudflare-service.js';
 
 export class SslService {
   constructor(
@@ -22,11 +23,13 @@ export class SslService {
     private readonly settings?: SettingsService,
     private readonly nginx?: NginxService,
     private readonly managedDns?: ManagedDnsCoordinator,
+    private readonly cloudflare?: CloudflareService,
   ) {}
 
   async verifyDns(
     targetId: string,
     domain: string,
+    cloudflareCredentialId?: string,
   ): Promise<
     Result<
       {
@@ -53,7 +56,11 @@ export class SslService {
     if (!targetIps.ok) return targetIps;
     const expectedIp = targetIps.value[0];
     if (expectedIp && this.managedDns?.verify) {
-      const cloudflare = await this.managedDns.verify(normalized.value, expectedIp);
+      const cloudflare = await this.managedDns.verify(
+        normalized.value,
+        expectedIp,
+        cloudflareCredentialId,
+      );
       if (cloudflare.ok) {
         const matches =
           cloudflare.value.current === expectedIp && cloudflare.value.status === 'propagated';
@@ -112,7 +119,11 @@ export class SslService {
       if (!targetIps.ok) return targetIps;
       const expectedIp = targetIps.value[0];
       if (!expectedIp) return err(new ValidationError('The VPS has no resolvable public IP'));
-      const prepared = await this.managedDns.ensure(valid.value.domain, expectedIp);
+      const prepared = await this.managedDns.ensure(
+        valid.value.domain,
+        expectedIp,
+        valid.value.cloudflareCredentialId,
+      );
       if (!prepared.ok)
         return err(
           new DeploymentError('Automatic Cloudflare DNS preparation failed', {
@@ -122,7 +133,11 @@ export class SslService {
       if (prepared.value.status !== 'propagated')
         return err(new ValidationError('Cloudflare DNS exists but propagation is still pending'));
     } else {
-      const dns = await this.verifyDns(targetId, valid.value.domain);
+      const dns = await this.verifyDns(
+        targetId,
+        valid.value.domain,
+        valid.value.cloudflareCredentialId,
+      );
       if (!dns.ok) return dns;
       if (!dns.value.matches)
         return err(
@@ -131,6 +146,7 @@ export class SslService {
           ),
         );
     }
+    const authority = valid.value.authority ?? 'letsencrypt';
     let nginxSite: ManagedNginxSite | undefined;
     if (this.nginx) {
       const sites = await this.nginx.listSites(targetId);
@@ -143,22 +159,66 @@ export class SslService {
             'Create a CloudForge-managed Nginx site for this exact domain before issuing SSL.',
           ),
         );
-      const challenge = await this.nginx.saveSite(targetId, {
-        ...nginxSite,
-        acmeWebroot: valid.value.webrootVolume,
-        lastModified: new Date().toISOString(),
-      });
-      if (!challenge.ok) return challenge;
+      if (authority === 'letsencrypt') {
+        const challenge = await this.nginx.saveSite(targetId, {
+          ...nginxSite,
+          acmeWebroot: valid.value.webrootVolume,
+          lastModified: new Date().toISOString(),
+        });
+        if (!challenge.ok) return challenge;
+      }
     }
-    const issued = await this.certificates.issue(target.value, valid.value, onEvent);
+    let issued: Result<CertificateDetails, DeploymentError>;
+    if (authority === 'cloudflare-origin-ca') {
+      if (!this.cloudflare)
+        return err(new DeploymentError('Cloudflare Origin CA is not configured in this build'));
+      const hostnames = valid.value.includeWildcard
+        ? [valid.value.domain, `*.${valid.value.domain}`]
+        : [valid.value.domain];
+      const prepared = await this.certificates.prepareOriginCertificate(
+        target.value,
+        valid.value,
+        hostnames,
+        onEvent,
+      );
+      if (!prepared.ok) return prepared;
+      const origin = await this.cloudflare.createOriginCertificate(
+        valid.value.cloudflareCredentialId ?? '',
+        {
+          csr: prepared.value.csr,
+          hostnames,
+          requestType: valid.value.keyAlgorithm === 'ecc' ? 'origin-ecc' : 'origin-rsa',
+          validityDays: valid.value.validityDays ?? 5475,
+        },
+      );
+      if (!origin.ok) {
+        await this.certificates.discardOriginCertificate(target.value, prepared.value.workspace);
+        return err(
+          new DeploymentError('Cloudflare Origin CA certificate creation failed', {
+            cause: origin.error,
+          }),
+        );
+      }
+      issued = await this.certificates.installOriginCertificate(
+        target.value,
+        valid.value,
+        prepared.value.workspace,
+        origin.value.certificate,
+        onEvent,
+      );
+      if (!issued.ok)
+        await this.certificates.discardOriginCertificate(target.value, prepared.value.workspace);
+    } else {
+      issued = await this.certificates.issue(target.value, valid.value, onEvent);
+    }
     this.activities.recordSafe({
       type: issued.ok ? 'ssl.issued' : 'ssl.failed',
       message: issued.ok
         ? `Issued certificate for ${valid.value.domain}`
         : `Certificate issue failed for ${valid.value.domain}`,
-      metadata: { targetId, domain: valid.value.domain },
+      metadata: { targetId, domain: valid.value.domain, authority },
     });
-    if (issued.ok && this.settings) {
+    if (issued.ok && this.settings && authority === 'letsencrypt') {
       const current = await this.settings.get();
       if (current.ok) {
         const managed = current.value.ssl.managed.filter(
@@ -181,12 +241,12 @@ export class SslService {
       }
     }
     if (issued.ok && this.nginx) {
-      if (nginxSite)
-        await this.nginx.saveSite(
+      if (nginxSite) {
+        const applied = await this.nginx.saveSite(
           targetId,
           {
             ...nginxSite,
-            acmeWebroot: valid.value.webrootVolume,
+            ...(authority === 'letsencrypt' ? { acmeWebroot: valid.value.webrootVolume } : {}),
             ssl: true,
             httpRedirect: currentSettings?.ok
               ? currentSettings.value.cloudflare.automaticHttpsRedirect
@@ -195,6 +255,21 @@ export class SslService {
             lastModified: new Date().toISOString(),
           },
           onEvent,
+        );
+        if (!applied.ok) return applied;
+      }
+    }
+    if (issued.ok && authority === 'cloudflare-origin-ca' && this.cloudflare) {
+      const strict = await this.cloudflare.enableStrictSslForDomain(
+        valid.value.cloudflareCredentialId ?? '',
+        valid.value.domain,
+      );
+      if (!strict.ok)
+        return err(
+          new DeploymentError(
+            'The Origin certificate and Nginx configuration are active, but Cloudflare Full (strict) could not be enabled',
+            { cause: strict.error },
+          ),
         );
     }
     return issued;
@@ -287,17 +362,33 @@ function validateConfig(
 ): Result<CertificateIssueConfig, ValidationError> {
   const domain = validateDomain(config.domain);
   if (!domain.ok) return domain;
+  const authority = config.authority ?? 'letsencrypt';
   if (domain.value.startsWith('*.'))
     return err(
       new ValidationError(
-        'Wildcard certificates require a DNS-01 provider integration; the configured webroot flow supports exact domains only.',
+        'Select the base domain and enable wildcard coverage instead of entering a wildcard as the primary domain.',
       ),
     );
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email))
+  if (authority === 'letsencrypt' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email))
     return err(new ValidationError('Enter a valid certificate email'));
-  if (!validAbsolutePath(config.certificateVolume) || !validAbsolutePath(config.webrootVolume))
+  if (
+    !validAbsolutePath(config.certificateVolume) ||
+    (authority === 'letsencrypt' && !validAbsolutePath(config.webrootVolume))
+  )
     return err(new ValidationError('Certbot volumes must be absolute paths'));
-  return ok({ ...config, domain: domain.value, email: config.email.trim() });
+  if (authority === 'cloudflare-origin-ca' && !config.cloudflareCredentialId?.trim())
+    return err(new ValidationError('Select a Cloudflare credential for Origin CA'));
+  if (authority === 'letsencrypt' && config.includeWildcard)
+    return err(new ValidationError('Wildcard coverage requires Cloudflare Origin CA'));
+  return ok({
+    ...config,
+    authority,
+    domain: domain.value,
+    email: config.email.trim(),
+    ...(config.cloudflareCredentialId?.trim()
+      ? { cloudflareCredentialId: config.cloudflareCredentialId.trim() }
+      : {}),
+  });
 }
 function validAbsolutePath(value: string): boolean {
   return value.startsWith('/') && !/[\r\n\0]/.test(value);

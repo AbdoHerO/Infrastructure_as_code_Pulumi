@@ -7,6 +7,7 @@ import type {
 } from '@cloudforge/core';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import { runPrivilegedRemote } from './ssh-nginx-manager.js';
+import { randomUUID } from 'node:crypto';
 
 export class SshCertificateManager implements CertificateManager {
   async issue(
@@ -34,6 +35,96 @@ docker run --rm -v ${quote(`${config.certificateVolume}:/etc/letsencrypt`)} -v $
     onEvent?: CertificateEventSink,
   ): Promise<Result<CertificateDetails, DeploymentError>> {
     return this.issue(target, { ...config, forceRenewal: false }, onEvent);
+  }
+
+  async prepareOriginCertificate(
+    target: DeploymentTarget,
+    config: CertificateIssueConfig,
+    hostnames: readonly string[],
+    onEvent?: CertificateEventSink,
+  ): Promise<Result<{ csr: string; workspace: string }, DeploymentError>> {
+    const workspace = `/tmp/cloudforge-origin-${randomUUID()}`;
+    const subjectAltName = hostnames.map((hostname) => `DNS:${hostname}`).join(',');
+    const keyCommand =
+      config.keyAlgorithm === 'ecc'
+        ? `openssl ecparam -name prime256v1 -genkey -noout -out "$workspace/privkey.pem"`
+        : `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$workspace/privkey.pem"`;
+    onEvent?.({
+      stream: 'step',
+      message: 'Generating the Origin CA private key and CSR securely on the VPS',
+    });
+    const result = await runPrivilegedRemote(
+      target,
+      `set -eu
+command -v openssl >/dev/null 2>&1 || { echo 'OpenSSL is required for Origin CA certificates' >&2; exit 1; }
+workspace=${quote(workspace)}
+umask 077
+mkdir -p "$workspace"
+${keyCommand}
+openssl req -new -key "$workspace/privkey.pem" -subj ${quote(`/CN=${config.domain}`)} -addext ${quote(`subjectAltName=${subjectAltName}`)} -out "$workspace/request.csr"
+base64 -w0 "$workspace/request.csr"
+`,
+      onEvent,
+    );
+    return result.ok
+      ? ok({ csr: Buffer.from(result.value.stdout.trim(), 'base64').toString('utf8'), workspace })
+      : result;
+  }
+
+  async installOriginCertificate(
+    target: DeploymentTarget,
+    config: CertificateIssueConfig,
+    workspace: string,
+    certificate: string,
+    onEvent?: CertificateEventSink,
+  ): Promise<Result<CertificateDetails, DeploymentError>> {
+    if (!validWorkspace(workspace))
+      return err(new DeploymentError('The Origin CA certificate workspace is invalid'));
+    const live = `${config.certificateVolume}/live/${config.domain}`;
+    const backup = `${config.certificateVolume}/backups/${config.domain}-${Date.now()}`;
+    onEvent?.({
+      stream: 'step',
+      message: 'Installing the Cloudflare Origin CA certificate on the VPS',
+    });
+    const installed = await runPrivilegedRemote(
+      target,
+      `set -eu
+workspace=${quote(workspace)}
+live=${quote(live)}
+backup=${quote(backup)}
+mkdir -p ${quote(`${config.certificateVolume}/live`)} ${quote(`${config.certificateVolume}/backups`)}
+if [ -d "$live" ]; then mkdir -p "$backup"; cp -a "$live/." "$backup/"; fi
+mkdir -p "$live"
+printf '%s' ${quote(Buffer.from(certificate, 'utf8').toString('base64'))} | base64 -d > "$live/cert.pem"
+cp "$live/cert.pem" "$live/fullchain.pem"
+mv "$workspace/privkey.pem" "$live/privkey.pem"
+chmod 600 "$live/privkey.pem"
+chmod 644 "$live/cert.pem" "$live/fullchain.pem"
+openssl x509 -in "$live/cert.pem" -noout >/dev/null
+certificate_public=$(openssl x509 -in "$live/cert.pem" -pubkey -noout | openssl pkey -pubin -outform pem | sha256sum | awk '{print $1}')
+private_public=$(openssl pkey -in "$live/privkey.pem" -pubout -outform pem | sha256sum | awk '{print $1}')
+if [ "$certificate_public" != "$private_public" ]; then
+  rm -rf "$live"
+  if [ -d "$backup" ]; then mkdir -p "$live"; cp -a "$backup/." "$live/"; fi
+  echo 'Cloudflare certificate does not match the generated private key' >&2
+  exit 1
+fi
+rm -rf "$workspace"
+`,
+      onEvent,
+    );
+    if (!installed.ok) return installed;
+    return this.inspect(target, config.certificateVolume, config.domain);
+  }
+
+  async discardOriginCertificate(
+    target: DeploymentTarget,
+    workspace: string,
+  ): Promise<Result<void, DeploymentError>> {
+    if (!validWorkspace(workspace))
+      return err(new DeploymentError('The Origin CA certificate workspace is invalid'));
+    const result = await runPrivilegedRemote(target, `rm -rf ${quote(workspace)}`);
+    return result.ok ? ok(undefined) : result;
   }
 
   async list(
@@ -141,4 +232,7 @@ function field(text: string, prefix: string): string | null {
     .split('\n')
     .find((candidate) => candidate.toLowerCase().startsWith(prefix.toLowerCase()));
   return line ? line.slice(prefix.length).trim() : null;
+}
+function validWorkspace(value: string): boolean {
+  return /^\/tmp\/cloudforge-origin-[a-f0-9-]+$/i.test(value);
 }

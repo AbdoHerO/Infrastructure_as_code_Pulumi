@@ -261,4 +261,35 @@ describe('CloudflareApiProvider', () => {
     expect(result.ok && result.value.requests).toBe(100);
     expect(result.ok && result.value.countries[0]?.name).toBe('MA');
   });
+
+  it('creates an Origin CA certificate without exposing private-key material', async () => {
+    const api = new FakeTransport({
+      '/certificates': {
+        id: 'origin-1',
+        certificate: '-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----',
+        hostnames: ['example.com', '*.example.com'],
+        expires_on: '2041-07-16T00:00:00Z',
+        request_type: 'origin-ecc',
+      },
+    });
+
+    const result = await CloudflareApiProvider.fromTransport(api).createOriginCertificate({
+      csr: '-----BEGIN CERTIFICATE REQUEST-----\ncsr\n-----END CERTIFICATE REQUEST-----',
+      hostnames: ['example.com', '*.example.com'],
+      requestType: 'origin-ecc',
+      validityDays: 5475,
+    });
+
+    expect(result.ok && result.value.id).toBe('origin-1');
+    expect(api.calls[0]?.path).toBe('/certificates');
+    const rawBody = api.calls[0]?.init?.body;
+    expect(typeof rawBody).toBe('string');
+    const body = JSON.parse(typeof rawBody === 'string' ? rawBody : '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(body.request_type).toBe('origin-ecc');
+    expect(body.requested_validity).toBe(5475);
+    expect(body).not.toHaveProperty('privateKey');
+  });
 });

@@ -36,6 +36,7 @@ Choose the smallest set appropriate for the features you use:
 | Zone    | DNS: Edit                       | Create, edit, duplicate, and delete DNS           |
 | Zone    | Zone Settings: Read             | SSL, security and cache dashboard                 |
 | Zone    | Zone Settings: Edit             | SSL mode, HTTPS, TLS, Brotli and development mode |
+| Zone    | SSL and Certificates: Edit      | Create Cloudflare Origin CA certificates          |
 | Zone    | Cache Purge: Purge              | Purge zone cache                                  |
 | Zone    | Analytics: Read                 | Traffic analytics                                 |
 | Zone    | Firewall Services: Read         | WAF and managed-rule visibility                   |
@@ -130,6 +131,19 @@ or Full (strict). The SSL & Domains page therefore shows whether a domain is
 proxied, its Cloudflare encryption mode, and whether an origin certificate is
 required or recommended. Proxied verification compares the Cloudflare origin
 record with the VPS instead of incorrectly comparing Cloudflare edge IPs.
+
+CloudForge can now create the required VPS certificate directly. In **SSL &
+Domains**, select **Cloudflare Origin CA**, the Cloudflare credential, key type,
+validity, and optional wildcard coverage. The main process requests an Origin CA
+certificate from Cloudflare using a CSR generated on the VPS. It installs the
+certificate, validates/reloads the managed Nginx site, and enables Full (strict)
+and Always Use HTTPS. No certificate or private-key copy/paste is required.
+
+The only required manual Cloudflare preparation is creating/updating the API
+token so its Zone Resources include the domain and it has **SSL and
+Certificates: Edit**. DNS records and the zone must already be active. CloudForge
+does not require the Cloudflare dashboard's manual Origin Server certificate
+wizard.
 
 ## Automatic DNS and SSL
 

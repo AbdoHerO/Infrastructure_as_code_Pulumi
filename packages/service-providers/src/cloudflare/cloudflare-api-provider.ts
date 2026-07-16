@@ -6,6 +6,8 @@ import type {
   CloudflareDnsRecord,
   CloudflareDnsRecordInput,
   CloudflarePageRule,
+  CloudflareOriginCertificate,
+  CloudflareOriginCertificateInput,
   CloudflareRedirectRule,
   CloudflarePlatformSummary,
   CloudflareProvider,
@@ -79,6 +81,13 @@ interface RawRedirectRuleset {
   kind: string;
   phase: string;
   rules: readonly RawRedirectRule[];
+}
+interface RawOriginCertificate {
+  id: string;
+  certificate: string;
+  hostnames: string[];
+  expires_on: string;
+  request_type: 'origin-rsa' | 'origin-ecc';
 }
 
 export interface CloudflareApiTransport {
@@ -679,6 +688,29 @@ export class CloudflareApiProvider implements CloudflareProvider {
           }))
         : [],
     });
+  }
+
+  async createOriginCertificate(
+    input: CloudflareOriginCertificateInput,
+  ): Promise<Result<CloudflareOriginCertificate, ServiceProviderError>> {
+    const result = await this.api.request<RawOriginCertificate>(
+      '/certificates',
+      json('POST', {
+        csr: input.csr,
+        hostnames: input.hostnames,
+        request_type: input.requestType,
+        requested_validity: input.validityDays,
+      }),
+    );
+    return result.ok
+      ? ok({
+          id: result.value.id,
+          certificate: result.value.certificate,
+          hostnames: result.value.hostnames,
+          expiresAt: result.value.expires_on,
+          requestType: result.value.request_type,
+        })
+      : result;
   }
 }
 

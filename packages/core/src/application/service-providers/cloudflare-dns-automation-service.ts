@@ -177,7 +177,7 @@ export class CloudflareDnsAutomationService {
     const matchingZone = zones.value
       .filter((item) => normalized === item.name || normalized.endsWith(`.${item.name}`))
       .sort((a, b) => b.name.length - a.name.length)[0]?.id;
-    const zone = requestedZone ?? configuredZone ?? matchingZone;
+    const zone = requestedZone ?? matchingZone ?? configuredZone;
     if (!zone) return err(new ValidationError('No Cloudflare zone matches this domain'));
     const selectedZone = zones.value.find((item) => item.id === zone);
     if (!selectedZone)

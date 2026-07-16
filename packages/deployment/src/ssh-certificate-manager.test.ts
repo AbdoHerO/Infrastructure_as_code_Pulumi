@@ -38,4 +38,26 @@ describe('SshCertificateManager', () => {
     expect(command).toContain('netfilter-persistent save');
     expect(command).toContain('certbot/certbot certonly');
   });
+
+  it('generates an Origin CA private key on the VPS and returns only its CSR', async () => {
+    runPrivilegedRemote.mockResolvedValueOnce(
+      ok({
+        stdout: Buffer.from('-----BEGIN CERTIFICATE REQUEST-----\ncsr\n').toString('base64'),
+        stderr: '',
+      }),
+    );
+    const { SshCertificateManager } = await import('./ssh-certificate-manager.js');
+
+    const result = await new SshCertificateManager().prepareOriginCertificate(
+      target,
+      { ...config, authority: 'cloudflare-origin-ca', keyAlgorithm: 'ecc' },
+      ['example.com', '*.example.com'],
+    );
+
+    expect(result.ok && result.value.csr).toContain('BEGIN CERTIFICATE REQUEST');
+    const command = String(runPrivilegedRemote.mock.calls[0]?.[1]);
+    expect(command).toContain('openssl ecparam');
+    expect(command).toContain('subjectAltName=DNS:example.com,DNS:*.example.com');
+    expect(command).not.toContain('BEGIN PRIVATE KEY');
+  });
 });

@@ -7,6 +7,15 @@ export interface CertificateIssueConfig {
   readonly certificateVolume: string;
   readonly webrootVolume: string;
   readonly forceRenewal: boolean;
+  readonly authority?: 'letsencrypt' | 'cloudflare-origin-ca';
+  readonly cloudflareCredentialId?: string;
+  readonly includeWildcard?: boolean;
+  readonly keyAlgorithm?: 'rsa' | 'ecc';
+  readonly validityDays?: 7 | 30 | 90 | 365 | 730 | 1095 | 5475;
+}
+export interface OriginCertificateSigningRequest {
+  readonly csr: string;
+  readonly workspace: string;
 }
 export interface CertificateDetails {
   readonly domain: string;
@@ -43,6 +52,8 @@ export interface ManagedDnsCoordinator {
   verify?(
     domain: string,
     expectedIp: string,
+    credentialId?: string,
+    zoneId?: string,
   ): Promise<
     Result<
       {
@@ -73,6 +84,23 @@ export interface CertificateManager {
     config: CertificateIssueConfig,
     onEvent?: CertificateEventSink,
   ): Promise<Result<CertificateDetails, DeploymentError>>;
+  prepareOriginCertificate(
+    target: DeploymentTarget,
+    config: CertificateIssueConfig,
+    hostnames: readonly string[],
+    onEvent?: CertificateEventSink,
+  ): Promise<Result<OriginCertificateSigningRequest, DeploymentError>>;
+  installOriginCertificate(
+    target: DeploymentTarget,
+    config: CertificateIssueConfig,
+    workspace: string,
+    certificate: string,
+    onEvent?: CertificateEventSink,
+  ): Promise<Result<CertificateDetails, DeploymentError>>;
+  discardOriginCertificate(
+    target: DeploymentTarget,
+    workspace: string,
+  ): Promise<Result<void, DeploymentError>>;
   export(
     target: DeploymentTarget,
     certificateVolume: string,

@@ -4,8 +4,8 @@ import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 
 export function registerSslHandlers(): void {
-  registerHandler('ssl:verifyDns', async ({ targetId, domain }) =>
-    orThrow(await getContainer().sslService.verifyDns(targetId, domain)),
+  registerHandler('ssl:verifyDns', async ({ targetId, domain, cloudflareCredentialId }) =>
+    orThrow(await getContainer().sslService.verifyDns(targetId, domain, cloudflareCredentialId)),
   );
   registerHandler('ssl:list', async ({ targetId, certificateVolume }) =>
     orThrow(await getContainer().sslService.list(targetId, certificateVolume)),

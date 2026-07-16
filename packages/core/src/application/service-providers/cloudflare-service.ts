@@ -16,6 +16,8 @@ import type {
   CloudflareDnsRecordInput,
   CloudflareDnsBatchAction,
   CloudflarePageRule,
+  CloudflareOriginCertificate,
+  CloudflareOriginCertificateInput,
   CloudflareRedirectRule,
   CloudflarePlatformSummary,
   CloudflareProvider,
@@ -416,6 +418,57 @@ export class CloudflareService {
     return this.withProvider(credentialId, (provider) =>
       provider.platform(zone.value, account.value),
     );
+  }
+
+  async createOriginCertificate(
+    credentialId: string,
+    input: CloudflareOriginCertificateInput,
+  ): Promise<Result<CloudflareOriginCertificate, CloudflareFailure>> {
+    const zones = await this.zones(credentialId);
+    if (!zones.ok) return zones;
+    const covered = zones.value.some((zone) =>
+      input.hostnames.every((hostname) => {
+        const normalized = hostname.replace(/^\*\./, '').toLowerCase();
+        return normalized === zone.name || normalized.endsWith(`.${zone.name}`);
+      }),
+    );
+    if (!covered)
+      return err(
+        new ValidationError(
+          'The selected Cloudflare credential does not manage the requested certificate domain.',
+        ),
+      );
+    const result = await this.withProvider(credentialId, (provider) =>
+      provider.createOriginCertificate(input),
+    );
+    await this.record(
+      result.ok ? 'cloudflare.origin_certificate.created' : 'cloudflare.origin_certificate.failed',
+      `${result.ok ? 'Created' : 'Failed to create'} Cloudflare Origin CA certificate`,
+      { hostnames: input.hostnames, requestType: input.requestType },
+    );
+    return result;
+  }
+
+  async enableStrictSslForDomain(
+    credentialId: string,
+    domain: string,
+  ): Promise<Result<CloudflareZoneSettings, CloudflareFailure>> {
+    const zones = await this.zones(credentialId);
+    if (!zones.ok) return zones;
+    const normalized = domain.replace(/^\*\./, '').toLowerCase();
+    const zone = zones.value
+      .filter((item) => normalized === item.name || normalized.endsWith(`.${item.name}`))
+      .sort((left, right) => right.name.length - left.name.length)[0];
+    if (!zone)
+      return err(
+        new ValidationError(
+          'The selected Cloudflare credential does not manage this certificate domain.',
+        ),
+      );
+    return this.updateZoneSettings(credentialId, zone.id, {
+      sslMode: 'strict',
+      alwaysHttps: true,
+    });
   }
 
   private async withProvider<T>(

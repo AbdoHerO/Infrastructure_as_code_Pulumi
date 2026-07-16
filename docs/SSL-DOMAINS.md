@@ -3,6 +3,24 @@
 **Manage → SSL & Domains** uses saved `VpsTarget` records and never sends SSH
 secrets to the renderer.
 
+## Choose the certificate mode
+
+CloudForge supports two origin strategies from the same page:
+
+- **Cloudflare Origin CA** — for orange-cloud proxied domains managed by a
+  Cloudflare credential. CloudForge creates the private key and CSR on the VPS,
+  requests the certificate through the Cloudflare API, installs it, validates
+  and reloads Nginx, and changes the zone to **Full (strict)** with Always Use
+  HTTPS. The private key never leaves the VPS.
+- **Let's Encrypt** — for DNS-only or non-Cloudflare domains reached directly
+  from the public internet. CloudForge uses the existing ACME webroot/Certbot
+  workflow and manages renewal.
+
+For Cloudflare Origin CA, the selected API token needs **Zone → SSL and
+Certificates → Edit**, in addition to Zone/DNS Read and the Zone Settings
+permissions used by verification and Full (strict). The token can be restricted
+to the zones CloudForge manages.
+
 ## Before issuing a certificate
 
 1. Select the VPS target that runs the matching Nginx site.
@@ -12,7 +30,7 @@ secrets to the renderer.
    real host port.
 4. Create the A/AAAA or CNAME record in **Cloudflare** or the authoritative DNS
    provider.
-5. Enter any monitored mailbox you control in **Let's Encrypt email**. It is not
+5. For Let's Encrypt, enter any monitored mailbox you control in **Let's Encrypt email**. It is not
    a special address issued by Let's Encrypt; it is used for ACME registration
    and important certificate notices.
 
@@ -20,7 +38,33 @@ secrets to the renderer.
 certificate volume. It does not issue a new certificate. A new VPS therefore
 normally shows zero until the first successful issuance.
 
-## Safe issuance workflow
+## Cloudflare Origin CA workflow
+
+After updating the Cloudflare token permission, no certificate work is required
+in the Cloudflare dashboard:
+
+1. select **Cloudflare Origin CA** and the stored Cloudflare credential;
+2. optionally enable wildcard coverage for the selected base domain;
+3. choose ECDSA P-256 or RSA 2048 and the validity period;
+4. verify DNS, then select **Issue certificate**.
+
+CloudForge generates the key and CSR through the selected `VpsTarget`, calls
+Cloudflare from the Electron main process, installs the returned certificate
+under the configured certificate volume, confirms that its public key matches
+the private key, backs up an existing certificate, applies the Nginx site using
+the normal validation/rollback transaction, and finally enables Full (strict).
+Only the CSR is sent to Cloudflare. The API token, private key, and certificate
+content are never sent to React.
+
+Wildcard coverage creates SANs for the selected domain and one-level wildcard,
+for example `hanoutplus.ma` and `*.hanoutplus.ma`. It does not cover a deeper
+name such as `x.api.hanoutplus.ma`.
+
+Origin CA certificates are trusted by Cloudflare, not by browsers connecting
+directly to the VPS. Keep the DNS record proxied. Use Let's Encrypt when clients
+must connect directly to the origin.
+
+## Let's Encrypt safe issuance workflow
 
 The issuance workflow is:
 
@@ -56,9 +100,9 @@ origin certificate. Prefer **Full (strict)** after the VPS certificate is
 installed. Do not treat a Cloudflare edge certificate as a replacement for the
 origin certificate.
 
-The webroot workflow issues exact domains. Wildcard certificates require DNS-01
-and are rejected with an explicit message until a DNS-provider adapter is
-configured; existing wildcard certificates are still discovered and displayed.
+The Let's Encrypt webroot workflow issues exact domains. Wildcard coverage in
+the current UI is provided by Cloudflare Origin CA for proxied domains; public
+Let's Encrypt wildcard certificates will require a future DNS-01 workflow.
 
 Managed registrations are stored in Settings. The main process checks them on
 startup and at the configured interval. It renews certificates at or below the
@@ -87,5 +131,10 @@ must never be logged or included in Activity metadata.
   credential with Zone/DNS Read access so origin-aware verification can run.
 - **Certbot fails** — verify public port 80, Nginx webroot routing, outbound HTTPS,
   email syntax, and Let's Encrypt rate limits in the live error details.
+- **Origin CA request is denied** — update the selected token with **Zone → SSL
+  and Certificates → Edit**, confirm its Zone Resources include the domain, then
+  test the Cloudflare connection again.
+- **Origin certificate works through Cloudflare but not by VPS IP** — expected:
+  Origin CA is not a public browser trust chain. Keep the record proxied.
 - **Certificate exists but HTTPS fails** — open the Nginx site, confirm its
   certificate path and SSL status, run `nginx -t` through CloudForge, then reload.

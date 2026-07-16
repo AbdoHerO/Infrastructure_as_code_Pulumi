@@ -174,6 +174,21 @@ export interface CloudflarePlatformSummary {
   readonly gatewayRules: readonly { id: string; name: string; enabled: boolean }[];
 }
 
+export interface CloudflareOriginCertificateInput {
+  readonly csr: string;
+  readonly hostnames: readonly string[];
+  readonly requestType: 'origin-rsa' | 'origin-ecc';
+  readonly validityDays: 7 | 30 | 90 | 365 | 730 | 1095 | 5475;
+}
+
+export interface CloudflareOriginCertificate {
+  readonly id: string;
+  readonly certificate: string;
+  readonly hostnames: readonly string[];
+  readonly expiresAt: string;
+  readonly requestType: 'origin-rsa' | 'origin-ecc';
+}
+
 export interface CloudflareProvider extends ServiceProvider {
   readonly kind: 'cloudflare';
   account(): Promise<Result<CloudflareAccount, ServiceProviderError>>;
@@ -229,4 +244,7 @@ export interface CloudflareProvider extends ServiceProvider {
     zoneId: string,
     accountId: string,
   ): Promise<Result<CloudflarePlatformSummary, ServiceProviderError>>;
+  createOriginCertificate(
+    input: CloudflareOriginCertificateInput,
+  ): Promise<Result<CloudflareOriginCertificate, ServiceProviderError>>;
 }
