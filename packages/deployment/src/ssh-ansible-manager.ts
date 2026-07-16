@@ -30,6 +30,7 @@ import {
   toNginxSite,
 } from './nginx-site-file.js';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
+import { detectBackendScript, portStateFunction } from './host-firewall-script.js';
 import {
   buildPreflightReport,
   ownedService,
@@ -457,20 +458,11 @@ function parseSiteBlock(block: string): NginxSite | null {
 
 const PROFILE_STATE_COMMAND = `set -u
 if [ "$(id -u)" -eq 0 ]; then S=''; else S='sudo -n'; fi
+PATH="$PATH:/usr/sbin:/sbin"; export PATH
 clean() { printf '%s' "$1" | tr '\\n|' '  '; }
-firewall_state() {
-  port="$1"
-  if command -v ufw >/dev/null 2>&1 && $S ufw status 2>/dev/null | grep -q '^Status: active'; then
-    $S ufw status 2>/dev/null | grep -Eq "(^|[[:space:]])$port/tcp[[:space:]].*ALLOW" && printf open || printf closed
-  elif command -v firewall-cmd >/dev/null 2>&1 && $S systemctl is-active --quiet firewalld; then
-    $S firewall-cmd --quiet --query-port="$port/tcp" && printf open || printf closed
-  elif command -v iptables >/dev/null 2>&1; then
-    if $S iptables -C INPUT -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT 2>/dev/null; then printf open
-    elif $S iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; then printf open
-    elif $S iptables -S INPUT 2>/dev/null | grep -Eq -- '-j (REJECT|DROP)'; then printf closed
-    else printf open; fi
-  else printf unknown; fi
-}
+backend=$(${detectBackendScript('$S ')})
+${portStateFunction('$S ')}
+firewall_state() { cloudforge_port_state "$1" tcp; }
 emit() { config="\${8-}"; printf 'CF_PROFILE|%s|%s|%s|%s|%s|%s|%s|%s\\n' "$1" "$2" "$3" "$(clean "$4")" "$5" "$6" "$(clean "$7")" "$(clean "$config")"; }
 
 if command -v docker >/dev/null 2>&1; then

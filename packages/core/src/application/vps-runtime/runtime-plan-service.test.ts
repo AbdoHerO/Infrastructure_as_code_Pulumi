@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DeploymentError,
+  err,
   ok,
   NotFoundError,
   PersistenceError,
@@ -21,7 +22,9 @@ import type {
   RuntimeInspector,
   RuntimeObservation,
 } from '../ports/runtime-inspector.js';
+import type { NativeServiceRequirements } from '../ports/native-service-requirements.js';
 import type { RuntimePlanStore } from '../ports/runtime-plan-store.js';
+import type { FirewallRequirement } from './firewall-requirements.js';
 import type { RuntimeOperation } from './runtime-operations.js';
 import { RUNTIME_LABELS } from './runtime-ownership.js';
 import { RuntimePlanService } from './runtime-plan-service.js';
@@ -131,6 +134,18 @@ function build() {
     close: closeFirewall,
   };
 
+  // Native services default to none, so every test written before they existed
+  // sees exactly the requirements its plan asks for and nothing else.
+  let native: Result<readonly FirewallRequirement[], DeploymentError> = ok([]);
+  const setNative = (next: Result<readonly FirewallRequirement[], DeploymentError>): void => {
+    native = next;
+  };
+  const nativeRequirements = vi.fn(
+    (_target: DeploymentTarget): Promise<Result<readonly FirewallRequirement[], DeploymentError>> =>
+      Promise.resolve(native),
+  );
+  const nativeServices: NativeServiceRequirements = { requirements: nativeRequirements };
+
   const service = new RuntimePlanService(
     plans,
     targets,
@@ -138,6 +153,7 @@ function build() {
     activities,
     applier,
     hostFirewall,
+    nativeServices,
   );
   return {
     service,
@@ -153,6 +169,8 @@ function build() {
     inspectFirewall,
     openFirewall,
     closeFirewall,
+    setNative,
+    nativeRequirements,
   };
 }
 
@@ -845,6 +863,51 @@ describe('RuntimePlanService', () => {
 
       expect((await ctx.service.connectivity(TARGET)).ok).toBe(false);
     });
+
+    it('reports the ports a natively installed service needs', async () => {
+      // A Jenkins on 8080 and a Compose service on 8080 are the same kind of fact
+      // to a firewall. Reporting only the plan's half is how a target gets called
+      // fully reachable while its Jenkins is firewalled off.
+      ctx.setNative(
+        ok([
+          { port: 8080, protocol: 'tcp', reason: 'Jenkins web interface', requiredBy: ['Jenkins'] },
+        ]),
+      );
+
+      const result = await ctx.service.connectivity(TARGET);
+
+      expect(result.ok && result.value.requirements).toEqual([
+        { port: 8080, protocol: 'tcp', reason: 'Jenkins web interface', requiredBy: ['Jenkins'] },
+      ]);
+    });
+
+    it('folds a port the plan and a native service both need into one requirement', async () => {
+      await withRoute();
+      ctx.setNative(
+        ok([{ port: 80, protocol: 'tcp', reason: 'HTTP traffic', requiredBy: ['Nginx'] }]),
+      );
+
+      const result = await ctx.service.connectivity(TARGET);
+      const port80 = result.ok ? result.value.requirements.filter((r) => r.port === 80) : [];
+
+      expect(port80).toHaveLength(1);
+      expect(port80[0]?.requiredBy).toContain('Nginx');
+    });
+
+    it('still reports the plan when the native services cannot be read', async () => {
+      // One unavailable source is not a reason to refuse the whole answer — but
+      // it is a reason to say so, so nobody reads a short list as "nothing else
+      // is required".
+      await withRoute();
+      ctx.setNative(err(new DeploymentError('ssh timed out')));
+
+      const result = await ctx.service.connectivity(TARGET);
+
+      expect(result.ok && result.value.requirements.some((r) => r.port === 80)).toBe(true);
+      expect(ctx.recordSafe.mock.calls.at(-1)?.[0]).toMatchObject({
+        type: 'runtime.firewall.partial',
+      });
+    });
   });
 
   describe('openRequiredPorts', () => {
@@ -885,6 +948,22 @@ describe('RuntimePlanService', () => {
 
       expect(result.ok).toBe(true);
       expect(ctx.openFirewall.mock.calls[0]?.[1]).toEqual([{ port: 25565, protocol: 'tcp' }]);
+    });
+
+    it('opens the ports a natively installed service needs too', async () => {
+      // Otherwise the connectivity screen lists Jenkins' port as required, the
+      // user asks to open the required ports, and that one stays closed.
+      await withDirectService();
+      ctx.setNative(
+        ok([{ port: 8080, protocol: 'tcp', reason: 'Jenkins', requiredBy: ['Jenkins'] }]),
+      );
+
+      await ctx.service.openRequiredPorts(TARGET);
+
+      expect(ctx.openFirewall.mock.calls[0]?.[1]).toEqual([
+        { port: 8080, protocol: 'tcp' },
+        { port: 25565, protocol: 'tcp' },
+      ]);
     });
 
     it('never closes anything', async () => {

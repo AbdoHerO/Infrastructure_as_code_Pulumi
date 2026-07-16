@@ -7,8 +7,11 @@ import {
   inspectScript,
   isValidPort,
   openPortsFragment,
+  openPortsPreamble,
   openPortsScript,
   parseFirewallState,
+  persistIfChanged,
+  portStateFunction,
 } from './host-firewall-script.js';
 
 const HTTP = [{ port: 80, protocol: 'tcp' as const }];
@@ -58,6 +61,98 @@ describe('shell syntax', () => {
     const embedded = `set -e\necho before\n${openPortsFragment(BOTH)}\necho after`;
 
     expect(parsesAsShell(embedded)).toBe(true);
+  });
+});
+
+describe('openPortsPreamble', () => {
+  // The Ansible playbook builds its own call because its port is a Jinja
+  // expression. These prove the pieces still fit together the way it assembles
+  // them, and that `openPortsScript` and the playbook cannot drift apart again.
+  it('composes into a parsing script the way the playbook assembles one', () => {
+    const script = `set -eu
+${openPortsPreamble()}
+cloudforge_open "8080" tcp
+${persistIfChanged()}
+echo "cloudforge_changed=$changed"`;
+
+    expect(parsesAsShell(script)).toBe(true);
+  });
+
+  it('is the same text openPortsScript is built from', () => {
+    expect(openPortsScript(HTTP)).toContain(openPortsPreamble());
+    expect(openPortsScript(HTTP)).toContain(persistIfChanged());
+  });
+
+  it('leaves a port unrendered by Jinja as a single shell word', () => {
+    // The playbook interpolates `{{ service_port }}` before Ansible resolves it.
+    // It has to parse as shell in that state too, or the syntax check fails
+    // before the value ever exists.
+    expect(parsesAsShell(`${openPortsPreamble()}\ncloudforge_open "{{ service_port }}" tcp`)).toBe(
+      true,
+    );
+  });
+});
+
+describe('portStateFunction', () => {
+  const callable = (script: string): string =>
+    `backend=ufw\n${script}\ncloudforge_port_state 80 tcp`;
+
+  it('generates a script that parses', () => {
+    expect(parsesAsShell(callable(portStateFunction()))).toBe(true);
+    expect(parsesAsShell(callable(portStateFunction('$S ')))).toBe(true);
+  });
+
+  it('knows nftables, which the probe copy of this never did', () => {
+    // On an nftables host the old probe either answered `unknown` forever or read
+    // the iptables shim, missed CloudForge's own table, and called an open port
+    // closed.
+    const script = portStateFunction();
+
+    expect(script).toContain('nftables)');
+    expect(script).toContain('nft list ruleset');
+  });
+
+  it('answers open when a firewall is installed but not running', () => {
+    // Nothing is filtering, so the port really is reachable. `unknown` here sends
+    // someone hunting a firewall that is switched off.
+    expect(portStateFunction()).toMatch(/none\)\n\s*printf open/);
+  });
+
+  it('answers unknown only when no firewall tool exists at all', () => {
+    expect(portStateFunction()).toMatch(/\*\)\n\s*printf unknown/);
+  });
+
+  it('counts a rule CloudForge did not add as open', () => {
+    // A port opened by hand is open. Calling it closed because the marker is
+    // missing would contradict the host.
+    expect(portStateFunction()).toContain('--dport "$port" -j ACCEPT');
+  });
+
+  it('escalates only the commands that need root', () => {
+    const script = portStateFunction('$S ');
+
+    expect(script).toContain('$S ufw status');
+    expect(script).toContain('$S nft list ruleset');
+    expect(script).toContain('$S iptables -C INPUT');
+    expect(script).not.toContain('$S printf');
+  });
+
+  it('escalates nothing by default', () => {
+    // Every other caller is already inside a script `runPrivilegedScript` runs as
+    // root, where a second sudo would be noise at best.
+    expect(portStateFunction()).not.toContain('sudo');
+    expect(portStateFunction()).not.toContain('$S');
+  });
+});
+
+describe('detectBackendScript', () => {
+  it('escalates the reads but never the builtin that finds the binary', () => {
+    const script = detectBackendScript('$S ');
+
+    expect(script).toContain('$S ufw status');
+    expect(script).toContain('$S nft list ruleset');
+    // `command -v` is a shell builtin. sudo cannot run it, and it needs no root.
+    expect(script).not.toContain('$S command -v');
   });
 });
 

@@ -65,15 +65,22 @@ function assertPorts(ports: readonly FirewallPort[]): void {
  * nftables is checked before iptables because on a modern distro `iptables` is
  * usually a compatibility shim over nftables. Driving the shim while reading the
  * real table is how rules appear to vanish.
+ *
+ * `sudo` prefixes the commands that need root. Most callers leave it empty
+ * because `runPrivilegedScript` already runs the whole script as root. The
+ * Ansible profile probe cannot: it is one unprivileged command that escalates
+ * per call, so it passes its own `'$S '` — a shell variable it sets to `sudo -n`
+ * or to nothing. Reading a firewall needs root on every backend, and an
+ * unprivileged `ufw status` fails in a way that looks exactly like "no firewall".
  */
-export function detectBackendScript(): string {
-  return `if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+export function detectBackendScript(sudo = ''): string {
+  return `if command -v ufw >/dev/null 2>&1 && ${sudo}ufw status 2>/dev/null | grep -q '^Status: active'; then
   printf ufw
-elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+elif command -v firewall-cmd >/dev/null 2>&1 && ${sudo}systemctl is-active --quiet firewalld 2>/dev/null; then
   printf firewalld
-elif command -v nft >/dev/null 2>&1 && nft list ruleset >/dev/null 2>&1; then
+elif command -v nft >/dev/null 2>&1 && ${sudo}nft list ruleset >/dev/null 2>&1; then
   printf nftables
-elif command -v iptables >/dev/null 2>&1 && iptables -S >/dev/null 2>&1; then
+elif command -v iptables >/dev/null 2>&1 && ${sudo}iptables -S >/dev/null 2>&1; then
   printf iptables
 elif command -v ufw >/dev/null 2>&1 || command -v firewall-cmd >/dev/null 2>&1; then
   printf none
@@ -115,6 +122,24 @@ nft list chain inet ${NFT_TABLE} ${NFT_CHAIN} >/dev/null 2>&1 || nft add chain i
 export function openPortsScript(ports: readonly FirewallPort[]): string {
   assertPorts(ports);
   const calls = ports.map((p) => `cloudforge_open ${String(p.port)} ${p.protocol}`).join('\n');
+  return `${openPortsPreamble()}
+${calls}
+${persistIfChanged()}
+if [ "$changed" = 1 ]; then printf changed; else printf unchanged; fi`;
+}
+
+/**
+ * Everything `openPortsScript` needs before the first port: `$changed`,
+ * `$backend`, and the `cloudforge_open` function itself.
+ *
+ * Exported for the one caller that cannot use `openPortsScript` — the Ansible
+ * playbook, whose port is a Jinja expression (`{{ service_port }}`) that does not
+ * exist yet when this string is built, so there is no number to hand in. It emits
+ * its own `cloudforge_open "{{ service_port }}" tcp` instead. The playbook's
+ * value is validated as an integer before it is ever rendered, so nothing
+ * unchecked reaches the shell.
+ */
+export function openPortsPreamble(): string {
   return `changed=0
 backend=$(${detectBackendScript()})
 cloudforge_open() {
@@ -134,12 +159,72 @@ cloudforge_open() {
       iptables -C INPUT -p "$proto" --dport "$port" -m comment --comment '${FIREWALL_MARKER}' -j ACCEPT 2>/dev/null || { iptables -I INPUT 1 -p "$proto" --dport "$port" -m comment --comment '${FIREWALL_MARKER}' -j ACCEPT && changed=1; }
       ;;
   esac
+}`;
 }
-${calls}
-if [ "$changed" = 1 ] && [ "$backend" = iptables ]; then
+
+/**
+ * Persist the rules, but only if something was added and only on iptables.
+ *
+ * Split out of `openPortsScript` so the Ansible playbook, which emits its own
+ * `cloudforge_open` call rather than one this module generated, cannot forget the
+ * step and leave behind a rule that works until the host reboots.
+ */
+export function persistIfChanged(): string {
+  return `if [ "$changed" = 1 ] && [ "$backend" = iptables ]; then
 ${persistIptables()}
-fi
-if [ "$changed" = 1 ]; then printf changed; else printf unchanged; fi`;
+fi`;
+}
+
+/**
+ * Answer `open`, `closed` or `unknown` for a single port.
+ *
+ * The Ansible profile probe reports one firewall verdict per service, inline and
+ * next to that service's port, so it needs a per-port answer rather than the
+ * whole ruleset `inspectScript` returns. Its own copy of this had drifted
+ * furthest of the five: it had no nftables branch at all. On a host where
+ * nftables is the real filter that copy either answered `unknown` forever, or —
+ * worse — read the iptables compatibility shim, failed to see CloudForge's own
+ * `inet cloudforge` table, and reported a port as closed while it was open.
+ *
+ * Emits a function and expects `$backend` to be set already, so a probe checking
+ * several ports detects the backend once rather than once per port.
+ *
+ * A host whose firewall is installed but not running answers `open` rather than
+ * `unknown`: nothing is filtering, so the port really is reachable, and that is a
+ * fact rather than the absence of one. Only a host with no firewall tool at all
+ * is `unknown`. The `iptables` and `nftables` branches say `open` when they find
+ * no blocking rule for the same reason — a ruleset that accepts by default and
+ * rejects nothing is not blocking the port, however few rules it has.
+ */
+export function portStateFunction(sudo = ''): string {
+  return `cloudforge_port_state() {
+  port="$1"; proto="\${2:-tcp}"
+  case "$backend" in
+    ufw)
+      ${sudo}ufw status 2>/dev/null | grep -Eq "(^|[[:space:]])$port/$proto[[:space:]].*ALLOW" && printf open || printf closed
+      ;;
+    firewalld)
+      ${sudo}firewall-cmd --quiet --query-port="$port/$proto" 2>/dev/null && printf open || printf closed
+      ;;
+    nftables)
+      if ${sudo}nft list ruleset 2>/dev/null | grep -E "$proto dport" | grep -qE "(^|[^0-9])$port[^0-9]"; then printf open
+      elif ${sudo}nft list ruleset 2>/dev/null | grep -qE 'policy (drop|reject)'; then printf closed
+      else printf open; fi
+      ;;
+    iptables)
+      if ${sudo}iptables -C INPUT -p "$proto" --dport "$port" -m comment --comment '${FIREWALL_MARKER}' -j ACCEPT 2>/dev/null; then printf open
+      elif ${sudo}iptables -C INPUT -p "$proto" --dport "$port" -j ACCEPT 2>/dev/null; then printf open
+      elif ${sudo}iptables -S INPUT 2>/dev/null | grep -Eq -- '-j (REJECT|DROP)'; then printf closed
+      else printf open; fi
+      ;;
+    none)
+      printf open
+      ;;
+    *)
+      printf unknown
+      ;;
+  esac
+}`;
 }
 
 /**

@@ -13,6 +13,7 @@ export { SshCertificateManager } from './ssh-certificate-manager.js';
 export { NodeSshTerminalManager } from './ssh-terminal-manager.js';
 export { JenkinsHttpManager } from './jenkins-http-manager.js';
 export * from './host-firewall-script.js';
+export { AnsibleNativeServiceRequirements } from './ansible-native-service-requirements.js';
 export { SshHostFirewallManager } from './ssh-host-firewall-manager.js';
 export { SshRuntimeApplier, commandFor } from './ssh-runtime-applier.js';
 export { SshRuntimeInspector } from './ssh-runtime-inspector.js';

@@ -37,6 +37,7 @@ import {
   NodeSshKeyGenerator,
   SshAnsibleManager,
   SshContainerManager,
+  AnsibleNativeServiceRequirements,
   SshHostFirewallManager,
   SshRuntimeApplier,
   SshRuntimeInspector,
@@ -270,6 +271,7 @@ export async function initContainer(): Promise<AppContainer> {
     activityService,
     new SshRuntimeApplier(),
     new SshHostFirewallManager(),
+    new AnsibleNativeServiceRequirements(ansibleManager),
   );
   const sshTerminalService = new SshTerminalService(
     remoteTargetResolver,

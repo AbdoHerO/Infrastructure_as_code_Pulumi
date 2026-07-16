@@ -11,7 +11,9 @@ import {
   ValidationError,
 } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
+import type { DeploymentTarget } from '../ports/deployer.js';
 import type { HostFirewallManager, HostFirewallState } from '../ports/host-firewall.js';
+import type { NativeServiceRequirements } from '../ports/native-service-requirements.js';
 import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
 import type {
   RuntimeApplier,
@@ -28,6 +30,7 @@ import {
   type FirewallRequirement,
   type FirewallView,
 } from './firewall-requirements.js';
+import { mergeFirewallRequirements } from './ansible-runtime-requirements.js';
 import { detectRuntimeDrift, type RuntimeDriftReport } from './runtime-drift.js';
 import {
   destructiveNames,
@@ -121,7 +124,43 @@ export class RuntimePlanService {
     private readonly activities: ActivityService,
     private readonly applier?: RuntimeApplier,
     private readonly hostFirewall?: HostFirewallManager,
+    private readonly nativeServices?: NativeServiceRequirements,
   ) {}
+
+  /**
+   * Every port this target needs open, from the plan and from what is natively
+   * installed on it.
+   *
+   * One list, because a firewall does not care which half of CloudForge asked for
+   * a port. Reporting the plan's ports and the native services' ports separately
+   * is how the connectivity screen ends up showing 80 twice, and how "open the
+   * required ports" ends up opening a different set than the one it just listed.
+   *
+   * A native-service lookup that fails is not an error here. It means one source
+   * of requirements is unavailable, and the plan's own requirements are still
+   * worth reporting — refusing to answer at all would be a worse outcome than an
+   * incomplete answer, provided the incompleteness cannot be mistaken for
+   * "nothing is required". Nothing here ever claims a port is reachable.
+   */
+  private async requirementsFor(
+    targetId: string,
+    plan: VpsRuntimePlan,
+    target: DeploymentTarget,
+  ): Promise<readonly FirewallRequirement[]> {
+    const planned = firewallRequirements(plan);
+    if (!this.nativeServices) return planned;
+    const native = await this.nativeServices.requirements(target);
+    if (!native.ok) {
+      this.activities.recordSafe({
+        type: 'runtime.firewall.partial',
+        message:
+          'Could not read the natively installed services, so their ports are missing from this report',
+        metadata: { targetId, reason: native.error.message },
+      });
+      return planned;
+    }
+    return mergeFirewallRequirements(planned, native.value);
+  }
 
   /**
    * Load a target's plan, or the empty legacy plan if it has never had one.
@@ -368,7 +407,7 @@ export class RuntimePlanService {
     const host = await this.hostFirewall.inspect(target.value);
     if (!host.ok) return host;
 
-    const requirements = firewallRequirements(loaded.value.plan);
+    const requirements = await this.requirementsFor(targetId, loaded.value.plan, target.value);
     return ok({
       targetId,
       planVersion: loaded.value.plan.version,
@@ -401,9 +440,12 @@ export class RuntimePlanService {
         ),
       );
 
-    const requirements = firewallRequirements(plan);
     const target = await this.targets.resolve(targetId);
     if (!target.ok) return target;
+    // The same list `connectivity` reports. Opening a different set than the one
+    // just shown to the user is how a screen ends up saying a port is required,
+    // being told to open it, and leaving it closed.
+    const requirements = await this.requirementsFor(targetId, plan, target.value);
     const result = await this.hostFirewall.open(
       target.value,
       requirements.map((r) => ({ port: r.port, protocol: r.protocol })),
