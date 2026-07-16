@@ -99,6 +99,21 @@ deploys validated Compose YAML. It uses the same synchronized VPS Target
 selector as Ansible, Nginx, SSL, and Deployments. The Docker API is never exposed over an
 unauthenticated TCP socket. Channels: `containers:*`.
 
+## VPS Runtime (`/vps-runtime`)
+
+The authoritative model of a target's container topology: networks, service
+attachments and aliases, published versus loopback ports, ownership, and the
+firewall ports the arrangement needs. Reports drift between the plan and the VPS,
+and whether each required port can actually carry traffic on both the host
+firewall and the cloud security list.
+
+Read-only except for one apply, which needs a preview token bound to that exact
+change plus an exact-name confirmation for anything destructive. Every target
+starts in `legacy` mode, where CloudForge inspects and never writes. A resource
+CloudForge does not own is never drift, and adoption is a plan edit that touches
+the VPS not at all — Docker labels are immutable after creation, so it cannot be
+anything else. Channels: `runtime:*`. See [VPS-RUNTIME.md](VPS-RUNTIME.md).
+
 ## Ansible (`/ansible`)
 
 Configure any reachable Linux VPS with an SSH key or password and a pinned host

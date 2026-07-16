@@ -20,6 +20,8 @@ backup/restore and the packaged update workflow are implemented.
 | [Amazon Web Services](AWS.md)                       | Configure AWS, attach projects, discover EC2, and Preview/Apply/Destroy VPC, EC2 and EBS infrastructure           |
 | [Ansible & Nginx](ANSIBLE.md)                       | Configure any VPS, run generic profiles, and safely manage domain-to-port Nginx routes                            |
 | [Nginx Manager](NGINX-MANAGER.md)                   | Dedicated per-target Nginx dashboard, editor, logs, backups, validation, reload, and rollback                     |
+| [VPS Runtime](VPS-RUNTIME.md)                       | The authoritative topology model: networks, ownership, adoption, drift, preview/apply, and firewall requirements  |
+| [Runtime migration](RUNTIME-MIGRATION.md)           | What the unified runtime model changes on an existing VPS (nothing), and how to verify that yourself              |
 | [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
 | [SSL & Domains](SSL-DOMAINS.md)                     | Cloudflare Origin CA and Let’s Encrypt issuance, inspection, Nginx integration, rollback, and renewal             |
 | [Cloudflare](CLOUDFLARE.md)                         | Account, zones, DNS, SSL/TLS, cache, analytics, security and edge-service integration                             |

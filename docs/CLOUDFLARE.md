@@ -68,6 +68,32 @@ Deleting a zone removes it from Cloudflare, not merely from CloudForge. Keep
 
 ## DNS management
 
+### Records CloudForge did not create
+
+Automatic DNS — the records a Jenkins pipeline's domain automation prepares —
+only ever changes records CloudForge itself created. Ownership is read from the
+record's comment, which carries `Managed by CloudForge`. Record tags would be
+neater but are not available on every Cloudflare plan, and a marker only some
+accounts can carry is not a marker.
+
+A record without that marker is handled by what it already says:
+
+- **Pointing somewhere else** — refused, naming the address that is there, the
+  address CloudForge wanted, and the two ways forward: point it at the VPS
+  yourself, or delete it. Either done in Cloudflare is the explicit consent, given
+  by the person who owns the record.
+- **Already pointing at the VPS** — left entirely alone. There is nothing to
+  change, and nothing to claim: stamping the marker on someone else's record would
+  let a later CloudForge action withdraw a record it never created. A CNAME does
+  not qualify even when it resolves to the right address, because whoever owns the
+  target can repoint it without warning.
+
+DNS has no undo and no preview. A wrong answer is cached by resolvers worldwide
+long before anyone notices, which is why this errs toward refusing.
+
+The DNS editor below is unaffected: records you create and edit there are yours,
+made deliberately.
+
 The DNS editor supports A, AAAA, CNAME, TXT, MX, SRV, CAA, NS, PTR, HTTPS,
 TLSA, SSHFP, URI, and SVCB records. Generic Laravel, Node, Next.js, WordPress,
 mail, API, subdomain, and load-balancer templates prefill the visual editor.
