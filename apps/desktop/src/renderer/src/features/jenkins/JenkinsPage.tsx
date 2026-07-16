@@ -152,7 +152,10 @@ export function JenkinsPage(): JSX.Element {
       Object.fromEntries(
         status.data.parameters.map((parameter) => [
           parameter.name,
-          parameter.name === 'CLOUDFORGE_ENV_CREDENTIAL_ID'
+          // A managed parameter always shows the value CloudForge will send. It
+          // used to be a hardcoded list of one name here, which is why HOST_PORT
+          // stayed editable and a typed-over value survived a refresh.
+          parameter.managed
             ? parameter.defaultValue
             : (current[parameter.name] ?? parameter.defaultValue),
         ]),
@@ -732,7 +735,12 @@ export function JenkinsPage(): JSX.Element {
                   <Field key={parameter.name} label={parameter.name}>
                     <BuildParameterInput
                       parameter={parameter}
-                      value={buildValues[parameter.name] ?? parameter.defaultValue}
+                      value={
+                        parameter.managed
+                          ? parameter.defaultValue
+                          : (buildValues[parameter.name] ?? parameter.defaultValue)
+                      }
+                      readOnly={parameter.managed === true}
                       onChange={(value) =>
                         setBuildValues({ ...buildValues, [parameter.name]: value })
                       }
@@ -799,6 +807,25 @@ function ParameterEditor({
   readonly onChange: (value: JenkinsParameter) => void;
   readonly onRemove: () => void;
 }): JSX.Element {
+  // A parameter CloudForge derives from the pipeline's own settings. Offering
+  // fields that the next save silently overwrites is worse than offering none:
+  // it reads as a choice the user does not actually have.
+  const managed = parameter.managed === true;
+  if (managed) {
+    return (
+      <div className="border-border bg-muted/40 space-y-1 rounded-md border p-3">
+        <div className="flex items-center justify-between gap-2">
+          <code className="text-sm font-medium">{parameter.name}</code>
+          <span className="text-muted-foreground bg-muted rounded px-2 py-0.5 text-xs">
+            Managed by CloudForge
+          </span>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          {parameter.description || 'Set from this pipeline’s own settings.'}
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="border-border space-y-2 rounded-md border p-3">
       <div className="grid gap-2 md:grid-cols-[1fr_140px_1fr_auto]">
@@ -853,14 +880,26 @@ function BuildParameterInput({
   parameter,
   value,
   onChange,
+  readOnly = false,
 }: {
   readonly parameter: JenkinsParameter;
   readonly value: string;
   readonly onChange: (value: string) => void;
+  /**
+   * CloudForge sets this parameter's value, so the field reports it rather than
+   * collecting it. The main process enforces the same thing regardless of what
+   * this form sends — this only stops the UI from inviting an edit it will then
+   * silently discard.
+   */
+  readonly readOnly?: boolean;
 }): JSX.Element {
   if (parameter.type === 'boolean') {
     return (
-      <Select value={value || 'false'} onChange={(event) => onChange(event.target.value)}>
+      <Select
+        value={value || 'false'}
+        disabled={readOnly}
+        onChange={(event) => onChange(event.target.value)}
+      >
         <option value="false">False</option>
         <option value="true">True</option>
       </Select>
@@ -868,7 +907,7 @@ function BuildParameterInput({
   }
   if (parameter.type === 'choice') {
     return (
-      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select value={value} disabled={readOnly} onChange={(event) => onChange(event.target.value)}>
         {parameter.choices.map((choice) => (
           <option key={choice} value={choice}>
             {choice}
@@ -881,7 +920,7 @@ function BuildParameterInput({
     <Input
       type={parameter.type === 'password' ? 'password' : 'text'}
       value={value}
-      readOnly={parameter.name === 'CLOUDFORGE_ENV_CREDENTIAL_ID'}
+      readOnly={readOnly}
       onChange={(event) => onChange(event.target.value)}
     />
   );
