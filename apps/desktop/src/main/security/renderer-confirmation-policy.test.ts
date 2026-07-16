@@ -38,6 +38,7 @@ describe('renderer confirmation policy', () => {
       'features/templates/TemplatesPage.tsx',
       'features/marketplace/MarketplacePage.tsx',
       'features/containers/ContainersPage.tsx',
+      'features/vps-runtime/VpsRuntimePage.tsx',
       'features/deployments/DeploymentsPage.tsx',
       'features/ansible/AnsiblePage.tsx',
       'features/nginx/NginxPage.tsx',
