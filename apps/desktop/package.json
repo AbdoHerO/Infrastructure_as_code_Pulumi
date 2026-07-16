@@ -1,6 +1,6 @@
 {
   "name": "@cloudforge/desktop",
-  "version": "0.2.34",
+  "version": "0.2.35",
   "private": true,
   "description": "CloudForge desktop application (Electron + React).",
   "main": "./out/main/index.js",
