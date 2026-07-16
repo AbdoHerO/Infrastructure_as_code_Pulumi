@@ -38,6 +38,8 @@ export interface JenkinsJobStatus {
   readonly lastBuildNumber: number | null;
   readonly lastBuildResult: string | null;
   readonly lastBuildUrl: string | null;
+  /** Parameters Jenkins discovered after evaluating the repository Jenkinsfile. */
+  readonly parameters: readonly JenkinsParameter[];
 }
 
 export interface JenkinsManager {

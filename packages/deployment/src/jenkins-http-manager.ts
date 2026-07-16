@@ -215,6 +215,7 @@ export class JenkinsHttpManager implements JenkinsManager {
         lastBuildNumber: null,
         lastBuildResult: null,
         lastBuildUrl: null,
+        parameters: [],
       });
     try {
       const data = (await response.value.json()) as {
@@ -222,6 +223,7 @@ export class JenkinsHttpManager implements JenkinsManager {
         color?: string;
         inQueue?: boolean;
         lastBuild?: { number?: number; result?: string | null; url?: string } | null;
+        property?: readonly JenkinsParameterProperty[];
       };
       let lastBuildResult = data.lastBuild?.result ?? null;
       let lastBuildUrl = data.lastBuild?.url ?? null;
@@ -250,11 +252,59 @@ export class JenkinsHttpManager implements JenkinsManager {
         lastBuildNumber,
         lastBuildResult,
         lastBuildUrl,
+        parameters: parseParameters(data.property),
       });
     } catch (cause) {
       return err(new DeploymentError('Jenkins returned an invalid job status', { cause }));
     }
   }
+}
+
+interface JenkinsParameterProperty {
+  readonly parameterDefinitions?: readonly {
+    readonly name?: string;
+    readonly description?: string;
+    readonly type?: string;
+    readonly _class?: string;
+    readonly choices?: readonly string[];
+    readonly defaultParameterValue?: { readonly value?: unknown } | null;
+  }[];
+}
+
+function parseParameters(
+  properties: readonly JenkinsParameterProperty[] | undefined,
+): JenkinsParameter[] {
+  return (properties ?? [])
+    .flatMap((property) => property.parameterDefinitions ?? [])
+    .flatMap((definition) => {
+      const name = definition.name?.trim();
+      if (!name) return [];
+      const discriminator = `${definition.type ?? ''} ${definition._class ?? ''}`.toLowerCase();
+      const choices = (definition.choices ?? []).map(String);
+      const type: JenkinsParameter['type'] = discriminator.includes('choice')
+        ? 'choice'
+        : discriminator.includes('boolean')
+          ? 'boolean'
+          : discriminator.includes('password')
+            ? 'password'
+            : 'string';
+      const rawDefault = definition.defaultParameterValue?.value;
+      return [
+        {
+          name,
+          type,
+          defaultValue: type === 'password' ? '' : scalarString(rawDefault),
+          description: definition.description ?? '',
+          choices,
+        },
+      ];
+    });
+}
+
+function scalarString(value: unknown): string {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : '';
 }
 
 interface RequestOptions {
@@ -274,7 +324,7 @@ async function request(
       Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.apiToken}`).toString('base64')}`,
       Accept: 'application/json',
     });
-    if (options.contentType) headers.set('Content-Type', options.contentType);
+    if (options.contentType) headers.set('Content-Type', contentType(options.contentType));
     if (options.method === 'POST') {
       const crumb = await fetch(`${connection.baseUrl}/crumbIssuer/api/json`, {
         headers,
@@ -345,7 +395,7 @@ function jobXml(definition: JenkinsJobDefinition): string {
 <branches><hudson.plugins.git.BranchSpec><name>${xml(branchSpec(definition.branch))}</name></hudson.plugins.git.BranchSpec></branches>
 <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations><submoduleCfg class="empty-list"/><extensions/>
 </scm><scriptPath>${xml(definition.jenkinsfilePath)}</scriptPath><lightweight>true</lightweight></definition>`;
-  return `<?xml version="1.1" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <flow-definition plugin="workflow-job"><actions/><description>${xml(definition.description)}</description>
 <keepDependencies>false</keepDependencies><properties>${properties}</properties>${pipelineDefinition}
 <triggers/><disabled>false</disabled></flow-definition>`;
@@ -368,13 +418,29 @@ function branchSpec(branch: string): string {
 function segment(value: string): string {
   return encodeURIComponent(value);
 }
+function contentType(value: string): string {
+  return value === 'application/xml' ? 'application/xml; charset=UTF-8' : value;
+}
 function xml(value: string): string {
-  return value
+  return sanitizeXmlText(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+function sanitizeXmlText(value: string): string {
+  return Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0);
+      if (codePoint === undefined) return false;
+      if (codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d) return true;
+      if (codePoint >= 0x20 && codePoint <= 0x7e) return true;
+      if (codePoint >= 0xa0 && codePoint <= 0xd7ff) return true;
+      if (codePoint >= 0xe000 && codePoint <= 0xfffd) return true;
+      return codePoint >= 0x10000 && codePoint <= 0x10ffff;
+    })
+    .join('');
 }
 function groovy(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");

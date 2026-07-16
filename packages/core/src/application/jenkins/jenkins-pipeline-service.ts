@@ -122,28 +122,17 @@ export class JenkinsPipelineService {
       if (!stored.ok) return stored;
     }
     if (valid.value.environmentCredentialId) {
-      const environmentCredential = await this.credentials.getDecrypted(
+      const environmentCredential = await this.synchronizeEnvironmentCredential(
+        id,
+        folder,
         valid.value.environmentCredentialId,
+        connection.value,
       );
       if (!environmentCredential.ok) return environmentCredential;
-      if (environmentCredential.value.kind !== 'environment-file')
-        return err(new ValidationError('Select a deployment environment file credential'));
-      const content = environmentCredential.value.data.content;
-      if (!content?.trim())
-        return err(new ValidationError('The deployment environment file is empty'));
-      const remoteCredentialId = `cloudforge-env-${id}`;
-      const stored = await this.jenkins.ensureSecretTextCredential(
-        connection.value,
-        folder,
-        remoteCredentialId,
-        Buffer.from(content, 'utf8').toString('base64'),
-        `CloudForge ${environmentCredential.value.data.filename ?? '.env.production'}`,
-      );
-      if (!stored.ok) return stored;
       jobParameters = synchronizeStringParameter(
         jobParameters,
         'CLOUDFORGE_ENV_CREDENTIAL_ID',
-        remoteCredentialId,
+        environmentCredential.value,
         'Jenkins secret-text credential managed by CloudForge',
       );
     }
@@ -285,6 +274,15 @@ export class JenkinsPipelineService {
       loaded.value.jenkinsCredentialId,
     );
     if (!connection.ok) return connection;
+    if (loaded.value.environmentCredentialId) {
+      const synchronizedEnvironment = await this.synchronizeEnvironmentCredential(
+        loaded.value.id,
+        loaded.value.folder,
+        loaded.value.environmentCredentialId,
+        connection.value,
+      );
+      if (!synchronizedEnvironment.ok) return synchronizedEnvironment;
+    }
     const allowed = new Set(loaded.value.parameters.map((parameter) => parameter.name));
     if (Object.keys(parameters).some((name) => !allowed.has(name)))
       return err(new ValidationError('A build parameter is not declared by this pipeline'));
@@ -292,6 +290,11 @@ export class JenkinsPipelineService {
       loaded.value.parameters.map((parameter) => [parameter.name, parameter.defaultValue]),
     );
     Object.assign(effectiveParameters, parameters);
+    if (loaded.value.environmentCredentialId) {
+      effectiveParameters.CLOUDFORGE_ENV_CREDENTIAL_ID = environmentJenkinsCredentialId(
+        loaded.value.id,
+      );
+    }
     const result = await this.jenkins.trigger(
       connection.value,
       loaded.value.folder,
@@ -313,9 +316,31 @@ export class JenkinsPipelineService {
       loaded.value.targetId,
       loaded.value.jenkinsCredentialId,
     );
-    return connection.ok
-      ? this.jenkins.status(connection.value, loaded.value.folder, loaded.value.name)
-      : connection;
+    if (!connection.ok) return connection;
+    const status = await this.jenkins.status(
+      connection.value,
+      loaded.value.folder,
+      loaded.value.name,
+    );
+    if (!status.ok) return status;
+    const synchronizedParameters = synchronizeManagedParameters(
+      status.value.parameters,
+      loaded.value,
+    );
+    const synchronizedStatus = {
+      ...status.value,
+      parameters: synchronizedParameters,
+    };
+    if (synchronizedParameters.length > 0) {
+      const saved = await this.pipelines.save({
+        ...loaded.value,
+        parameters: synchronizedParameters,
+        lastStatus: status.value.lastBuildResult ?? status.value.color,
+        updatedAt: toIsoDateString(new Date()),
+      });
+      if (!saved.ok) return saved;
+    }
+    return ok(synchronizedStatus);
   }
 
   async remove(id: string): Promise<Result<void, JenkinsPipelineServiceError>> {
@@ -388,6 +413,40 @@ export class JenkinsPipelineService {
       return err(new ValidationError('Enter a valid Jenkins HTTP or HTTPS URL'));
     }
     return ok({ baseUrl, username, apiToken });
+  }
+
+  private async synchronizeEnvironmentCredential(
+    pipelineId: string,
+    folder: string,
+    credentialId: string,
+    connection: JenkinsConnection,
+  ): Promise<Result<string, JenkinsPipelineServiceError>> {
+    const environmentCredential = await this.credentials.getDecrypted(credentialId);
+    if (!environmentCredential.ok) return environmentCredential;
+    if (environmentCredential.value.kind !== 'environment-file')
+      return err(new ValidationError('Select a deployment environment file credential'));
+    const content = environmentCredential.value.data.content;
+    if (!content?.trim())
+      return err(new ValidationError('The deployment environment file is empty'));
+    const placeholders = environmentPlaceholderKeys(content);
+    if (placeholders.length > 0) {
+      return err(
+        new ValidationError(
+          `Complete the selected deployment environment before running Jenkins. Replace placeholder values for: ${placeholders.join(', ')}`,
+        ),
+      );
+    }
+
+    const remoteCredentialId = environmentJenkinsCredentialId(pipelineId);
+    const stored = await this.jenkins.ensureSecretTextCredential(
+      connection,
+      folder,
+      remoteCredentialId,
+      Buffer.from(content, 'utf8').toString('base64'),
+      `CloudForge ${environmentCredential.value.data.filename ?? '.env.production'}`,
+    );
+    if (!stored.ok) return stored;
+    return ok(remoteCredentialId);
   }
 }
 
@@ -553,6 +612,50 @@ function synchronizeStringParameter(
   return parameters.some((parameter) => parameter.name === name)
     ? parameters.map((parameter) => (parameter.name === name ? next : parameter))
     : [...parameters, next];
+}
+
+function synchronizeManagedParameters(
+  parameters: readonly JenkinsParameter[],
+  pipeline: JenkinsPipelineRecord,
+): readonly JenkinsParameter[] {
+  if (!pipeline.environmentCredentialId) return parameters;
+  return synchronizeStringParameter(
+    parameters,
+    'CLOUDFORGE_ENV_CREDENTIAL_ID',
+    environmentJenkinsCredentialId(pipeline.id),
+    'Managed by CloudForge. Select the encrypted deployment environment in CloudForge, not Jenkins.',
+  );
+}
+
+function environmentJenkinsCredentialId(pipelineId: string): string {
+  return `cloudforge-env-${pipelineId}`;
+}
+
+function environmentPlaceholderKeys(content: string): readonly string[] {
+  const environment = parseEnvironmentAssignments(content);
+  const optionalPlaceholders = new Set(
+    (environment.CLOUDFORGE_OPTIONAL_PLACEHOLDERS ?? '')
+      .replace(/^['"]|['"]$/g, '')
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+  const keys = new Set<string>();
+  for (const [key, value] of Object.entries(environment)) {
+    if (value.includes('CHANGE_ME_') && !optionalPlaceholders.has(key)) keys.add(key);
+  }
+  return [...keys];
+}
+
+function parseEnvironmentAssignments(content: string): Readonly<Record<string, string>> {
+  const environment: Record<string, string> = {};
+  for (const sourceLine of content.split(/\r?\n/)) {
+    const line = sourceLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (assignment?.[1]) environment[assignment[1]] = assignment[2] ?? '';
+  }
+  return environment;
 }
 
 function slug(value: string): string {

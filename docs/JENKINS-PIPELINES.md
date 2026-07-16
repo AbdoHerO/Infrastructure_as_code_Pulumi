@@ -79,6 +79,24 @@ the isolated Jenkins folder, and synchronizes its generated ID through
 permissions for the build and deletes the temporary file after every run.
 Updating the CloudForge credential and saving the pipeline updates the existing
 Jenkins secret in place.
+The generated parameter is read-only in the run form. Parameter synchronization
+reconstructs its value from the selected encrypted environment, so an empty
+default reported by the repository Jenkinsfile cannot erase the managed Jenkins
+credential reference.
+Before saving or running a pipeline, CloudForge validates the decrypted
+environment for `CHANGE_ME_*` placeholders and reports only the affected
+variable names. It never reports their values. Every build also refreshes the
+folder-scoped Jenkins secret from the current CloudForge credential, so editing
+the credential does not require manually changing Jenkins.
+
+Temporarily optional integrations can explicitly allow selected placeholders:
+
+```dotenv
+CLOUDFORGE_OPTIONAL_PLACEHOLDERS=MAIL_HOST,MAIL_FROM_ADDRESS
+```
+
+Only the listed keys are ignored. Required database, application-key, Redis, and
+other unlisted placeholders continue to block deployment.
 
 **Save to Jenkins** only creates or updates the remote job. It does not start a
 build. Pushing a commit also does not start a job unless a GitHub webhook or an
@@ -113,6 +131,16 @@ environment {
     HOST_PORT = "${params.HOST_PORT ?: '8000'}"
 }
 ```
+
+For SCM pipelines, Jenkins learns the repository's declarative parameters only
+after it evaluates the Jenkinsfile during the first build. After that first
+build, click **Status / sync parameters** in CloudForge. CloudForge imports the
+definitions and displays choice, string, boolean, and password inputs in the
+**Run pipeline** card. The synchronized definitions are persisted, so later
+application restarts keep the same deployment controls.
+While synchronization is running, the button shows a loading state. When it
+finishes, CloudForge reports the number of parameters synchronized, reports that
+the pipeline has no parameters, or displays the Jenkins error.
 
 The fallback matters on the very first Jenkins build because parameters declared
 by a Jenkinsfile may not be available until Jenkins has evaluated that file once.

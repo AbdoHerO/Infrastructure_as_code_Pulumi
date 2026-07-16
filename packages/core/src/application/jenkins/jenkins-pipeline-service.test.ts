@@ -169,6 +169,8 @@ describe('JenkinsPipelineService', () => {
 
   it('synchronizes an encrypted environment file as a folder-scoped Jenkins secret', async () => {
     const repository = new MemoryPipelines();
+    const environmentContent =
+      'APP_ENV=production\nCLOUDFORGE_OPTIONAL_PLACEHOLDERS=MAIL_HOST,MAIL_FROM_ADDRESS\nMAIL_HOST=CHANGE_ME_MAIL_HOST\nMAIL_FROM_ADDRESS="CHANGE_ME_MAIL_FROM"';
     const ensureSecretTextCredential = vi.fn().mockResolvedValue(ok(undefined));
     const upsertJob = vi.fn().mockResolvedValue(ok(undefined));
     const service = new JenkinsPipelineService(
@@ -192,7 +194,7 @@ describe('JenkinsPipelineService', () => {
                 })
               : ok({
                   kind: 'environment-file',
-                  data: { filename: '.env.production', content: 'APP_ENV=production' },
+                  data: { filename: '.env.production', content: environmentContent },
                 }),
           ),
         ),
@@ -217,7 +219,7 @@ describe('JenkinsPipelineService', () => {
       expect.anything(),
       expect.stringContaining('cloudforge-production-vps'),
       expect.stringMatching(/^cloudforge-env-/),
-      Buffer.from('APP_ENV=production').toString('base64'),
+      Buffer.from(environmentContent).toString('base64'),
       'CloudForge .env.production',
     );
     expect(upsertJob).toHaveBeenCalled();
@@ -484,5 +486,314 @@ describe('JenkinsPipelineService', () => {
     expect(trigger).toHaveBeenCalledWith(expect.anything(), record.folder, record.name, {
       HOST_PORT: '8000',
     });
+  });
+
+  it('blocks a Jenkins build before queueing when the selected environment still has placeholders', async () => {
+    const repository = new MemoryPipelines();
+    const record: JenkinsPipelineRecord = {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      environmentCredentialId: 'environment-1',
+      applicationRoutes: [],
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      parameters: [
+        {
+          name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+          type: 'string',
+          defaultValue: 'cloudforge-env-pipeline-1',
+          description: '',
+          choices: [],
+        },
+      ],
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    };
+    repository.records.set(record.id, record);
+    const trigger = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn((id: string) =>
+          Promise.resolve(
+            id === 'jenkins-1'
+              ? ok({
+                  kind: 'jenkins',
+                  data: {
+                    username: 'admin',
+                    apiToken: 'jenkins-secret',
+                    baseUrl: 'http://jenkins:8080',
+                  },
+                })
+              : ok({
+                  kind: 'environment-file',
+                  data: {
+                    filename: '.env.production',
+                    content:
+                      'APP_ENV=production\nREDIS_PASSWORD=CHANGE_ME_REDIS_PASSWORD\nMAIL_HOST=CHANGE_ME_MAIL_HOST',
+                  },
+                }),
+          ),
+        ),
+      } as unknown as CredentialService,
+      {
+        ensureSecretTextCredential: vi.fn().mockResolvedValue(ok(undefined)),
+        trigger,
+      } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.trigger(record.id, {});
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain('REDIS_PASSWORD');
+      expect(result.error.message).toContain('MAIL_HOST');
+    }
+    expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the folder-scoped environment secret before queueing each build', async () => {
+    const repository = new MemoryPipelines();
+    const record: JenkinsPipelineRecord = {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      environmentCredentialId: 'environment-1',
+      applicationRoutes: [],
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      parameters: [
+        {
+          name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+          type: 'string',
+          defaultValue: '',
+          description: '',
+          choices: [],
+        },
+      ],
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    };
+    repository.records.set(record.id, record);
+    const ensureSecretTextCredential = vi.fn().mockResolvedValue(ok(undefined));
+    const trigger = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn((id: string) =>
+          Promise.resolve(
+            id === 'jenkins-1'
+              ? ok({
+                  kind: 'jenkins',
+                  data: {
+                    username: 'admin',
+                    apiToken: 'jenkins-secret',
+                    baseUrl: 'http://jenkins:8080',
+                  },
+                })
+              : ok({
+                  kind: 'environment-file',
+                  data: { filename: '.env.production', content: 'APP_ENV=production' },
+                }),
+          ),
+        ),
+      } as unknown as CredentialService,
+      { ensureSecretTextCredential, trigger } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.trigger(record.id, {});
+
+    expect(result.ok).toBe(true);
+    expect(ensureSecretTextCredential).toHaveBeenCalledWith(
+      expect.anything(),
+      record.folder,
+      'cloudforge-env-pipeline-1',
+      Buffer.from('APP_ENV=production').toString('base64'),
+      'CloudForge .env.production',
+    );
+    expect(trigger).toHaveBeenCalledWith(expect.anything(), record.folder, record.name, {
+      CLOUDFORGE_ENV_CREDENTIAL_ID: 'cloudforge-env-pipeline-1',
+    });
+  });
+
+  it('synchronizes Jenkinsfile parameters discovered after the first build', async () => {
+    const repository = new MemoryPipelines();
+    const record: JenkinsPipelineRecord = {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    };
+    repository.records.set(record.id, record);
+    const discovered = [
+      {
+        name: 'DEPLOY_ACTION',
+        type: 'choice' as const,
+        defaultValue: 'deploy',
+        description: 'Deployment mode',
+        choices: ['deploy', 'deploy_and_migrate'],
+      },
+      {
+        name: 'CONFIRM_WIPE',
+        type: 'string' as const,
+        defaultValue: '',
+        description: '',
+        choices: [],
+      },
+    ];
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: {
+              username: 'admin',
+              apiToken: 'jenkins-secret',
+              baseUrl: 'http://jenkins:8080',
+            },
+          }),
+        ),
+      } as unknown as CredentialService,
+      {
+        status: vi.fn().mockResolvedValue(
+          ok({
+            exists: true,
+            enabled: true,
+            color: 'red',
+            inQueue: false,
+            lastBuildNumber: 1,
+            lastBuildResult: 'FAILURE',
+            lastBuildUrl: 'http://jenkins/build/1',
+            parameters: discovered,
+          }),
+        ),
+      } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.status(record.id);
+
+    expect(result.ok && result.value.parameters).toEqual(discovered);
+    expect(repository.records.get(record.id)?.parameters).toEqual(discovered);
+    expect(repository.records.get(record.id)?.lastStatus).toBe('FAILURE');
+  });
+
+  it('preserves the CloudForge-managed environment credential when Jenkins reports an empty default', async () => {
+    const repository = new MemoryPipelines();
+    const record: JenkinsPipelineRecord = {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      environmentCredentialId: 'environment-1',
+      applicationRoutes: [],
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      parameters: [
+        {
+          name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+          type: 'string',
+          defaultValue: '',
+          description: '',
+          choices: [],
+        },
+      ],
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    };
+    repository.records.set(record.id, record);
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: {
+              username: 'admin',
+              apiToken: 'jenkins-secret',
+              baseUrl: 'http://jenkins:8080',
+            },
+          }),
+        ),
+      } as unknown as CredentialService,
+      {
+        status: vi.fn().mockResolvedValue(
+          ok({
+            exists: true,
+            enabled: true,
+            color: 'blue',
+            inQueue: false,
+            lastBuildNumber: 2,
+            lastBuildResult: 'SUCCESS',
+            lastBuildUrl: 'http://jenkins/build/2',
+            parameters: [
+              {
+                name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+                type: 'string',
+                defaultValue: '',
+                description: '',
+                choices: [],
+              },
+            ],
+          }),
+        ),
+      } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.status(record.id);
+
+    expect(result.ok && result.value.parameters).toContainEqual(
+      expect.objectContaining({
+        name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+        defaultValue: 'cloudforge-env-pipeline-1',
+      }),
+    );
+    expect(repository.records.get(record.id)?.parameters).toContainEqual(
+      expect.objectContaining({
+        name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+        defaultValue: 'cloudforge-env-pipeline-1',
+      }),
+    );
   });
 });

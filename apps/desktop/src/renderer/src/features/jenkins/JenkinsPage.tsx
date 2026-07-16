@@ -65,6 +65,7 @@ export function JenkinsPage(): JSX.Element {
   const [environmentText, setEnvironmentText] = useState('');
   const [buildValues, setBuildValues] = useState<Record<string, string>>({});
   const [selectedId, setSelectedId] = useState('');
+  const [isSyncingParameters, setIsSyncingParameters] = useState(false);
   const jenkinsCredentials = credentials.data?.filter((item) => item.kind === 'jenkins') ?? [];
   const githubCredentials = credentials.data?.filter((item) => item.kind === 'github') ?? [];
   const cloudflareCredentials =
@@ -145,6 +146,47 @@ export function JenkinsPage(): JSX.Element {
     enabled: Boolean(selectedId),
     refetchInterval: selectedId ? 15_000 : false,
   });
+  useEffect(() => {
+    if (!status.data?.parameters.length) return;
+    setBuildValues((current) =>
+      Object.fromEntries(
+        status.data.parameters.map((parameter) => [
+          parameter.name,
+          parameter.name === 'CLOUDFORGE_ENV_CREDENTIAL_ID'
+            ? parameter.defaultValue
+            : (current[parameter.name] ?? parameter.defaultValue),
+        ]),
+      ),
+    );
+    void queryClient.invalidateQueries({ queryKey: ['jenkins', 'pipelines'] });
+  }, [queryClient, status.data]);
+
+  const syncParameters = async (): Promise<void> => {
+    setIsSyncingParameters(true);
+    try {
+      const result = await status.refetch();
+      if (result.error) {
+        toast.error(result.error.message);
+        return;
+      }
+      if (!result.data?.exists) {
+        toast.error('The pipeline no longer exists in Jenkins');
+        return;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['jenkins', 'pipelines'] });
+      const parameterCount = result.data.parameters.length;
+      toast.success(
+        parameterCount
+          ? `${parameterCount} Jenkins parameter${parameterCount === 1 ? '' : 's'} synchronized`
+          : 'Jenkins status synchronized; this pipeline exposes no build parameters',
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not synchronize Jenkins');
+    } finally {
+      setIsSyncingParameters(false);
+    }
+  };
 
   const edit = (pipeline: JenkinsPipelineRecord): void => {
     setSelectedId(pipeline.id);
@@ -684,7 +726,10 @@ export function JenkinsPage(): JSX.Element {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {selected.parameters.map((parameter) => (
+                {(status.data?.parameters.length
+                  ? status.data.parameters
+                  : selected.parameters
+                ).map((parameter) => (
                   <Field key={parameter.name} label={parameter.name}>
                     <BuildParameterInput
                       parameter={parameter}
@@ -696,14 +741,28 @@ export function JenkinsPage(): JSX.Element {
                     {parameter.description && (
                       <p className="text-muted-foreground text-xs">{parameter.description}</p>
                     )}
+                    {parameter.name === 'CONFIRM_WIPE' && (
+                      <div className="border-warning/40 bg-warning/10 text-warning rounded-md border px-3 py-2 text-xs">
+                        <strong>Leave this empty for normal deployments.</strong> Only enter{' '}
+                        <code>WIPE</code> with a <code>deploy_migrate_fresh_*</code> action. Fresh
+                        actions permanently delete every database table before rebuilding it.
+                      </div>
+                    )}
                   </Field>
                 ))}
                 <div className="flex gap-2">
                   <Button onClick={() => trigger.mutate(selected)} disabled={trigger.isPending}>
                     <Play className="mr-2 h-4 w-4" /> Run pipeline
                   </Button>
-                  <Button variant="outline" onClick={() => void status.refetch()}>
-                    <RefreshCw className="mr-2 h-4 w-4" /> Status
+                  <Button
+                    variant="outline"
+                    onClick={() => void syncParameters()}
+                    disabled={isSyncingParameters}
+                  >
+                    <RefreshCw
+                      className={`mr-2 h-4 w-4 ${isSyncingParameters ? 'animate-spin' : ''}`}
+                    />
+                    {isSyncingParameters ? 'Synchronizing…' : 'Status / sync parameters'}
                   </Button>
                 </div>
               </CardContent>
@@ -823,6 +882,7 @@ function BuildParameterInput({
     <Input
       type={parameter.type === 'password' ? 'password' : 'text'}
       value={value}
+      readOnly={parameter.name === 'CLOUDFORGE_ENV_CREDENTIAL_ID'}
       onChange={(event) => onChange(event.target.value)}
     />
   );

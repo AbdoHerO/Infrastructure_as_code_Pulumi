@@ -75,6 +75,49 @@ describe('JenkinsHttpManager', () => {
     expect(body).not.toContain('jenkins-secret');
   });
 
+  it('removes invalid XML control characters from Jenkins job fields', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(new Response('', { status: 302 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const definition: JenkinsJobDefinition = {
+      folder: 'cloudforge-vps',
+      name: 'shop-api',
+      description: 'Deploy →\u0086 safely',
+      repositoryUrl: 'https://github.com/acme/shop.git',
+      branch: 'main',
+      jenkinsfilePath: 'Jenkinsfile',
+      pipelineScript: '',
+      definitionMode: 'scm',
+      githubCredentialId: null,
+      parameters: [
+        {
+          name: 'DEPLOY_ACTION',
+          type: 'choice',
+          description: 'Deploy\u0086 without corrupting Jenkins XML',
+          defaultValue: 'deploy',
+          choices: ['deploy', 'deploy_and_migrate'],
+        },
+      ],
+      environment: {},
+    };
+
+    const result = await new JenkinsHttpManager().upsertJob(connection, definition);
+
+    expect(result.ok).toBe(true);
+    const requestBody = fetchMock.mock.calls[2]?.[1]?.body;
+    expect(typeof requestBody).toBe('string');
+    expect(requestBody).not.toContain('\u0086');
+    expect(requestBody).toContain('Deploy → safely');
+    expect(requestBody).toContain('Deploy without corrupting Jenkins XML');
+    expect(requestBody).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    const headers = fetchMock.mock.calls[2]?.[1]?.headers;
+    expect(headers).toBeInstanceOf(Headers);
+    expect((headers as Headers).get('content-type')).toBe('application/xml; charset=UTF-8');
+  });
+
   it('updates a folder-scoped secret-text credential without exposing it in a job', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -163,6 +206,7 @@ describe('JenkinsHttpManager', () => {
       lastBuildNumber: null,
       lastBuildResult: null,
       lastBuildUrl: null,
+      parameters: [],
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
@@ -204,5 +248,53 @@ describe('JenkinsHttpManager', () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       'https://jenkins.example.com/job/cloudforge-vps/job/deployed-pipeline/7/api/json?tree=number,result,url',
     );
+  });
+
+  it('discovers parameters evaluated from a repository Jenkinsfile', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          buildable: true,
+          color: 'red',
+          inQueue: false,
+          lastBuild: { number: 1, result: 'FAILURE', url: 'https://jenkins/build/1/' },
+          property: [
+            {
+              parameterDefinitions: [
+                {
+                  name: 'DEPLOY_ACTION',
+                  description: 'Deployment mode',
+                  _class: 'hudson.model.ChoiceParameterDefinition',
+                  choices: ['deploy', 'deploy_and_migrate', 'deploy_migrate_seed'],
+                  defaultParameterValue: { value: 'deploy' },
+                },
+                {
+                  name: 'CONFIRM_WIPE',
+                  _class: 'hudson.model.StringParameterDefinition',
+                  defaultParameterValue: { value: '' },
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await new JenkinsHttpManager().status(connection, 'cloudforge-vps', 'shop-api');
+
+    expect(result.ok && result.value.parameters).toEqual([
+      expect.objectContaining({
+        name: 'DEPLOY_ACTION',
+        type: 'choice',
+        defaultValue: 'deploy',
+        choices: ['deploy', 'deploy_and_migrate', 'deploy_migrate_seed'],
+      }),
+      expect.objectContaining({
+        name: 'CONFIRM_WIPE',
+        type: 'string',
+        defaultValue: '',
+      }),
+    ]);
   });
 });
