@@ -24,6 +24,7 @@ import {
   withSshConnection,
 } from './ssh-transport.js';
 import { managedSiteFilePath, siteFilePaths } from './nginx-site-file.js';
+import { nginxExecPreamble, reloadScript, restoreScript } from './nginx-exec-script.js';
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const BACKUP_DIR = '/var/lib/cloudforge/nginx/backups';
@@ -235,7 +236,7 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
   ): Promise<Result<NginxOperationOutcome, DeploymentError>> {
     return withConnection(target, undefined, async (client) => {
       onEvent?.({ stream: 'step', message: 'Validating Nginx configuration before reload' });
-      await execute(client, privileged(reloadScript()), onEvent);
+      await execute(client, privileged(`${nginxExecPreamble()}\n${reloadScript()}`), onEvent);
       return { summary: 'Nginx configuration is valid and the service was reloaded.' };
     });
   }
@@ -335,7 +336,13 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
       await execute(
         client,
         privileged(
-          `test -f '${BACKUP_DIR}/${backupId}.tar.gz'\nrm -rf /etc/nginx\ntar -xzf '${BACKUP_DIR}/${backupId}.tar.gz' -C /\n${reloadScript()}`,
+          [
+            'set -e',
+            `test -f '${BACKUP_DIR}/${backupId}.tar.gz'`,
+            nginxExecPreamble(),
+            restoreScript(`'${BACKUP_DIR}/${backupId}.tar.gz'`),
+            reloadScript(),
+          ].join('\n'),
         ),
         onEvent,
       );
@@ -355,7 +362,22 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
       await execute(
         client,
         privileged(
-          `set -e\ncommand -v nginx >/dev/null 2>&1 || { echo 'Docker Nginx editing requires a standard host-mounted configuration and native nginx validation binary.' >&2; exit 1; }\nmkdir -p '${BACKUP_DIR}'\ntar -czf '${BACKUP_DIR}/${backupId}.tar.gz' /etc/nginx 2>/dev/null\n${mutation}\nif ! nginx -t; then\n  rm -rf /etc/nginx\n  tar -xzf '${BACKUP_DIR}/${backupId}.tar.gz' -C /\n  nginx -t\n  exit 1\nfi\n${reloadScript()}`,
+          [
+            'set -e',
+            nginxExecPreamble(),
+            `mkdir -p '${BACKUP_DIR}'`,
+            `tar -czf '${BACKUP_DIR}/${backupId}.tar.gz' /etc/nginx 2>/dev/null`,
+            mutation,
+            'if ! cf_nginx -t; then',
+            restoreScript(`'${BACKUP_DIR}/${backupId}.tar.gz'`),
+            // Prove the rollback landed. A restore that itself fails validation
+            // is the one case where saying nothing would be worst: the config on
+            // disk is neither what was asked for nor what was there before.
+            'cf_nginx -t',
+            'exit 1',
+            'fi',
+            reloadScript(),
+          ].join('\n'),
         ),
         onEvent,
       );
@@ -364,9 +386,6 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
   }
 }
 
-function reloadScript(): string {
-  return `mkdir -p /var/lib/cloudforge/nginx\nif ! nginx -t; then date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/cloudforge/nginx/last-reload-at; echo 0 > /var/lib/cloudforge/nginx/last-reload-ok; exit 1; fi\nif command -v systemctl >/dev/null 2>&1; then systemctl reload nginx; else nginx -s reload; fi\ndate -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/cloudforge/nginx/last-reload-at\necho 1 > /var/lib/cloudforge/nginx/last-reload-ok`;
-}
 function nullableNumber(value: string | undefined): number | null {
   return value && Number.isFinite(Number(value)) ? Number(value) : null;
 }

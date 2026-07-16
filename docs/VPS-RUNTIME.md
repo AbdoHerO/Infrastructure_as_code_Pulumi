@@ -122,13 +122,13 @@ the real table is how rules appear to vanish.
 
 ## Related modules
 
-| Module            | What the runtime model changed                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ansible           | Profiles declare their ports, so the rest of the system can see a native service. The playbook and the probe share the one firewall implementation.                 |
-| Jenkins Pipelines | `HOST_PORT` is a parameter CloudForge owns. See [JENKINS-PIPELINES.md](JENKINS-PIPELINES.md).                                                                       |
-| Nginx             | A route's reachability is validated against the plan's proxy mode: a host-based Nginx cannot resolve a container name, so such a route is rejected rather than 502. |
-| Cloudflare        | A DNS record CloudForge did not create is never repointed. See [CLOUDFLARE.md](CLOUDFLARE.md).                                                                      |
-| Firewall          | Provider security-list rules can be passed into the connectivity check, which respects direction, CIDR, port range and protocol.                                    |
+| Module            | What the runtime model changed                                                                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ansible           | Profiles declare their ports, so the rest of the system can see a native service. The playbook and the probe share the one firewall implementation.                                                                                                                             |
+| Jenkins Pipelines | `HOST_PORT` is a parameter CloudForge owns. See [JENKINS-PIPELINES.md](JENKINS-PIPELINES.md).                                                                                                                                                                                   |
+| Nginx             | A route's reachability is validated against the plan's proxy mode: a host-based Nginx cannot resolve a container name, so such a route is rejected rather than 502. A containerised proxy can now be edited, validated and reloaded — see [NGINX-MANAGER.md](NGINX-MANAGER.md). |
+| Cloudflare        | A DNS record CloudForge did not create is never repointed. See [CLOUDFLARE.md](CLOUDFLARE.md).                                                                                                                                                                                  |
+| Firewall          | Provider security-list rules can be passed into the connectivity check, which respects direction, CIDR, port range and protocol.                                                                                                                                                |
 
 ## Security
 
