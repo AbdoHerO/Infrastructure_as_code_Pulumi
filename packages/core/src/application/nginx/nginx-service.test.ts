@@ -50,6 +50,42 @@ describe('NginxService', () => {
     expect(renderManagedNginxSite(site)).toContain('proxy_set_header Upgrade $http_upgrade;');
   });
 
+  describe('upstreamKind', () => {
+    // It answers "could a proxy that is not on a Docker network resolve this?".
+    // The only evidence is the host, so it is derived rather than believed — a
+    // stored value that disagreed with the host it described would be worse
+    // than no value, because everything downstream would trust it.
+    it('is derived from the host, not taken from the caller', () => {
+      const lying = validateManagedNginxSite({
+        ...site,
+        upstreamHost: 'api-container',
+        upstreamKind: 'host',
+      });
+
+      expect(lying.ok && lying.value.upstreamKind).toBe('docker');
+    });
+
+    it('corrects a host upstream mislabelled as docker', () => {
+      const lying = validateManagedNginxSite({
+        ...site,
+        upstreamHost: '127.0.0.1',
+        upstreamKind: 'docker',
+      });
+
+      expect(lying.ok && lying.value.upstreamKind).toBe('host');
+    });
+
+    it('classifies the upstream from its address', () => {
+      expect(inferUpstreamKind('127.0.0.1')).toBe('host');
+      expect(inferUpstreamKind('localhost')).toBe('host');
+      expect(inferUpstreamKind('db.internal.example.com')).toBe('host');
+      expect(inferUpstreamKind('10.0.0.5')).toBe('host');
+      // A bare single-label name is only meaningful inside a Docker network.
+      expect(inferUpstreamKind('api')).toBe('docker');
+      expect(inferUpstreamKind('shop-redis')).toBe('docker');
+    });
+  });
+
   it('rejects directives capable of escaping the generated block', () => {
     expect(validateManagedNginxSite({ ...site, extraDirectives: ['include bad;\n}'] }).ok).toBe(
       false,

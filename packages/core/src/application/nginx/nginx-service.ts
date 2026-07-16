@@ -229,6 +229,12 @@ export function validateManagedNginxSite(
     ...site,
     domain: domain.value,
     upstreamHost,
+    // Derived, never trusted from the caller. `upstreamKind` answers "can a
+    // proxy that is not on a Docker network resolve this?", and the only
+    // evidence for that is the host itself. A stored value that disagreed with
+    // the host would be worse than no value: everything downstream would
+    // believe it.
+    upstreamKind: inferUpstreamKind(upstreamHost),
     clientMaxBodySize: site.clientMaxBodySize.toLowerCase(),
   });
 }
@@ -358,14 +364,18 @@ export function decodeManagedNginxSite(encoded: string): ManagedNginxSite | null
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
- * Classify an upstream discovered in a hand-written config.
+ * Classify an upstream by its address.
  *
- * A Docker network alias is resolvable only inside a Docker network, so it is
+ * A Docker network alias resolves only inside a Docker network, so it is
  * categorically different from a host address even though both are just a
- * hostname here. Loopback names, IP literals and dotted names address the host
- * or the wider network; a bare single-label name is only meaningful as a
- * container. This is a reading of existing config, so it is a best guess — an
- * owned site records its kind explicitly instead.
+ * hostname here — nginx running on the host cannot resolve one at all, because
+ * the host's resolver does not answer Docker DNS. Loopback names, IP literals
+ * and dotted names address the host or the wider network; a bare single-label
+ * name is only meaningful as a container.
+ *
+ * The single source of this judgement, for both owned and hand-written sites.
+ * Owned sites used to carry a stored `upstreamKind` that nothing derived and
+ * nothing checked, so it could disagree with the host it described.
  */
 export function inferUpstreamKind(upstreamHost: string): 'host' | 'docker' {
   const host = upstreamHost.trim().toLowerCase();
