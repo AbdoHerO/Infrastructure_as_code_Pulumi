@@ -29,6 +29,10 @@ export interface JenkinsPipelineRecord {
 export interface JenkinsPipelineRepository {
   list(): Promise<Result<JenkinsPipelineRecord[], PersistenceError>>;
   get(id: string): Promise<Result<JenkinsPipelineRecord | null, PersistenceError>>;
+  getByFolderAndName(
+    folder: string,
+    name: string,
+  ): Promise<Result<JenkinsPipelineRecord | null, PersistenceError>>;
   save(record: JenkinsPipelineRecord): Promise<Result<void, PersistenceError>>;
   remove(id: string): Promise<Result<void, PersistenceError>>;
 }

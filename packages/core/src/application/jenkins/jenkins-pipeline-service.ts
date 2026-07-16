@@ -34,6 +34,7 @@ export interface SaveJenkinsPipelineInput {
   readonly description: string;
   readonly targetId: string;
   readonly jenkinsCredentialId: string;
+  readonly repositoryAccess?: 'public' | 'private';
   readonly githubCredentialId?: string | null;
   readonly repositoryUrl: string;
   readonly branch: string;
@@ -80,16 +81,18 @@ export class JenkinsPipelineService {
   ): Promise<Result<JenkinsPipelineRecord, JenkinsPipelineServiceError>> {
     const valid = validatePipeline(input);
     if (!valid.ok) return valid;
-    const existing = input.id ? await this.pipelines.get(input.id) : ok(null);
-    if (!existing.ok) return existing;
-    if (input.id && !existing.value)
-      return err(new NotFoundError('The Jenkins pipeline no longer exists'));
     const target = await this.targets.get(valid.value.targetId);
     if (!target.ok) return target;
     const connection = await this.connection(valid.value.targetId, valid.value.jenkinsCredentialId);
     if (!connection.ok) return connection;
-    const id = input.id ?? newUuid();
     const folder = `cloudforge-${slug(target.value.name)}-${target.value.id.slice(0, 8)}`;
+    const existing = input.id
+      ? await this.pipelines.get(input.id)
+      : await this.pipelines.getByFolderAndName(folder, valid.value.name);
+    if (!existing.ok) return existing;
+    if (input.id && !existing.value)
+      return err(new NotFoundError('The Jenkins pipeline no longer exists'));
+    const id = existing.value?.id ?? input.id ?? newUuid();
     const folderResult = await this.jenkins.ensureFolder(connection.value, folder);
     if (!folderResult.ok) return folderResult;
     let githubCredentialId: string | null = null;
@@ -162,29 +165,58 @@ export class JenkinsPipelineService {
         record.cloudflareCredentialId ?? undefined,
         record.cloudflareZoneId ?? undefined,
       );
-      if (!dns.ok)
-        return err(new DeploymentError('Could not configure Cloudflare DNS', { cause: dns.error }));
+      if (!dns.ok) {
+        const detail = dns.error instanceof Error ? `: ${dns.error.message}` : '';
+        return err(
+          new DeploymentError(`Could not configure Cloudflare DNS${detail}`, {
+            cause: dns.error,
+          }),
+        );
+      }
       if (dns.value.status !== 'propagated')
         return err(new DeploymentError('Cloudflare DNS was created but propagation is pending'));
-      const nginx = await this.nginx.saveSite(record.targetId, {
-        domain: record.domain,
-        enabled: true,
-        upstreamKind: 'host',
-        upstreamHost: '127.0.0.1',
-        upstreamPort: record.applicationPort ?? 80,
-        websocket: true,
-        ssl: false,
-        httpRedirect: false,
-        headers: [],
-        extraDirectives: [],
-        locations: [],
-        proxyTimeoutSeconds: 60,
-        clientMaxBodySize: '50m',
-        compression: true,
-        cache: false,
-        customSnippets: [],
-        lastModified: now,
-      });
+      const sites = await this.nginx.listSites(record.targetId);
+      if (!sites.ok)
+        return err(
+          new DeploymentError('Cloudflare DNS is ready but existing Nginx state could not load', {
+            cause: sites.error,
+          }),
+        );
+      const existingSite = sites.value.find(
+        (site) => site.domain.toLowerCase() === record.domain.toLowerCase(),
+      );
+      const nginx = await this.nginx.saveSite(
+        record.targetId,
+        existingSite
+          ? {
+              ...existingSite,
+              enabled: true,
+              upstreamKind: 'host',
+              upstreamHost: '127.0.0.1',
+              upstreamPort: record.applicationPort ?? 80,
+              websocket: true,
+              lastModified: now,
+            }
+          : {
+              domain: record.domain,
+              enabled: true,
+              upstreamKind: 'host',
+              upstreamHost: '127.0.0.1',
+              upstreamPort: record.applicationPort ?? 80,
+              websocket: true,
+              ssl: false,
+              httpRedirect: false,
+              headers: [],
+              extraDirectives: [],
+              locations: [],
+              proxyTimeoutSeconds: 60,
+              clientMaxBodySize: '50m',
+              compression: true,
+              cache: false,
+              customSnippets: [],
+              lastModified: now,
+            },
+      );
       if (!nginx.ok)
         return err(
           new DeploymentError('Cloudflare DNS is ready but Nginx setup failed', {
@@ -259,12 +291,19 @@ export class JenkinsPipelineService {
       loaded.value.name,
     );
     if (!removed.ok) return removed;
+    const pruned = await this.jenkins.pruneEmptyFolder(connection.value, loaded.value.folder);
+    if (!pruned.ok) return pruned;
     const deleted = await this.pipelines.remove(id);
     if (!deleted.ok) return deleted;
     this.activities.recordSafe({
       type: 'jenkins.pipeline.deleted',
       message: `Deleted Jenkins pipeline ${loaded.value.name}`,
-      metadata: { pipelineId: id, targetId: loaded.value.targetId },
+      metadata: {
+        pipelineId: id,
+        targetId: loaded.value.targetId,
+        folder: loaded.value.folder,
+        folderDeleted: pruned.value,
+      },
     });
     return ok(undefined);
   }
@@ -297,6 +336,13 @@ export class JenkinsPipelineService {
     try {
       const parsed = new URL(baseUrl);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocol');
+      if (isLoopbackHost(parsed.hostname) && !isLoopbackHost(target.value.host)) {
+        return err(
+          new ValidationError(
+            `The Jenkins URL ${baseUrl} points to this computer, not the selected VPS ${target.value.host}. Update the Jenkins secret to the VPS URL before creating or running pipelines.`,
+          ),
+        );
+      }
     } catch {
       return err(new ValidationError('Enter a valid Jenkins HTTP or HTTPS URL'));
     }
@@ -322,6 +368,12 @@ function validatePipeline(
   const repositoryUrl = input.repositoryUrl.trim();
   if (input.definitionMode === 'scm' && !/^(?:https?:\/\/|git@)[^\s]+$/.test(repositoryUrl))
     return err(new ValidationError('Enter a valid Git repository URL'));
+  if (
+    input.definitionMode === 'scm' &&
+    input.repositoryAccess === 'private' &&
+    !input.githubCredentialId
+  )
+    return err(new ValidationError('Private repositories require an encrypted GitHub credential'));
   const branch = input.branch.trim() || 'main';
   const jenkinsfilePath = input.jenkinsfilePath.trim() || 'Jenkinsfile';
   const pipelineScript = input.pipelineScript.trim();
@@ -403,5 +455,18 @@ function slug(value: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 40) || 'vps'
+  );
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  return (
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '0:0:0:0:0:0:0:1' ||
+    normalized.startsWith('127.')
   );
 }

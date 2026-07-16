@@ -62,6 +62,45 @@ function service(proxied: boolean): CloudflareDnsAutomationService {
 }
 
 describe('CloudflareDnsAutomationService', () => {
+  it('does not attach plan-restricted tags to automatic DNS records', async () => {
+    const updateDnsRecord = vi.fn().mockResolvedValue(ok(record));
+    const cloudflare = {
+      zones: vi.fn().mockResolvedValue(ok([zone])),
+      dnsRecords: vi.fn().mockResolvedValue(ok([record])),
+      updateDnsRecord,
+      zoneSettings: vi.fn().mockResolvedValue(ok({ sslMode: 'full' })),
+    } as unknown as CloudflareService;
+    const settings = {
+      get: vi.fn().mockResolvedValue(
+        ok({
+          ...DEFAULT_SETTINGS,
+          cloudflare: {
+            ...DEFAULT_SETTINGS.cloudflare,
+            defaultCredentialId: 'credential-1',
+            defaultZoneId: zone.id,
+            waitForPropagation: false,
+          },
+        }),
+      ),
+    } as unknown as SettingsService;
+    const automation = new CloudflareDnsAutomationService(
+      cloudflare,
+      settings,
+      { resolve: vi.fn().mockResolvedValue(ok([])) },
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await automation.ensure(record.name, record.content);
+
+    expect(result.ok).toBe(true);
+    expect(updateDnsRecord).toHaveBeenCalledWith(
+      'credential-1',
+      zone.id,
+      record.id,
+      expect.objectContaining({ comment: 'Managed by CloudForge', tags: [] }),
+    );
+  });
+
   it('accepts an active proxied record whose origin matches the VPS', async () => {
     const result = await service(true).verify('app.example.com', record.content);
 

@@ -61,6 +61,10 @@ export interface JenkinsManager {
     folder: string,
     name: string,
   ): Promise<Result<void, DeploymentError>>;
+  pruneEmptyFolder(
+    connection: JenkinsConnection,
+    folder: string,
+  ): Promise<Result<boolean, DeploymentError>>;
   trigger(
     connection: JenkinsConnection,
     folder: string,

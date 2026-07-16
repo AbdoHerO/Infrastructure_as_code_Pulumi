@@ -53,6 +53,20 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
     });
   }
 
+  async getByFolderAndName(
+    folder: string,
+    name: string,
+  ): Promise<Result<JenkinsPipelineRecord | null, PersistenceError>> {
+    return guard('load Jenkins pipeline by remote identity', async () => {
+      const rows = await this.db.$queryRawUnsafe<Row[]>(
+        'SELECT * FROM "JenkinsPipeline" WHERE "folder" = ? AND "name" = ? LIMIT 1',
+        folder,
+        name,
+      );
+      return rows[0] ? toRecord(rows[0]) : null;
+    });
+  }
+
   async save(record: JenkinsPipelineRecord): Promise<Result<void, PersistenceError>> {
     return guard('save Jenkins pipeline', async () => {
       await this.db.$executeRawUnsafe(

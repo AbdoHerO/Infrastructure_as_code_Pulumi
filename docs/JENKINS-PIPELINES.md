@@ -1,5 +1,22 @@
 # Jenkins Pipelines
 
+## Domains and application ports
+
+Use the root domain itself (for example `hanoutplus.ma`) for the main landing page. Use a full
+hostname (for example `api.hanoutplus.ma`) for each additional application. CloudForge creates or
+updates the Cloudflare record and configures Nginx on the selected VPS to route that hostname.
+
+The application port is the port exposed **on the VPS**, not the public web port. For example, a
+container started with `-p 3000:3000` is reached through VPS port `3000`, so enter `3000`.
+Nginx continues to own public ports 80 and 443 and proxies requests to `127.0.0.1:3000`. Every
+simultaneously running application must use a different VPS host port, while all domains may share
+the same public IP and ports 80/443.
+
+CloudForge rejects a Jenkins credential whose URL points to `localhost` when a remote VPS target is
+selected. This prevents a pipeline intended for a VPS from being created or executed by a Jenkins
+server on the desktop computer. A repository Jenkinsfile may choose a Jenkins agent, so production
+Jenkinsfiles should also target the VPS controller or an explicitly configured remote agent.
+
 CloudForge manages Jenkins as a service installed on an existing VPS target. It does not
 duplicate VPS or SSH records. Every target receives an isolated folder named
 `cloudforge-<target>-<id>`, and every application becomes a Pipeline job inside that folder.
@@ -22,6 +39,12 @@ Open **Jenkins Pipelines**, select the VPS and Jenkins credential, then choose e
 
 - **Jenkinsfile from Git** — repository, branch, Jenkinsfile path, and optional GitHub token.
 - **Inline pipeline steps** — generic Groovy steps for a small pipeline managed by CloudForge.
+
+For an SCM pipeline, explicitly select **Public repository** or **Private repository**. Private
+mode requires an encrypted GitHub credential created under **Secrets → GitHub**. Its personal
+access token grants repository access; the separate Branch / ref field selects `main`, another
+branch, a tag ref, or a branch pattern. Tokens are intentionally never entered directly into the
+pipeline form.
 
 Add any number of typed build parameters (`string`, `boolean`, `choice`, or `password`) and
 environment values. Parameter names use environment-variable syntax such as `IMAGE_TAG` or

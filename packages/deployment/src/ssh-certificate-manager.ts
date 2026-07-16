@@ -18,6 +18,7 @@ export class SshCertificateManager implements CertificateManager {
       target,
       `set -e
 command -v docker >/dev/null 2>&1 || { echo 'Docker is required for the configured Certbot workflow' >&2; exit 1; }
+${httpsFirewallScript()}
 mkdir -p ${quote(config.certificateVolume)} ${quote(config.webrootVolume)}
 docker run --rm -v ${quote(`${config.certificateVolume}:/etc/letsencrypt`)} -v ${quote(`${config.webrootVolume}:/var/www/html`)} certbot/certbot certonly --webroot -w /var/www/html -d ${quote(config.domain)} --email ${quote(config.email)} --agree-tos --no-eff-email${config.forceRenewal ? ' --force-renewal' : ''}
 `,
@@ -109,6 +110,28 @@ docker run --rm -v ${quote(`${config.certificateVolume}:/etc/letsencrypt`)} -v $
       fingerprint: (field(text, 'sha256 Fingerprint=') ?? '').replace(/:/g, ''),
     });
   }
+}
+
+function httpsFirewallScript(): string {
+  return `cloudforge_firewall_changed=0
+cloudforge_open_tcp_port() {
+  port="$1"
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+    ufw status 2>/dev/null | grep -Eq "(^|[[:space:]])$port/tcp[[:space:]].*ALLOW" || { ufw allow "$port/tcp"; cloudforge_firewall_changed=1; }
+  elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
+    firewall-cmd --quiet --query-port="$port/tcp" || { firewall-cmd --permanent --add-port="$port/tcp"; firewall-cmd --reload; cloudforge_firewall_changed=1; }
+  elif command -v iptables >/dev/null 2>&1; then
+    iptables -C INPUT -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT 2>/dev/null || { iptables -I INPUT 1 -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT; cloudforge_firewall_changed=1; }
+  fi
+}
+cloudforge_open_tcp_port 80
+cloudforge_open_tcp_port 443
+if [ "$cloudforge_firewall_changed" = 1 ]; then
+  if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save
+  elif [ -d /etc/iptables ]; then iptables-save > /etc/iptables/rules.v4
+  elif [ -d /etc/sysconfig ]; then iptables-save > /etc/sysconfig/iptables
+  fi
+fi`;
 }
 function quote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;

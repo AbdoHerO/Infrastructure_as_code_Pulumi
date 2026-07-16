@@ -56,7 +56,9 @@ export class CloudflareDnsAutomationService {
       ttl: config.defaultTtl,
       proxied: config.defaultProxy,
       comment: 'Managed by CloudForge',
-      tags: ['cloudforge'],
+      // DNS record tags are not available on every Cloudflare plan. Keep the
+      // management marker in the broadly supported comment field instead.
+      tags: [],
     } as const;
     const saved = existing
       ? await this.cloudflare.updateDnsRecord(credential, zone, existing.id, input)

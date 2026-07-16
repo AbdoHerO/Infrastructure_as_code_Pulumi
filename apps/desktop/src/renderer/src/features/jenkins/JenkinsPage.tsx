@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type {
   JenkinsParameter,
   JenkinsPipelineRecord,
@@ -32,6 +33,7 @@ const empty: SaveJenkinsPipelineInput = {
   description: '',
   targetId: '',
   jenkinsCredentialId: '',
+  repositoryAccess: 'public',
   githubCredentialId: null,
   repositoryUrl: '',
   branch: 'main',
@@ -49,6 +51,7 @@ const empty: SaveJenkinsPipelineInput = {
 
 export function JenkinsPage(): JSX.Element {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const confirm = useConfirmation();
   const targets = useVpsTargets();
   const credentials = useCredentials();
@@ -65,16 +68,32 @@ export function JenkinsPage(): JSX.Element {
   const cloudflareCredentials =
     credentials.data?.filter((item) => item.kind === 'cloudflare') ?? [];
   const selected = pipelines.data?.find((item) => item.id === selectedId);
+  const selectedTarget = targets.data?.find((target) => target.id === form.targetId);
 
   useEffect(() => {
     if (!form.targetId && targets.data?.[0])
       setForm((current) => ({ ...current, targetId: targets.data?.[0]?.id ?? '' }));
   }, [form.targetId, targets.data]);
 
+  useEffect(() => {
+    if (
+      pipelines.isFetched &&
+      form.id &&
+      !pipelines.data?.some((pipeline) => pipeline.id === form.id)
+    ) {
+      setForm({ ...empty, targetId: targets.data?.[0]?.id ?? '' });
+      setEnvironmentText('');
+      setBuildValues({});
+      setSelectedId('');
+    }
+  }, [form.id, pipelines.data, pipelines.isFetched, targets.data]);
+
   const refresh = (): void => {
-    void Promise.all([pipelines.refetch(), targets.refetch(), credentials.refetch()]).then(() =>
-      toast.success('Jenkins state refreshed'),
-    );
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['jenkins'] }),
+      targets.refetch(),
+      credentials.refetch(),
+    ]).then(() => toast.success('Jenkins and CloudForge state refreshed'));
   };
   const save = useMutation({
     mutationFn: () =>
@@ -107,9 +126,12 @@ export function JenkinsPage(): JSX.Element {
   const remove = useMutation({
     mutationFn: (id: string) => invoke('jenkins:delete', { id }),
     onSuccess: () => {
+      setForm({ ...empty, targetId: targets.data?.[0]?.id ?? '' });
+      setEnvironmentText('');
+      setBuildValues({});
       setSelectedId('');
       toast.success('Pipeline deleted from Jenkins and CloudForge');
-      void queryClient.invalidateQueries({ queryKey: ['jenkins', 'pipelines'] });
+      void queryClient.invalidateQueries({ queryKey: ['jenkins'] });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -128,6 +150,7 @@ export function JenkinsPage(): JSX.Element {
       description: pipeline.description,
       targetId: pipeline.targetId,
       jenkinsCredentialId: pipeline.jenkinsCredentialId,
+      repositoryAccess: pipeline.githubCredentialId ? 'private' : 'public',
       githubCredentialId: pipeline.githubCredentialId,
       repositoryUrl: pipeline.repositoryUrl,
       branch: pipeline.branch,
@@ -267,27 +290,73 @@ export function JenkinsPage(): JSX.Element {
                   onChange={(event) => setForm({ ...form, repositoryUrl: event.target.value })}
                 />
               </Field>
-              <Field label="GitHub credential">
+              <Field label="Repository access">
                 <Select
                   disabled={form.definitionMode === 'inline'}
-                  value={form.githubCredentialId ?? ''}
+                  value={form.repositoryAccess ?? 'public'}
                   onChange={(event) =>
-                    setForm({ ...form, githubCredentialId: event.target.value || null })
+                    setForm({
+                      ...form,
+                      repositoryAccess: event.target.value as 'public' | 'private',
+                      githubCredentialId:
+                        event.target.value === 'public' ? null : (form.githubCredentialId ?? null),
+                    })
                   }
                 >
-                  <option value="">Public repository / none</option>
-                  {githubCredentials.map((credential) => (
-                    <option key={credential.id} value={credential.id}>
-                      {credential.name}
-                    </option>
-                  ))}
+                  <option value="public">Public repository</option>
+                  <option value="private">Private repository</option>
                 </Select>
               </Field>
-              <Field label="Branch">
+              {form.definitionMode === 'scm' && form.repositoryAccess === 'private' && (
+                <div className="border-border space-y-3 rounded-md border p-4 md:col-span-2">
+                  <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+                    <Field label="GitHub token credential">
+                      <Select
+                        value={form.githubCredentialId ?? ''}
+                        onChange={(event) =>
+                          setForm({ ...form, githubCredentialId: event.target.value || null })
+                        }
+                      >
+                        <option value="">Select an encrypted GitHub credential</option>
+                        {githubCredentials.map((credential) => (
+                          <option key={credential.id} value={credential.id}>
+                            {credential.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => void credentials.refetch()}>
+                        <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+                      </Button>
+                      <Button variant="outline" onClick={() => navigate('/secrets')}>
+                        <Plus className="mr-2 h-4 w-4" /> Add GitHub credential
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    Store a GitHub personal access token under Secrets → GitHub. CloudForge sends
+                    only its Jenkins credential ID to the job; the token is never written into the
+                    pipeline configuration.
+                  </p>
+                  {githubCredentials.length === 0 && (
+                    <p className="text-destructive text-sm">
+                      No GitHub credentials are saved yet. Add one before saving this private
+                      repository pipeline.
+                    </p>
+                  )}
+                </div>
+              )}
+              <Field label="Branch / ref">
                 <Input
                   value={form.branch}
+                  placeholder="main, develop, refs/tags/v1.0.0, or feature/*"
                   onChange={(event) => setForm({ ...form, branch: event.target.value })}
                 />
+                <p className="text-muted-foreground text-xs">
+                  The GitHub token grants repository access; this field selects the branch or ref
+                  Jenkins checks out.
+                </p>
               </Field>
               <Field label="Jenkinsfile path">
                 <Input
@@ -376,21 +445,34 @@ export function JenkinsPage(): JSX.Element {
                 </label>
                 {form.configureDomain && (
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Domain / subdomain">
+                    <Field label="Application domain">
                       <Input
                         value={form.domain}
-                        placeholder="app.example.com"
+                        placeholder="example.com or app.example.com"
                         onChange={(event) => setForm({ ...form, domain: event.target.value })}
                       />
+                      <p className="text-muted-foreground text-xs">
+                        For the landing page, enter the root domain (for example hanoutplus.ma). For
+                        another application, enter its full subdomain (for example
+                        api.hanoutplus.ma).
+                      </p>
                     </Field>
-                    <Field label="Application port">
+                    <Field label="Application port on VPS">
                       <Input
                         type="number"
+                        min={1}
+                        max={65535}
                         value={form.applicationPort ?? ''}
+                        placeholder="3000"
                         onChange={(event) =>
                           setForm({ ...form, applicationPort: Number(event.target.value) || null })
                         }
                       />
+                      <p className="text-muted-foreground text-xs">
+                        The host port where this application listens on the selected VPS. Example:
+                        Docker <code>-p 3000:3000</code> uses 3000. Nginx keeps public ports 80/443
+                        and forwards this domain to 127.0.0.1:{form.applicationPort ?? 'PORT'}.
+                      </p>
                     </Field>
                     <Field label="Cloudflare credential">
                       <Select
@@ -418,6 +500,17 @@ export function JenkinsPage(): JSX.Element {
                   </div>
                 )}
               </div>
+              <div className="border-border bg-muted/30 rounded-md border p-4 text-sm md:col-span-2">
+                <p className="font-medium">Pipeline execution target</p>
+                <p className="text-muted-foreground mt-1">
+                  This job is created in Jenkins for{' '}
+                  {selectedTarget
+                    ? `${selectedTarget.name} (${selectedTarget.host})`
+                    : 'the selected VPS'}
+                  . Save only configures the remote Jenkins job; it does not run Docker on this
+                  computer. A Jenkins secret that points to localhost is rejected for a remote VPS.
+                </p>
+              </div>
               <div className="flex flex-wrap gap-2 md:col-span-2">
                 <Button
                   disabled={!form.targetId || !form.jenkinsCredentialId || test.isPending}
@@ -426,13 +519,22 @@ export function JenkinsPage(): JSX.Element {
                 >
                   {test.isPending ? 'Testing…' : 'Test Jenkins'}
                 </Button>
-                <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                <Button
+                  disabled={
+                    save.isPending ||
+                    (form.definitionMode === 'scm' &&
+                      form.repositoryAccess === 'private' &&
+                      !form.githubCredentialId)
+                  }
+                  onClick={() => save.mutate()}
+                >
                   <Save className="mr-2 h-4 w-4" />
                   {save.isPending ? 'Configuring…' : 'Save to Jenkins'}
                 </Button>
                 {form.id && (
                   <Button
                     variant="destructive"
+                    disabled={remove.isPending}
                     onClick={() =>
                       void confirm({
                         title: 'Delete Jenkins pipeline?',
@@ -444,7 +546,8 @@ export function JenkinsPage(): JSX.Element {
                       })
                     }
                   >
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {remove.isPending ? 'Deleting…' : 'Delete'}
                   </Button>
                 )}
               </div>

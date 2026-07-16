@@ -24,11 +24,19 @@ export class JenkinsHttpManager implements JenkinsManager {
     });
     if (!existing.ok) return existing;
     if (existing.value.status !== 404) return ok(undefined);
-    const created = await request(connection, `/createItem?name=${encodeURIComponent(folder)}`, {
-      method: 'POST',
-      contentType: 'application/xml',
-      body: folderXml(),
-    });
+    // Let the Folder plugin construct the object. Creating a folder from a
+    // hand-written config.xml leaves the initial AllView without an owner on
+    // some current Jenkins/plugin combinations, which breaks the folder UI
+    // until Jenkins is restarted.
+    const created = await request(
+      connection,
+      `/createItem?name=${encodeURIComponent(folder)}&mode=${encodeURIComponent('com.cloudbees.hudson.plugins.folder.Folder')}`,
+      {
+        method: 'POST',
+        contentType: 'application/x-www-form-urlencoded',
+        body: new URLSearchParams({ json: '{}' }).toString(),
+      },
+    );
     return created.ok ? ok(undefined) : created;
   }
 
@@ -106,6 +114,29 @@ export class JenkinsHttpManager implements JenkinsManager {
     return removed.ok ? ok(undefined) : removed;
   }
 
+  async pruneEmptyFolder(
+    connection: JenkinsConnection,
+    folder: string,
+  ): Promise<Result<boolean, DeploymentError>> {
+    const folderPath = `/job/${segment(folder)}`;
+    const response = await request(connection, `${folderPath}/api/json?tree=jobs[name]`, {
+      acceptNotFound: true,
+    });
+    if (!response.ok) return response;
+    if (response.value.status === 404) return ok(false);
+    try {
+      const data = (await response.value.json()) as { jobs?: readonly { name?: string }[] };
+      if ((data.jobs?.length ?? 0) > 0) return ok(false);
+      const removed = await request(connection, `${folderPath}/doDelete`, {
+        method: 'POST',
+        acceptNotFound: true,
+      });
+      return removed.ok ? ok(removed.value.status !== 404) : removed;
+    } catch (cause) {
+      return err(new DeploymentError('Jenkins returned an invalid folder status', { cause }));
+    }
+  }
+
   async trigger(
     connection: JenkinsConnection,
     folder: string,
@@ -131,11 +162,11 @@ export class JenkinsHttpManager implements JenkinsManager {
     folder: string,
     name: string,
   ): Promise<Result<JenkinsJobStatus, DeploymentError>> {
-    const response = await request(
-      connection,
-      `/job/${segment(folder)}/job/${segment(name)}/api/json?tree=buildable,color,inQueue,lastBuild[number,result,url]`,
-      { acceptNotFound: true },
-    );
+    const jobPath = `/job/${segment(folder)}/job/${segment(name)}`;
+    // Jenkins 2.568 can fail with HTTP 500 when the tree API asks for nested
+    // lastBuild fields on a Pipeline that has never run. Load the shallow job
+    // representation first; it safely returns lastBuild: null for a new job.
+    const response = await request(connection, `${jobPath}/api/json`, { acceptNotFound: true });
     if (!response.ok) return response;
     if (response.value.status === 404)
       return ok({
@@ -154,14 +185,33 @@ export class JenkinsHttpManager implements JenkinsManager {
         inQueue?: boolean;
         lastBuild?: { number?: number; result?: string | null; url?: string } | null;
       };
+      let lastBuildResult = data.lastBuild?.result ?? null;
+      let lastBuildUrl = data.lastBuild?.url ?? null;
+      const lastBuildNumber = data.lastBuild?.number ?? null;
+      if (lastBuildNumber !== null && (lastBuildResult === null || lastBuildUrl === null)) {
+        const buildResponse = await request(
+          connection,
+          `${jobPath}/${lastBuildNumber}/api/json?tree=number,result,url`,
+          { acceptNotFound: true },
+        );
+        if (!buildResponse.ok) return buildResponse;
+        if (buildResponse.value.status !== 404) {
+          const build = (await buildResponse.value.json()) as {
+            result?: string | null;
+            url?: string;
+          };
+          lastBuildResult = build.result ?? null;
+          lastBuildUrl = build.url ?? lastBuildUrl;
+        }
+      }
       return ok({
         exists: true,
         enabled: data.buildable ?? false,
         color: data.color ?? 'unknown',
         inQueue: data.inQueue ?? false,
-        lastBuildNumber: data.lastBuild?.number ?? null,
-        lastBuildResult: data.lastBuild?.result ?? null,
-        lastBuildUrl: data.lastBuild?.url ?? null,
+        lastBuildNumber,
+        lastBuildResult,
+        lastBuildUrl,
       });
     } catch (cause) {
       return err(new DeploymentError('Jenkins returned an invalid job status', { cause }));
@@ -222,17 +272,6 @@ async function request(
   } catch (cause) {
     return err(new DeploymentError('Could not connect to Jenkins', { cause }));
   }
-}
-
-function folderXml(): string {
-  return `<?xml version="1.1" encoding="UTF-8"?>
-<com.cloudbees.hudson.plugins.folder.Folder plugin="cloudbees-folder">
-  <actions/><description>Managed by CloudForge</description><properties/>
-  <folderViews class="com.cloudbees.hudson.plugins.folder.views.DefaultFolderViewHolder">
-    <views><hudson.model.AllView><name>all</name><filterExecutors>false</filterExecutors><filterQueue>false</filterQueue><properties class="hudson.model.View$PropertyList"/></hudson.model.AllView></views>
-    <tabBar class="hudson.views.DefaultViewsTabBar"/><primaryView>all</primaryView>
-  </folderViews><healthMetrics/><icon class="com.cloudbees.hudson.plugins.folder.icons.StockFolderIcon"/>
-</com.cloudbees.hudson.plugins.folder.Folder>`;
 }
 
 function githubCredentialXml(id: string, token: string): string {
