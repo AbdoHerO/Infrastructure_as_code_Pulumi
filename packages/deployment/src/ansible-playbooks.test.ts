@@ -3,6 +3,7 @@ import { parseDocument } from 'yaml';
 import type { NginxSite } from '@cloudforge/core';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
 import {
+  jenkinsServiceActionScript,
   parseProfileStates,
   renderManagedNginxSite,
   validateNginxSite,
@@ -63,7 +64,7 @@ describe('generic Ansible catalog', () => {
 describe('live Ansible profile state', () => {
   it('parses installed, running, stopped, and host-firewall state', () => {
     const states = parseProfileStates(`noise
-CF_PROFILE|docker|true|true|27.5.1|-|unknown|Docker Engine service
+CF_PROFILE|docker|true|true|27.5.1|-|unknown|Docker Engine service|docker_users=ubuntu,jenkins
 CF_PROFILE|dockhand|true|true|fnsys/dockhand:latest|3000|unknown|Dockhand container
 CF_PROFILE|portainer|false|false||-|unknown|Portainer container is absent
 CF_PROFILE|jenkins|true|false|2.516.1|8080|closed|Jenkins native service
@@ -74,6 +75,9 @@ CF_PROFILE|nginx|true|true|1.24.0|80|open|Nginx native service
     expect(states.find((state) => state.profileId === 'dockhand')).toMatchObject({
       status: 'running',
       port: 3000,
+    });
+    expect(states.find((state) => state.profileId === 'docker')).toMatchObject({
+      configuration: { docker_users: 'ubuntu,jenkins' },
     });
     expect(states.find((state) => state.profileId === 'portainer')).toMatchObject({
       status: 'not-installed',
@@ -87,6 +91,26 @@ CF_PROFILE|nginx|true|true|1.24.0|80|open|Nginx native service
       status: 'running',
       hostFirewallOpen: true,
     });
+  });
+});
+
+describe('Jenkins service actions', () => {
+  it('verifies service, listener, Docker group and Docker daemon access without mutation', () => {
+    const script = jenkinsServiceActionScript('verify');
+    expect(script).toContain('systemctl is-active --quiet jenkins');
+    expect(script).toContain('ss -ltnH');
+    expect(script).toContain('id -nG jenkins');
+    expect(script).toContain('runuser -u jenkins -- docker info');
+    expect(script).not.toContain('systemctl restart jenkins');
+  });
+
+  it('restarts Jenkins and then runs the same health checks', () => {
+    const script = jenkinsServiceActionScript('restart');
+    expect(script).toContain('systemctl restart jenkins');
+    expect(script).toContain('systemctl is-active --quiet jenkins');
+    expect(script.indexOf('systemctl restart jenkins')).toBeLessThan(
+      script.indexOf('systemctl is-active --quiet jenkins'),
+    );
   });
 });
 

@@ -95,6 +95,23 @@ export function registerAnsibleHandlers(): void {
       return outcome;
     }),
   );
+  registerHandler('ansible:jenkinsAction', (request) =>
+    operation(request.streamId, async (signal) => {
+      const outcome = orThrow(
+        await getContainer().ansibleManager.manageJenkins(
+          await resolveSshTarget(request),
+          request.action,
+          (event) => emitEvent('ansible:log', { streamId: request.streamId, event }),
+          { signal },
+        ),
+      );
+      getContainer().activityService.recordSafe({
+        type: `ansible.jenkins.${request.action === 'restart' ? 'restarted' : 'verified'}`,
+        message: `Jenkins ${request.action === 'restart' ? 'restarted' : 'verified'} on ${request.host}`,
+      });
+      return outcome;
+    }),
+  );
   registerHandler('ansible:access', async (request) =>
     orThrow(
       await getContainer().ansibleManager.access(

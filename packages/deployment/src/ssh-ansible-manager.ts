@@ -12,6 +12,7 @@ import type {
   AnsibleRunOptions,
   AnsibleStatus,
   DeploymentTarget,
+  JenkinsServiceAction,
   NginxSite,
   VpsPreflightReport,
 } from '@cloudforge/core';
@@ -66,6 +67,30 @@ export class SshAnsibleManager implements AnsibleManager {
     } catch (cause) {
       return err(new DeploymentError('Could not parse installed playbook state', { cause }));
     }
+  }
+
+  async manageJenkins(
+    target: DeploymentTarget,
+    action: JenkinsServiceAction,
+    onEvent?: AnsibleEventSink,
+    options: AnsibleRunOptions = {},
+  ): Promise<Result<AnsibleOutcome, DeploymentError>> {
+    onEvent?.({
+      stream: 'step',
+      message: action === 'restart' ? 'Restarting Jenkins…' : 'Verifying Jenkins service…',
+    });
+    const result = await withConnection(target, options.signal, (client) =>
+      execute(
+        client,
+        privilegedScript(jenkinsServiceActionScript(action)),
+        onEvent,
+        options.signal,
+      ),
+    );
+    if (!result.ok) return result;
+    const summary = action === 'restart' ? 'Jenkins restarted and verified' : 'Jenkins is healthy';
+    onEvent?.({ stream: 'step', message: `${summary}.` });
+    return ok({ success: true, summary });
   }
 
   async preflight(
@@ -346,12 +371,13 @@ firewall_state() {
     else printf open; fi
   else printf unknown; fi
 }
-emit() { printf 'CF_PROFILE|%s|%s|%s|%s|%s|%s|%s\\n' "$1" "$2" "$3" "$(clean "$4")" "$5" "$6" "$(clean "$7")"; }
+emit() { config="\${8-}"; printf 'CF_PROFILE|%s|%s|%s|%s|%s|%s|%s|%s\\n' "$1" "$2" "$3" "$(clean "$4")" "$5" "$6" "$(clean "$7")" "$(clean "$config")"; }
 
 if command -v docker >/dev/null 2>&1; then
   docker_running=false; $S systemctl is-active --quiet docker && docker_running=true
   docker_version="$($S docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
-  emit docker true "$docker_running" "$docker_version" - unknown 'Docker Engine service'
+  docker_users="$($S getent group docker 2>/dev/null | cut -d: -f4 | tr -d ' ' || true)"
+  emit docker true "$docker_running" "$docker_version" - unknown 'Docker Engine service' "docker_users=$docker_users"
 else emit docker false false '' - unknown 'Docker is not installed'; fi
 
 if $S docker inspect dockhand >/dev/null 2>&1; then
@@ -381,14 +407,39 @@ if command -v nginx >/dev/null 2>&1; then
   emit nginx true "$nginx_running" "$nginx_version" 80 "$(firewall_state 80)" 'Nginx native service'
 else emit nginx false false '' 80 "$(firewall_state 80)" 'Nginx is not installed'; fi`;
 
+export function jenkinsServiceActionScript(action: JenkinsServiceAction): string {
+  const restart = action === 'restart' ? 'systemctl restart jenkins\n' : '';
+  return `set -eu
+${restart}systemctl is-active --quiet jenkins
+printf 'Jenkins service: %s\\n' "$(systemctl is-active jenkins)"
+printf 'Jenkins startup: %s\\n' "$(systemctl is-enabled jenkins)"
+port="$(sed -n 's/.*JENKINS_PORT=\\([0-9][0-9]*\\).*/\\1/p' /etc/systemd/system/jenkins.service.d/cloudforge.conf 2>/dev/null | head -n1)"
+port="${'${port:-8080}'}"
+ss -ltnH | awk '{print $4}' | grep -Eq "(^|:)${'$port'}$"
+printf 'Jenkins port: %s (listening)\\n' "${'$port'}"
+id -nG jenkins | tr ' ' '\\n' | grep -qx docker
+printf 'Jenkins Docker group: ready\\n'
+runuser -u jenkins -- docker info --format 'Jenkins Docker access: {{.ServerVersion}}'
+`;
+}
+
 export function parseProfileStates(output: string): readonly AnsibleProfileState[] {
   const checkedAt = new Date().toISOString();
   return output
     .split('\n')
     .filter((line) => line.startsWith('CF_PROFILE|'))
     .map((line) => {
-      const [, rawId, rawInstalled, rawRunning, rawVersion, rawPort, rawFirewall, detail] =
-        line.split('|');
+      const [
+        ,
+        rawId,
+        rawInstalled,
+        rawRunning,
+        rawVersion,
+        rawPort,
+        rawFirewall,
+        detail,
+        rawConfiguration,
+      ] = line.split('|');
       if (!rawId || !ANSIBLE_PROFILES.some((profile) => profile.id === rawId))
         throw new Error('Unknown profile state');
       const installed = rawInstalled === 'true';
@@ -404,9 +455,22 @@ export function parseProfileStates(output: string): readonly AnsibleProfileState
         port: parsedPort !== null && Number.isInteger(parsedPort) ? parsedPort : null,
         hostFirewallOpen: rawFirewall === 'open' ? true : rawFirewall === 'closed' ? false : null,
         detail: detail ?? '',
+        configuration: parseProfileConfiguration(rawConfiguration ?? ''),
         checkedAt,
       } satisfies AnsibleProfileState;
     });
+}
+
+function parseProfileConfiguration(value: string): Readonly<Record<string, string>> {
+  const configuration: Record<string, string> = {};
+  for (const entry of value.split(';')) {
+    const separator = entry.indexOf('=');
+    if (separator < 1) continue;
+    const key = entry.slice(0, separator).trim();
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) continue;
+    configuration[key] = entry.slice(separator + 1).trim();
+  }
+  return configuration;
 }
 
 async function postCheck(

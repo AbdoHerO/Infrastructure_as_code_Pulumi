@@ -90,6 +90,7 @@ export function AnsiblePage(): JSX.Element {
     actions.preflight.isPending ||
     actions.repair.isPending ||
     actions.run.isPending ||
+    actions.jenkinsAction.isPending ||
     actions.access.isPending ||
     actions.upsert.isPending ||
     actions.remove.isPending;
@@ -193,6 +194,30 @@ export function AnsiblePage(): JSX.Element {
       },
     );
   };
+  const manageJenkins = async (action: 'verify' | 'restart'): Promise<void> => {
+    if (
+      action === 'restart' &&
+      !(await confirm({
+        title: 'Restart Jenkins?',
+        description:
+          'Jenkins will be briefly unavailable. Jobs, plugins, credentials and build history are preserved.',
+        confirmLabel: 'Restart Jenkins',
+        destructive: false,
+      }))
+    )
+      return;
+    logs.clear();
+    actions.jenkinsAction.mutate(
+      { ...target, action },
+      {
+        onSuccess: ({ summary }) => {
+          toast.success(summary);
+          actions.profileStates.mutate(target);
+        },
+        onError: fail,
+      },
+    );
+  };
   const loadProfileAccess = (): void => {
     if (!profile) return;
     setShowAccessSecret(false);
@@ -267,6 +292,10 @@ export function AnsiblePage(): JSX.Element {
     // Primitive target fields deliberately define when remote state is refreshed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, hostKeySha256, port, sshCredentialId, username]);
+  useEffect(() => {
+    if (!profileState || Object.keys(profileState.configuration).length === 0) return;
+    setVariables((current) => ({ ...current, ...profileState.configuration }));
+  }, [profileId, profileState]);
   const saveTarget = (): void => {
     const request = { name: targetName, ...target };
     const callbacks = {
@@ -654,6 +683,30 @@ export function AnsiblePage(): JSX.Element {
                   <Badge variant={profileReady ? 'success' : 'secondary'}>
                     {profileReady ? 'Ready to run' : 'Readiness check required'}
                   </Badge>
+                  {profile?.id === 'jenkins' && profileState?.installed ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        disabled={!connected || busy}
+                        onClick={() => void manageJenkins('verify')}
+                      >
+                        {actions.jenkinsAction.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="size-4" />
+                        )}
+                        Verify Jenkins
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={!connected || busy}
+                        onClick={() => void manageJenkins('restart')}
+                      >
+                        <RefreshCw className="size-4" />
+                        Restart Jenkins
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
                 {actions.run.isSuccess ? (
                   <div className="border-success/30 bg-success/5 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">

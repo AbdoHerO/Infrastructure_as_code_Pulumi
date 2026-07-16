@@ -406,6 +406,13 @@ export interface IpcContract {
     };
     response: AnsibleOutcome;
   };
+  'ansible:jenkinsAction': {
+    request: SshTargetRequest & {
+      action: 'verify' | 'restart';
+      streamId: string;
+    };
+    response: AnsibleOutcome;
+  };
   'ansible:access': {
     request: SshTargetRequest & {
       profileId: AnsibleProfileId;
@@ -751,6 +758,7 @@ export const IPC_CHANNELS = [
   'ansible:repair',
   'ansible:bootstrap',
   'ansible:run',
+  'ansible:jenkinsAction',
   'ansible:access',
   'ansible:cancel',
   'ansible:nginxSites',

@@ -39,6 +39,8 @@ export interface AnsibleProfileState {
   /** Native host firewall only. Cloud-provider ingress is managed separately. */
   readonly hostFirewallOpen: boolean | null;
   readonly detail: string;
+  /** Non-secret live configuration discovered from the VPS for editable profile fields. */
+  readonly configuration: Readonly<Record<string, string | number | boolean>>;
   readonly checkedAt: string;
 }
 
@@ -90,6 +92,8 @@ export interface AnsibleOutcome {
   readonly summary: string;
 }
 
+export type JenkinsServiceAction = 'verify' | 'restart';
+
 /** Sensitive, short-lived access information read from a managed service. */
 export interface AnsibleAccessDetails {
   readonly profileId: AnsibleProfileId;
@@ -136,6 +140,12 @@ export interface AnsibleManager {
     target: DeploymentTarget,
     profileId: AnsibleProfileId,
     variables: Readonly<Record<string, unknown>>,
+    onEvent?: AnsibleEventSink,
+    options?: AnsibleRunOptions,
+  ): Promise<Result<AnsibleOutcome, DeploymentError>>;
+  manageJenkins(
+    target: DeploymentTarget,
+    action: JenkinsServiceAction,
     onEvent?: AnsibleEventSink,
     options?: AnsibleRunOptions,
   ): Promise<Result<AnsibleOutcome, DeploymentError>>;

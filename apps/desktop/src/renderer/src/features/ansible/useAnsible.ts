@@ -30,6 +30,7 @@ type PreflightRequest = SshTargetRequest & {
   profileId?: AnsibleProfile['id'];
   variables?: Record<string, unknown>;
 };
+type JenkinsActionRequest = SshTargetRequest & { action: 'verify' | 'restart' };
 
 interface AnsibleActions {
   inspect: UseMutationResult<{ fingerprint: string }, Error, { host: string; port: number }>;
@@ -39,6 +40,7 @@ interface AnsibleActions {
   preflight: UseMutationResult<VpsPreflightReport, Error, PreflightRequest>;
   repair: UseMutationResult<VpsPreflightReport, Error, SshTargetRequest & { targetId?: string }>;
   run: UseMutationResult<AnsibleOutcome, Error, RunRequest>;
+  jenkinsAction: UseMutationResult<AnsibleOutcome, Error, JenkinsActionRequest>;
   access: UseMutationResult<AnsibleAccessDetails | null, Error, RunRequest>;
   sites: UseMutationResult<NginxSite[], Error, SshTargetRequest>;
   upsert: UseMutationResult<AnsibleOutcome, Error, UpsertRequest>;
@@ -125,6 +127,10 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
       },
     ) => invoke('ansible:run', { ...request, streamId }),
   });
+  const jenkinsAction = useMutation({
+    mutationFn: (request: JenkinsActionRequest) =>
+      invoke('ansible:jenkinsAction', { ...request, streamId }),
+  });
   const access = useMutation({
     mutationFn: (request: RunRequest) => invoke('ansible:access', request),
   });
@@ -148,6 +154,7 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
     preflight,
     repair,
     run,
+    jenkinsAction,
     access,
     sites,
     upsert,
