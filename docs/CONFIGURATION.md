@@ -80,6 +80,12 @@ be attached to any Jenkins pipeline. CloudForge synchronizes only a derived
 Jenkins credential ID to the job; plaintext file content never enters pipeline
 persistence, Activity history, or logs.
 
+When creating or editing this credential, you can either paste the complete
+environment content or select an existing `.env`, `.env.production`, staging, or
+development file with the native file picker. Uploaded content is shown in the
+editor for review before CloudForge encrypts and saves it. Files are limited to
+1 MB and are never copied into the CloudForge installation directory.
+
 ---
 
 ## Oracle Cloud (OCI)

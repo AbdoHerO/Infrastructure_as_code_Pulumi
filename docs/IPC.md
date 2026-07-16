@@ -246,6 +246,12 @@ credential and additional application routes. The main process installs the
 environment as a folder-scoped Jenkins secret-text credential; neither the IPC
 response nor the persisted pipeline contains its plaintext content.
 
+`credentials:importEnvironmentFile` opens the operating system's native file
+picker in the Electron main process. It accepts a non-empty UTF-8 text file up to
+1 MB and returns its filename and content to the credential editor for review.
+The content is persisted only after the normal encrypted credential create or
+update operation.
+
 ## Adding a channel (checklist)
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,

@@ -101,6 +101,59 @@ describe('CloudflareDnsAutomationService', () => {
     );
   });
 
+  it('updates a conflicting CNAME in place when an application needs an A record', async () => {
+    const cname = {
+      ...record,
+      type: 'CNAME' as const,
+      content: 'example.com',
+    };
+    const createDnsRecord = vi.fn();
+    const updateDnsRecord = vi
+      .fn()
+      .mockResolvedValue(ok({ ...record, comment: 'Managed by CloudForge' }));
+    const cloudflare = {
+      zones: vi.fn().mockResolvedValue(ok([zone])),
+      dnsRecords: vi.fn().mockResolvedValue(ok([cname])),
+      createDnsRecord,
+      updateDnsRecord,
+      zoneSettings: vi.fn().mockResolvedValue(ok({ sslMode: 'full' })),
+    } as unknown as CloudflareService;
+    const settings = {
+      get: vi.fn().mockResolvedValue(
+        ok({
+          ...DEFAULT_SETTINGS,
+          cloudflare: {
+            ...DEFAULT_SETTINGS.cloudflare,
+            defaultCredentialId: 'credential-1',
+            defaultZoneId: zone.id,
+            waitForPropagation: false,
+          },
+        }),
+      ),
+    } as unknown as SettingsService;
+    const automation = new CloudflareDnsAutomationService(
+      cloudflare,
+      settings,
+      { resolve: vi.fn().mockResolvedValue(ok([])) },
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await automation.ensure(record.name, record.content);
+
+    expect(result.ok).toBe(true);
+    expect(createDnsRecord).not.toHaveBeenCalled();
+    expect(updateDnsRecord).toHaveBeenCalledWith(
+      'credential-1',
+      zone.id,
+      cname.id,
+      expect.objectContaining({
+        type: 'A',
+        name: record.name,
+        content: record.content,
+      }),
+    );
+  });
+
   it('accepts an active proxied record whose origin matches the VPS', async () => {
     const result = await service(true).verify('app.example.com', record.content);
 

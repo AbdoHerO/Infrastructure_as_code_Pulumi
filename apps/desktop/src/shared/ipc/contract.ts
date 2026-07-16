@@ -104,6 +104,10 @@ export interface IpcContract {
   'credentials:list': { request: void; response: CredentialSummaryDto[] };
   'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
   'credentials:update': { request: UpdateCredentialInput; response: CredentialSummaryDto };
+  'credentials:importEnvironmentFile': {
+    request: void;
+    response: { filename: string; content: string } | null;
+  };
   'credentials:reveal': { request: { id: string }; response: RevealedCredentialDto };
   'credentials:delete': { request: { id: string }; response: void };
 
@@ -673,6 +677,7 @@ export const IPC_CHANNELS = [
   'credentials:list',
   'credentials:create',
   'credentials:update',
+  'credentials:importEnvironmentFile',
   'credentials:reveal',
   'credentials:delete',
   'settings:get',

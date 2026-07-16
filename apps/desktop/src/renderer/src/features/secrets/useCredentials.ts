@@ -69,3 +69,11 @@ export function useDeleteCredential(): UseMutationResult<void, Error, string> {
 export function revealCredential(id: string): Promise<Record<string, string>> {
   return invoke('credentials:reveal', { id }).then((r) => ({ ...r.data }));
 }
+
+/** Open the native file picker and read a deployment environment file in the main process. */
+export function importEnvironmentFile(): Promise<{
+  filename: string;
+  content: string;
+} | null> {
+  return invoke('credentials:importEnvironmentFile', undefined);
+}

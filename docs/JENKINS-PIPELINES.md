@@ -89,6 +89,9 @@ SCM polling trigger has been configured separately.
 Enable **Configure application domain**, provide `app.example.com` and the host port exposed by
 the application. CloudForge then reuses the selected/default Cloudflare credential to create or
 update the DNS origin record and applies a validated Nginx reverse proxy to `127.0.0.1:<port>`.
+If that hostname already exists as a CNAME, CloudForge updates the existing record in place to the
+required A or AAAA origin record. Repeated pipeline saves therefore remain idempotent instead of
+failing with Cloudflare's same-name record conflict.
 Issue the first certificate from **SSL & Domains** after the application is reachable; scheduled
 renewal remains owned by that module.
 

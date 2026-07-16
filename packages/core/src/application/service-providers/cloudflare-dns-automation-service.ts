@@ -46,9 +46,16 @@ export class CloudflareDnsAutomationService {
     const records = await this.cloudflare.dnsRecords(credential, zone);
     if (!records.ok) return records;
     const type = expectedIp.includes(':') ? 'AAAA' : 'A';
-    const existing = records.value.find(
+    const sameType = records.value.find(
       (record) => record.name.replace(/\.$/, '') === normalized && record.type === type,
     );
+    // Cloudflare does not permit a CNAME to coexist with an A/AAAA record at
+    // the same hostname. Update that record in place so repeated pipeline
+    // saves remain idempotent instead of attempting a conflicting create.
+    const conflictingCname = records.value.find(
+      (record) => record.name.replace(/\.$/, '') === normalized && record.type === 'CNAME',
+    );
+    const existing = sameType ?? conflictingCname;
     const input = {
       type,
       name: normalized,
@@ -70,7 +77,12 @@ export class CloudflareDnsAutomationService {
       this.activities.recordSafe({
         type: 'cloudflare.dns.automatic',
         message: `Prepared DNS for ${normalized}`,
-        metadata: { zoneId: zone, domain: normalized, proxied: saved.value.proxied },
+        metadata: {
+          zoneId: zone,
+          domain: normalized,
+          proxied: saved.value.proxied,
+          previousType: existing?.type ?? null,
+        },
       });
     return config.waitForPropagation
       ? this.wait(saved.value, expectedIp, config.propagationTimeoutSeconds, sslMode, zoneStatus)
