@@ -16,7 +16,26 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { invoke } from '../../lib/ipc.js';
 import { useAppInfo } from '../dashboard/useAppInfo.js';
 
-const CAPABILITIES = ['Electron', 'React', 'Pulumi', 'Oracle Cloud', 'SSH', 'Ansible', 'Docker'];
+const CAPABILITIES = [
+  'Oracle Cloud',
+  'AWS',
+  'Pulumi',
+  'SSH',
+  'Ansible',
+  'Docker',
+  'Nginx',
+  'Firewall',
+  'SSL',
+  'Cloudflare',
+  'Jenkins',
+];
+
+const WORKFLOW_GUIDES = [
+  { label: 'Cloudflare & DNS', doc: 'cloudflare' },
+  { label: 'Jenkins Pipelines', doc: 'jenkins-pipelines' },
+  { label: 'SSL & Domains', doc: 'ssl-domains' },
+  { label: 'Ansible & VPS', doc: 'ansible' },
+] as const;
 
 export function AboutPage(): JSX.Element {
   const { data: info, isLoading } = useAppInfo();
@@ -75,8 +94,9 @@ export function AboutPage(): JSX.Element {
           <div>
             <h2 className="text-lg font-semibold">Modern infrastructure, one desktop</h2>
             <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
-              CloudForge lets DevOps engineers provision, configure, deploy, and manage
-              infrastructure from one local-first desktop application.
+              CloudForge lets DevOps engineers provision cloud infrastructure, configure Linux
+              services, manage DNS and TLS, and run application delivery pipelines from one
+              local-first desktop application.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {CAPABILITIES.map((capability) => (
@@ -119,6 +139,19 @@ export function AboutPage(): JSX.Element {
                 <ClipboardCopy />
                 Copy diagnostics
               </Button>
+            </div>
+            <div className="border-border mt-7 border-t pt-5">
+              <h3 className="text-sm font-semibold">Operational guides</h3>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Offline, version-matched instructions bundled with this installation.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {WORKFLOW_GUIDES.map((guide) => (
+                  <Button key={guide.doc} variant="outline" size="sm" asChild>
+                    <Link to={`/documentation?doc=${guide.doc}`}>{guide.label}</Link>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
 

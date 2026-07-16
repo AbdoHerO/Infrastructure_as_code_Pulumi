@@ -85,6 +85,11 @@ export class JenkinsPipelineService {
     if (!target.ok) return target;
     const connection = await this.connection(valid.value.targetId, valid.value.jenkinsCredentialId);
     if (!connection.ok) return connection;
+    const jobParameters = synchronizeApplicationPortParameter(
+      valid.value.parameters,
+      valid.value.configureDomain,
+      valid.value.applicationPort,
+    );
     const folder = `cloudforge-${slug(target.value.name)}-${target.value.id.slice(0, 8)}`;
     const existing = input.id
       ? await this.pipelines.get(input.id)
@@ -121,7 +126,7 @@ export class JenkinsPipelineService {
       jenkinsfilePath: valid.value.jenkinsfilePath,
       pipelineScript: valid.value.pipelineScript,
       definitionMode: valid.value.definitionMode,
-      parameters: valid.value.parameters,
+      parameters: jobParameters,
       environment: valid.value.environment,
       githubCredentialId,
     });
@@ -147,6 +152,7 @@ export class JenkinsPipelineService {
       id,
       folder,
       ...valid.value,
+      parameters: jobParameters,
       githubCredentialId: valid.value.githubCredentialId,
       cloudflareCredentialId: valid.value.cloudflareCredentialId,
       cloudflareZoneId: valid.value.cloudflareZoneId,
@@ -251,11 +257,15 @@ export class JenkinsPipelineService {
     const allowed = new Set(loaded.value.parameters.map((parameter) => parameter.name));
     if (Object.keys(parameters).some((name) => !allowed.has(name)))
       return err(new ValidationError('A build parameter is not declared by this pipeline'));
+    const effectiveParameters = Object.fromEntries(
+      loaded.value.parameters.map((parameter) => [parameter.name, parameter.defaultValue]),
+    );
+    Object.assign(effectiveParameters, parameters);
     const result = await this.jenkins.trigger(
       connection.value,
       loaded.value.folder,
       loaded.value.name,
-      parameters,
+      effectiveParameters,
     );
     this.activities.recordSafe({
       type: result.ok ? 'jenkins.build.triggered' : 'jenkins.build.failed',
@@ -348,6 +358,27 @@ export class JenkinsPipelineService {
     }
     return ok({ baseUrl, username, apiToken });
   }
+}
+
+function synchronizeApplicationPortParameter(
+  parameters: readonly JenkinsParameter[],
+  configureDomain: boolean,
+  applicationPort: number | null,
+): readonly JenkinsParameter[] {
+  if (!configureDomain || applicationPort === null) return parameters;
+  const defaultValue = String(applicationPort);
+  const existing = parameters.findIndex((parameter) => parameter.name === 'HOST_PORT');
+  const portParameter: JenkinsParameter = {
+    name: 'HOST_PORT',
+    type: 'string',
+    defaultValue,
+    description: 'Host port synchronized with the CloudForge application domain',
+    choices: [],
+  };
+  if (existing < 0) return [...parameters, portParameter];
+  return parameters.map((parameter, index) =>
+    index === existing ? { ...portParameter, description: parameter.description } : parameter,
+  );
 }
 
 function validatePipeline(

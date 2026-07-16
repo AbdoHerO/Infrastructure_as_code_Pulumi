@@ -83,6 +83,21 @@ terminal shows actual remote stages and output, and an operation can be cancelle
 Profiles are idempotent. Image and port values are variables; there are no
 HanoutPlus-specific domains, IPs, repositories, or credentials.
 
+**Refresh states** reads the selected VPS rather than trusting the last local
+run. Docker Engine shows the installed version and the actual members of the
+remote `docker` group; the **Docker users** field is repopulated from that live
+state. Use a comma-separated list such as the SSH account plus `jenkins` when
+both need Docker access. Re-running Docker Engine adds the requested users and
+updates packages/services in place; it does not remove images, containers, or
+volumes.
+
+When Jenkins is selected, **Verify Jenkins** checks that the service is active
+and enabled, its configured port is listening, the `jenkins` account belongs to
+the Docker group, and it can reach the Docker daemon. **Restart Jenkins** is a
+confirmed service action and preserves jobs, plugins, credentials, workspaces,
+and build history. These buttons do not trigger application pipelines; use
+**Jenkins Pipelines → Run pipeline** for that.
+
 ## Route a domain to an application port
 
 Point the domain's DNS record to the VPS and allow TCP port 80 in both the cloud

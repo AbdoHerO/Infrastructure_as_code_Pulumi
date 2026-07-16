@@ -9,8 +9,9 @@ business logic lives in components.**
 
 The sidebar groups modules by concern:
 
-- **Overview** — Dashboard
-- **Manage** — Projects, Infrastructure, Deployments, Containers, Ansible
+- **Overview** — Dashboard, Documentation
+- **Manage** — Projects, Infrastructure, Deployments, Containers, Ansible,
+  Nginx, Firewall, SSL & Domains, Cloudflare, Jenkins Pipelines, SSH Terminal
 - **Configure** — Cloud Providers, Templates, Secrets, SSH Keys
 - **Observe** — Logs
 - **System** — Plugin Marketplace, Updates, Settings, About
@@ -116,7 +117,18 @@ Creates one isolated Jenkins folder per shared VPS target and idempotently creat
 application Pipeline jobs. Jobs support Git-backed Jenkinsfiles or inline steps, encrypted
 Jenkins/GitHub credentials, branches, typed parameters, environment values, build triggering,
 and live status. Optional domain automation reuses Cloudflare DNS and the Nginx Manager rather
-than duplicating either feature. Channels: `jenkins:*`. See [Jenkins Pipelines](JENKINS-PIPELINES.md).
+than duplicating either feature. The application port is synchronized into the
+job's `HOST_PORT` parameter and declared defaults are sent when queuing a build.
+Saving configures the job; running is a separate explicit action. Channels:
+`jenkins:*`. See [Jenkins Pipelines](JENKINS-PIPELINES.md).
+
+## SSH Terminal (`/terminal`)
+
+Opens an interactive PTY over the selected shared VPS target using the encrypted
+SSH key/password and pinned server fingerprint. Resize and input travel through
+typed streaming IPC; the renderer never receives credential material. Closing
+the terminal ends its remote session without changing the target. Channels:
+`terminal:*`; event `terminal:data`.
 
 ## Logs (`/logs`)
 
@@ -147,9 +159,12 @@ record is the single source of truth. Channels: `sshKeys:*`.
 
 Tabbed, live-persisted configuration: **General** (log retention),
 **Appearance** (theme mode via the Zustand store, reduced motion),
-**Deployment** (confirm destructive actions, default region), **Security**
-(encryption status plus database/Pulumi-state backup and restore). Channels:
-`settings:*`, `security:status`, `backup:*`.
+**Deployment** (confirm destructive actions, default region), **Updates**
+(automatic checks/downloads), **Security** (encryption status plus
+database/Pulumi-state backup and restore), and **Cloudflare** (default
+credential/zone, TTL/proxy, propagation, synchronization, SSL, redirects,
+cache, confirmation, and Activity preferences). Channels: `settings:*`,
+`security:status`, `backup:*`.
 
 ## Built-in Extensions (`/plugins`)
 
@@ -167,7 +182,9 @@ development builds clearly report that update checks require packaging.
 
 ## About (`/about`)
 
-Product/branding information (name, subtitle, tagline, version).
+Product positioning, current operational capabilities, links to the bundled
+guides, update/release actions, dynamic application/build/runtime versions, OS
+and architecture, privacy/license links, and secret-free diagnostic copying.
 
 ---
 

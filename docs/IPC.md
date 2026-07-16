@@ -214,9 +214,12 @@ typed `AppError` for the registry to serialize).
 | `nginx:logs`, `nginx:backups`, `nginx:readConfig`                                         | Read bounded operational data                                |
 | `firewall:get`, `firewall:update`                                                         | Read, drift-check, and update a provider firewall in place   |
 | `ssl:verifyDns`, `ssl:list`, `ssl:issue`, `ssl:export`                                    | DNS-gated certificate operations                             |
+| `terminal:open`, `terminal:write`, `terminal:resize`, `terminal:close`                    | Interactive verified SSH PTY lifecycle                       |
 
 `nginx:log` and `ssl:log` are correlated streams. Firewall updates include the
 previously observed rules and fail if the provider changed concurrently.
+`terminal:data` and `terminal:closed` carry session-scoped PTY output/lifecycle;
+they never carry an SSH private key or password.
 
 ### Cloudflare service-provider channels
 
@@ -232,6 +235,10 @@ credential ID and resource identifiers; API tokens never cross IPC.
 `jenkins:status` manage per-VPS Jenkins folders and jobs. Renderer payloads contain only stored
 credential IDs. The main-process application service decrypts Jenkins/GitHub tokens immediately
 before the adapter call and never returns or logs them.
+
+When domain automation is enabled, `jenkins:save` synchronizes the selected
+application port into the job's `HOST_PORT` parameter. `jenkins:trigger` sends
+declared defaults for omitted values, keeping Jenkins and Nginx routing aligned.
 
 ## Adding a channel (checklist)
 

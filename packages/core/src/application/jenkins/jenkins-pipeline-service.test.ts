@@ -305,4 +305,113 @@ describe('JenkinsPipelineService', () => {
       }),
     );
   });
+
+  it('synchronizes the application port with the Jenkins HOST_PORT parameter', async () => {
+    const repository = new MemoryPipelines();
+    const upsertJob = vi.fn().mockResolvedValue(ok(undefined));
+    const manager = {
+      ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+      upsertJob,
+    } as unknown as JenkinsManager;
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: {
+              username: 'admin',
+              apiToken: 'jenkins-secret',
+              baseUrl: 'http://jenkins:8080',
+            },
+          }),
+        ),
+      } as unknown as CredentialService,
+      manager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      { ensure: vi.fn().mockResolvedValue(ok({ status: 'propagated' })) },
+      {
+        listSites: vi.fn().mockResolvedValue(ok([])),
+        saveSite: vi.fn().mockResolvedValue(ok({ summary: 'saved' })),
+      } as unknown as NginxService,
+    );
+
+    const result = await service.save({
+      ...input,
+      githubCredentialId: null,
+      parameters: [],
+      configureDomain: true,
+      domain: 'hanoutplus.ma',
+      applicationPort: 8000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upsertJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        parameters: [
+          expect.objectContaining({ name: 'HOST_PORT', type: 'string', defaultValue: '8000' }),
+        ],
+      }),
+    );
+    if (result.ok)
+      expect(result.value.parameters).toEqual([
+        expect.objectContaining({ name: 'HOST_PORT', defaultValue: '8000' }),
+      ]);
+  });
+
+  it('uses declared parameter defaults when triggering a Jenkins build', async () => {
+    const repository = new MemoryPipelines();
+    const record: JenkinsPipelineRecord = {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      parameters: [
+        { name: 'HOST_PORT', type: 'string', defaultValue: '8000', description: '', choices: [] },
+      ],
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    };
+    repository.records.set(record.id, record);
+    const trigger = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: {
+              username: 'admin',
+              apiToken: 'jenkins-secret',
+              baseUrl: 'http://jenkins:8080',
+            },
+          }),
+        ),
+      } as unknown as CredentialService,
+      { trigger } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.trigger(record.id, {});
+
+    expect(result.ok).toBe(true);
+    expect(trigger).toHaveBeenCalledWith(expect.anything(), record.folder, record.name, {
+      HOST_PORT: '8000',
+    });
+  });
 });

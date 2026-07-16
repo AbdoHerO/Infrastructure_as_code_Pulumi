@@ -213,6 +213,16 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
   prerequisite repair, bootstrap its isolated runtime, run generic
   service profiles, and manage validated Nginx domain-to-port routes. See the
   [Ansible guide](ANSIBLE.md).
+- **Cloudflare** — synchronize zones, manage DNS, proxy/TLS/cache settings, and
+  link root domains or subdomains to a VPS. See the [Cloudflare guide](CLOUDFLARE.md).
+- **SSL & Domains** — verify direct or Cloudflare-proxied DNS, issue origin
+  certificates, connect them to Nginx, export them, and register renewal. See
+  [SSL & Domains](SSL-DOMAINS.md).
+- **Jenkins Pipelines** — create per-VPS application jobs, use private GitHub
+  repositories, synchronize application ports, run builds, and automate
+  Cloudflare/Nginx domain routing. See [Jenkins Pipelines](JENKINS-PIPELINES.md).
+- **SSH Terminal** — open an interactive fingerprint-verified shell using the
+  same encrypted target credential without copying private keys into React.
 
 ---
 

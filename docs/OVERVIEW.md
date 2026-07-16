@@ -6,12 +6,17 @@ CloudForge is a desktop application that lets developers, DevOps engineers,
 startups and small teams **manage real cloud infrastructure end to end from a
 graphical interface** — no command line required.
 
-Under the hood it orchestrates two engines:
+Under the hood it orchestrates several isolated engines and services:
 
 - **Pulumi Automation API** — the Infrastructure-as-Code engine that provisions
   and destroys cloud resources.
 - **SSH** — configures freshly-provisioned hosts by running idempotent shell
   steps (install Docker, harden with UFW/fail2ban, launch an app).
+- **Remote Ansible** — prepares and configures generic Linux VPS services.
+- **Cloudflare API** — manages zones, DNS, edge TLS, caching, and related account
+  services without entering the infrastructure-provider engine.
+- **Jenkins API** — creates per-VPS folders and application pipelines that build
+  and deploy on the selected server.
 
 Crucially, **the user never interacts with Pulumi or SSH directly**. The
 application is the product; the engines are implementation details hidden behind
@@ -80,11 +85,12 @@ A typical journey through the app:
 Each numbered step maps to a UI module (see [Modules](MODULES.md)) and a set of
 IPC channels (see [IPC Reference](IPC.md)).
 
-## The 14 modules
+## Application modules
 
-Dashboard · Projects · Cloud Providers · Templates · Infrastructure ·
-Deployments · Containers · Ansible · Logs · Secrets · SSH Keys · Settings · Built-in
-Extensions · Updates · About.
+Dashboard · Documentation · Projects · Infrastructure · Deployments · Containers
+· Ansible · Nginx · Firewall · SSL & Domains · Cloudflare · Jenkins Pipelines ·
+SSH Terminal · Cloud Providers · Templates · Secrets · SSH Keys · Logs · Plugin
+Marketplace · Updates · Settings · About.
 
 All routes are functional. Containers use verified SSH rather than an exposed
 Docker socket, and SSH Keys uses the encrypted Credential store as its source of

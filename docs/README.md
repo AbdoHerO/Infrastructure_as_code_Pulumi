@@ -23,6 +23,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Firewall Manager](FIREWALL-MANAGER.md)             | Live provider-independent instance firewall synchronization and in-place OCI Security List updates                |
 | [SSL & Domains](SSL-DOMAINS.md)                     | DNS-gated Certbot issuance, certificate inspection, Nginx integration, and automatic renewal                      |
 | [Cloudflare](CLOUDFLARE.md)                         | Account, zones, DNS, SSL/TLS, cache, analytics, security and edge-service integration                             |
+| [Jenkins Pipelines](JENKINS-PIPELINES.md)           | Per-VPS Jenkins folders, private Git checkout, parameterized builds, domain automation, and status                |
 | [Infrastructure updates](INFRASTRUCTURE-UPDATES.md) | Pulumi identity, update/replace behavior, destructive previews, and mandatory preview approval                    |
 | [Configuration & Credentials](CONFIGURATION.md)     | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
 | [Overview](OVERVIEW.md)                             | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |
@@ -56,6 +57,7 @@ the current module; no internet connection is required to read bundled guides.
 | **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                                      |
 | **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                                  |
 | **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                                    |
+| **Service integrations**   | Cloudflare DNS/edge management and per-VPS Jenkins Pipelines                                     |
 | **Cloud providers**        | Oracle Cloud and AWS provisioning, discovery, lifecycle and dependency-safe destruction          |
 | **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 7 packages + 1 app                        |
 | **Tests**                  | 85 unit tests (Vitest), including portable backup, VPS preflight, Ansible YAML, and safety paths |

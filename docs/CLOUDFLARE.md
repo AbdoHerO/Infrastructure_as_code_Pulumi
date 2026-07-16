@@ -91,6 +91,30 @@ before duplicate validation or an API request.
 TTL `1` means Cloudflare Automatic. Only A, AAAA, and CNAME records can use the
 Cloudflare proxy.
 
+### Link a domain to a CloudForge VPS
+
+1. Obtain the instance public IP from **Infrastructure → Stack outputs**.
+2. Create an apex A record: name `@`, content equal to the VPS public IPv4.
+3. Create `www` as a proxied CNAME to the apex domain.
+4. Create each application subdomain as an A record to the same VPS or a CNAME
+   to the apex.
+5. In **Nginx**, create one site per hostname and point it to that application's
+   unique localhost port.
+6. Use **SSL & Domains** to verify DNS and install the origin certificate.
+
+A wildcard A record (`*`) can cover otherwise undefined subdomains, but explicit
+records are clearer and can have different proxy/TTL policies. An explicit
+record always takes precedence over the wildcard.
+
+Mail records must remain DNS-only. Preserve the mail provider's MX priorities,
+SPF/DKIM/DMARC TXT values, and any mail CNAME records exactly as provided. The
+Cloudflare proxy supports web traffic, not SMTP/IMAP/POP ports.
+
+Use **Refresh** after edits made outside CloudForge. Background synchronization
+detects zone, DNS, SSL, firewall/security, and cache changes according to the
+Cloudflare settings interval. Activity records actions and synchronization
+events without tokens.
+
 ## SSL/TLS and caching
 
 For a selected zone, CloudForge can change encryption mode, minimum TLS, TLS
@@ -143,6 +167,10 @@ use explicit mutation endpoints and activity audit records.
 - Confirm the token was copied without quotes or whitespace.
 - Confirm the token is active under **My Profile → API Tokens**.
 - Verify Account and Zone resource restrictions include the selected zone.
+- Do not use an R2 S3 Access Key ID or Secret Access Key as the Cloudflare API
+  token. R2 credentials authenticate the S3-compatible endpoint, not Zone DNS.
+- A burst of invalid attempts can return 429. Correct the stored credential and
+  wait for Cloudflare's temporary authentication limit before testing again.
 
 ### Zone list is empty
 

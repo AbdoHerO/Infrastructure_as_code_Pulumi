@@ -193,6 +193,11 @@ Implements `core`'s deployment, SSH-key, container and Ansible ports.
   live output/cancellation, dependencies, and transactional Nginx configuration.
 - `ansible-playbooks.ts` — generic Docker, Dockhand, Portainer, Jenkins and Nginx
   catalog with variable metadata and no project-specific values.
+- `jenkins-http-manager.ts` — crumb-protected Jenkins folder/job/credential,
+  trigger, status, and deletion operations. It accepts resolved secrets only at
+  the adapter boundary and never persists them.
+- `ssh-terminal-manager.ts` — interactive PTY sessions over the same verified
+  SSH target contract used by the other VPS modules.
 
 Runtime dep `ssh2` stays **external** (optional native binding).
 

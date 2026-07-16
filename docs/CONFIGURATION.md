@@ -59,7 +59,8 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 | **AWS** (`aws`)                   | Access Key ID · 🔒 Secret Access Key · 🔒 Session Token _(optional)_ · Default Region                                     |
 | **Azure** (`azure`)               | Subscription ID · Tenant ID · Client ID · 🔒 Client Secret                                                                |
 | **GitHub** (`github`)             | 🔒 Personal Access Token                                                                                                  |
-| **Cloudflare** (`cloudflare`)     | 🔒 API Token                                                                                                              |
+| **Jenkins** (`jenkins`)           | Username · 🔒 API Token · Jenkins URL _(optional when the selected VPS uses port 8080)_                                   |
+| **Cloudflare** (`cloudflare`)     | 🔒 API Token · Account ID _(optional)_ · Default Zone name/ID _(optional)_                                                |
 | **OpenAI** (`openai`)             | 🔒 API Key                                                                                                                |
 | **Anthropic** (`anthropic`)       | 🔒 API Key                                                                                                                |
 | **Docker Hub** (`dockerhub`)      | Username · 🔒 Password / Access Token · Registry _(optional)_                                                             |
@@ -69,8 +70,8 @@ revealed only on request). Fields marked _(optional)_ can be left blank.
 
 > **Oracle Cloud** and **AWS** provide complete project attachment,
 > Preview/Apply/Destroy and resource discovery workflows. Other provider kinds are
-> stored extension points; GitHub/Cloudflare/OpenAI/Anthropic/Docker Hub/GitLab
-> are general-purpose service credentials.
+> service integrations or stored extension points. Cloudflare manages DNS/edge
+> services, while Jenkins and GitHub credentials power per-VPS application pipelines.
 
 ---
 
@@ -307,3 +308,18 @@ Create an API Token in **Cloudflare Dashboard → My Profile → API Tokens** an
 store it under **Secrets → Cloudflare**. API Token is required; Account ID and a
 default zone are optional. See [Cloudflare](CLOUDFLARE.md) for least-privilege
 scopes and troubleshooting.
+
+## Jenkins and GitHub credentials
+
+For Jenkins, open the Jenkins user menu → **Security → API Token → Add new
+Token**. Store the exact username, the generated token, and the externally
+reachable Jenkins URL under **Secrets → Jenkins**. The token is displayed only
+once. Global token checkboxes under **Manage Jenkins → Security** configure
+policy and are not a replacement for the user's token.
+
+For private GitHub repositories, create a fine-grained token with read access to
+the required repository contents and metadata, then store it under **Secrets →
+GitHub**. CloudForge installs a derived credential into the isolated Jenkins
+folder; it never writes the original token into the Jenkinsfile, pipeline row,
+renderer state, Activity history, or logs. See [Jenkins
+Pipelines](JENKINS-PIPELINES.md).
