@@ -3,6 +3,8 @@ import {
   checkConnectivity,
   firewallRequirements,
   portKey,
+  toProviderFirewallView,
+  type FirewallRequirement,
   type FirewallView,
 } from './firewall-requirements.js';
 import {
@@ -327,5 +329,103 @@ describe('checkConnectivity', () => {
 
   it('checks nothing when nothing is required', () => {
     expect(checkConnectivity([], view([]), view([]))).toEqual([]);
+  });
+});
+
+describe('toProviderFirewallView', () => {
+  const need = (port: number, protocol: 'tcp' | 'udp' = 'tcp'): FirewallRequirement[] => [
+    { port, protocol, reason: 'test', requiredBy: [] },
+  ];
+
+  const rule = (overrides: Partial<Parameters<typeof toProviderFirewallView>[0][number]> = {}) => ({
+    direction: 'ingress',
+    protocol: 'tcp',
+    cidr: '0.0.0.0/0',
+    portFrom: 80,
+    portTo: 80,
+    ...overrides,
+  });
+
+  const open = (rules: Parameters<typeof toProviderFirewallView>[0], port = 80): boolean =>
+    toProviderFirewallView(rules, need(port)).allowed.has(portKey(port, 'tcp'));
+
+  it('opens a port an ingress rule allows from anywhere', () => {
+    expect(open([rule()])).toBe(true);
+  });
+
+  it('ignores an egress rule', () => {
+    // An egress rule for 443 says nothing about whether anyone can reach you.
+    expect(open([rule({ direction: 'egress' })])).toBe(false);
+  });
+
+  it('ignores a rule that only opens the port to a private subnet', () => {
+    // The one that produces a confident wrong answer: 5432 from 10.0.0.0/8 does
+    // not make the port reachable from the internet, and saying it does sends
+    // someone hunting a bug that is a firewall rule.
+    expect(open([rule({ cidr: '10.0.0.0/8' })])).toBe(false);
+  });
+
+  it.each(['0.0.0.0/0', '::/0'])('treats %s as the whole internet', (cidr) => {
+    expect(open([rule({ cidr })])).toBe(true);
+  });
+
+  it('tolerates a cidr with surrounding whitespace', () => {
+    expect(open([rule({ cidr: ' 0.0.0.0/0 ' })])).toBe(true);
+  });
+
+  it('opens a port covered by a range that does not name it', () => {
+    expect(open([rule({ portFrom: 8000, portTo: 9000 })], 8080)).toBe(true);
+  });
+
+  it('leaves a port outside the range closed', () => {
+    expect(open([rule({ portFrom: 8000, portTo: 9000 })], 9001)).toBe(false);
+  });
+
+  it('treats a null range as every port, which is what providers mean by it', () => {
+    expect(open([rule({ portFrom: null, portTo: null })], 12_345)).toBe(true);
+  });
+
+  it('reads a half-stated range narrowly rather than generously', () => {
+    // `portFrom: 8000, portTo: null` is ambiguous. Reading it as 8000-65535
+    // would claim more ports are open than the rule proves — and a port wrongly
+    // called open sends someone hunting a bug that is a firewall rule. Wrongly
+    // calling it closed only costs a redundant "open port" click.
+    const rules = [rule({ portFrom: 8000, portTo: null })];
+
+    expect(open(rules, 8000)).toBe(true);
+    expect(open(rules, 60_000)).toBe(false);
+  });
+
+  it('does not let a tcp rule open a udp port', () => {
+    const view = toProviderFirewallView([rule({ portFrom: 53, portTo: 53 })], need(53, 'udp'));
+
+    expect(view.allowed.has(portKey(53, 'udp'))).toBe(false);
+  });
+
+  it('lets an "all" protocol rule open both tcp and udp', () => {
+    const rules = [rule({ protocol: 'all', portFrom: 53, portTo: 53 })];
+
+    expect(toProviderFirewallView(rules, need(53, 'udp')).allowed.has(portKey(53, 'udp'))).toBe(
+      true,
+    );
+    expect(toProviderFirewallView(rules, need(53, 'tcp')).allowed.has(portKey(53, 'tcp'))).toBe(
+      true,
+    );
+  });
+
+  it('does not let an icmp rule open a tcp port', () => {
+    expect(open([rule({ protocol: 'icmp', portFrom: null, portTo: null })])).toBe(false);
+  });
+
+  it('is never indeterminate: a security list that was read is an answer', () => {
+    const view = toProviderFirewallView([], need(80));
+
+    expect(view.indeterminate).toBe(false);
+    expect(view.permitsEverything).toBe(false);
+    expect(view.allowed.size).toBe(0);
+  });
+
+  it('opens a port when any one of several rules allows it', () => {
+    expect(open([rule({ cidr: '10.0.0.0/8' }), rule({ direction: 'egress' }), rule()])).toBe(true);
   });
 });

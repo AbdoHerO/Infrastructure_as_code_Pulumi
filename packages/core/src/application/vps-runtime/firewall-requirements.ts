@@ -163,6 +163,56 @@ export function portKey(port: number, protocol: string): string {
   return `${String(port)}/${protocol}`;
 }
 
+/** CIDRs that mean "from anywhere on the internet". */
+const WORLD = new Set(['0.0.0.0/0', '::/0']);
+
+/**
+ * Turn a cloud provider's security list into a firewall view.
+ *
+ * Three things decide whether a provider rule actually opens a port, and
+ * missing any of them produces a confident wrong answer:
+ *
+ * - **Direction.** Only ingress lets traffic in. An egress rule for 443 says
+ *   nothing about whether anyone can reach you on it.
+ * - **Source.** A rule allowing 5432 from `10.0.0.0/8` opens the port to the
+ *   private subnet, not to the internet. Counting it would tell a user their
+ *   service is reachable when every request from outside is still dropped.
+ * - **Port range.** Providers express "all ports" as a null range, and a rule
+ *   for 8000-9000 covers 8080 without naming it.
+ *
+ * `all` protocol rules match both tcp and udp, which is what the providers mean
+ * by it.
+ */
+export function toProviderFirewallView(
+  rules: readonly {
+    readonly direction: string;
+    readonly protocol: string;
+    readonly cidr: string;
+    readonly portFrom: number | null;
+    readonly portTo: number | null;
+  }[],
+  requirements: readonly FirewallRequirement[],
+): FirewallView {
+  const allowed = new Set<string>();
+  const ingress = rules.filter(
+    (rule) => rule.direction === 'ingress' && WORLD.has(rule.cidr.trim()),
+  );
+
+  for (const requirement of requirements) {
+    const open = ingress.some((rule) => {
+      if (rule.protocol !== 'all' && rule.protocol !== requirement.protocol) return false;
+      // A null range is the provider's way of saying every port.
+      if (rule.portFrom === null && rule.portTo === null) return true;
+      const from = rule.portFrom ?? rule.portTo ?? 0;
+      const to = rule.portTo ?? rule.portFrom ?? 65_535;
+      return requirement.port >= from && requirement.port <= to;
+    });
+    if (open) allowed.add(portKey(requirement.port, requirement.protocol));
+  }
+
+  return { allowed, indeterminate: false, permitsEverything: false };
+}
+
 /**
  * Check a plan's requirements against both firewalls at once.
  *

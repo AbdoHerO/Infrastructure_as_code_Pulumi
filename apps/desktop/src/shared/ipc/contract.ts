@@ -412,7 +412,17 @@ export interface IpcContract {
    * Reads the VPS firewall and reports whether the plan's ports can carry
    * traffic. Read-only.
    */
-  'runtime:connectivity': { request: { targetId: string }; response: RuntimeConnectivityReport };
+  'runtime:connectivity': {
+    /**
+     * `providerRules` are the cloud security-list rules the Firewall page has
+     * already loaded via `firewall:get`. They are passed in rather than fetched
+     * here because reaching them needs a cloud credential the runtime service
+     * has no business holding. Omit them and every verdict is honestly
+     * `unknown` rather than a guess.
+     */
+    request: { targetId: string; providerRules?: readonly LiveFirewallRule[] };
+    response: RuntimeConnectivityReport;
+  };
   /**
    * Opens the ports the plan needs on the VPS firewall. Additive and idempotent:
    * it never closes anything, so it cannot take away access that already works.

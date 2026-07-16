@@ -1,4 +1,4 @@
-import { NO_APPLY_OPTIONS } from '@cloudforge/core';
+import { firewallRequirements, NO_APPLY_OPTIONS, toProviderFirewallView } from '@cloudforge/core';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
@@ -42,9 +42,20 @@ export function registerRuntimeHandlers(): void {
     orThrow(await service().release(targetId, resourceKind, dockerName)),
   );
 
-  registerHandler('runtime:connectivity', async ({ targetId }) =>
-    orThrow(await service().connectivity(targetId)),
-  );
+  registerHandler('runtime:connectivity', async ({ targetId, providerRules }) => {
+    if (!providerRules) return orThrow(await service().connectivity(targetId));
+    // The requirements have to be derived twice — once to know which ports the
+    // provider view needs an answer for, once inside the service. They are pure
+    // and cheap, and the alternative is the service reaching for a cloud
+    // credential it should not hold.
+    const plan = orThrow(await service().get(targetId));
+    return orThrow(
+      await service().connectivity(
+        targetId,
+        toProviderFirewallView(providerRules, firewallRequirements(plan.plan)),
+      ),
+    );
+  });
   // Additive and idempotent, so it needs no preview token: it cannot take away
   // access that already works, and the ports it opens are exactly the ones the
   // saved plan already says it needs.
