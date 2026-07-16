@@ -4,7 +4,7 @@ import {
   ServiceProviderError,
   ValidationError,
   type Result,
-  type ConflictError,
+  ConflictError,
 } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { DomainResolver } from '../ports/certificate-manager.js';
@@ -24,6 +24,36 @@ export interface CloudflareDnsPropagation {
   readonly warning: string | null;
   readonly sslMode: string;
   readonly certificateRequirement: 'required' | 'recommended';
+}
+
+/**
+ * The marker CloudForge writes into a record's comment when it creates one.
+ *
+ * The comment field rather than tags, because DNS record tags are not available
+ * on every Cloudflare plan — and a marker that only some accounts can carry is
+ * not a marker at all.
+ */
+export const CLOUDFLARE_MANAGED_COMMENT = 'Managed by CloudForge';
+
+/** Whether CloudForge created this record, on the only evidence Cloudflare keeps. */
+function isManagedRecord(record: CloudflareDnsRecord): boolean {
+  return record.comment.includes(CLOUDFLARE_MANAGED_COMMENT);
+}
+
+/**
+ * Whether a record already answers with what CloudForge would set anyway.
+ *
+ * Only an exact match on both address and type counts. A CNAME that resolves to
+ * the right host today is not the same fact: it can be repointed by whoever owns
+ * the target, so treating it as equivalent would let CloudForge report a domain
+ * as settled on evidence that can change without warning.
+ */
+function alreadyPointsHere(
+  record: CloudflareDnsRecord,
+  expectedIp: string,
+  type: 'A' | 'AAAA',
+): boolean {
+  return record.type === type && record.content === expectedIp;
 }
 
 export class CloudflareDnsAutomationService {
@@ -56,6 +86,39 @@ export class CloudflareDnsAutomationService {
       (record) => record.name.replace(/\.$/, '') === normalized && record.type === 'CNAME',
     );
     const existing = sameType ?? conflictingCname;
+
+    // A record CloudForge did not create is not CloudForge's to repoint. This
+    // used to overwrite whatever was at the hostname and stamp its own comment
+    // on it, so configuring a pipeline for a domain that already served real
+    // traffic silently moved that traffic to the VPS — and claimed the record on
+    // the way past. DNS has no undo and no preview; by the time anyone noticed,
+    // resolvers worldwide had cached the new answer.
+    if (existing && !isManagedRecord(existing) && !alreadyPointsHere(existing, expectedIp, type)) {
+      return err(
+        new ConflictError(
+          `${normalized} already has a ${existing.type} record pointing at ${existing.content}, and CloudForge did not create it. ` +
+            `Repointing it at ${expectedIp} would move live traffic. Either point that record at ${expectedIp} in Cloudflare yourself, or delete it, then save again.`,
+        ),
+      );
+    }
+
+    // Already answering with the address CloudForge would set. Nothing to change
+    // — and nothing to claim: stamping the marker on a record someone else made
+    // would let a later CloudForge action withdraw a record it never created.
+    if (existing && !isManagedRecord(existing)) {
+      const zoneSettings = await this.cloudflare.zoneSettings(credential, zone);
+      const settled = zoneSettings.ok ? zoneSettings.value.sslMode : 'unknown';
+      if (config.activityLogging)
+        this.activities.recordSafe({
+          type: 'cloudflare.dns.unmanaged',
+          message: `Left the existing DNS record for ${normalized} untouched; it already points at ${expectedIp}`,
+          metadata: { zoneId: zone, domain: normalized, recordId: existing.id },
+        });
+      return config.waitForPropagation
+        ? this.wait(existing, expectedIp, config.propagationTimeoutSeconds, settled, zoneStatus)
+        : ok(this.status(existing, expectedIp, [], 'pending', settled));
+    }
+
     const input = {
       type,
       name: normalized,
