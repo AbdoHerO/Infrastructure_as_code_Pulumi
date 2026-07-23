@@ -13,18 +13,25 @@ function fakeDb() {
     const value = rows.get(where.key);
     return Promise.resolve(value === undefined ? null : { key: where.key, value });
   });
-  const upsert = vi.fn(
-    ({ where, create }: { where: { key: string }; create: { key: string; value: string } }) => {
-      rows.set(where.key, create.value);
-      return Promise.resolve(create);
+  const create = vi.fn(({ data }: { data: { key: string; value: string } }) => {
+    if (rows.has(data.key))
+      return Promise.reject(Object.assign(new Error('Unique constraint'), { code: 'P2002' }));
+    rows.set(data.key, data.value);
+    return Promise.resolve(data);
+  });
+  const updateMany = vi.fn(
+    ({ where, data }: { where: { key: string; value: string }; data: { value: string } }) => {
+      if (rows.get(where.key) !== where.value) return Promise.resolve({ count: 0 });
+      rows.set(where.key, data.value);
+      return Promise.resolve({ count: 1 });
     },
   );
   const deleteMany = vi.fn(({ where }: { where: { key: string } }) => {
     const existed = rows.delete(where.key);
     return Promise.resolve({ count: existed ? 1 : 0 });
   });
-  const db = { setting: { findUnique, upsert, deleteMany } } as unknown as Db;
-  return { db, rows, findUnique, upsert, deleteMany };
+  const db = { setting: { findUnique, create, updateMany, deleteMany } } as unknown as Db;
+  return { db, rows, findUnique, create, updateMany, deleteMany };
 }
 
 const plan = (overrides: Partial<VpsRuntimePlan> = {}): VpsRuntimePlan => ({
@@ -46,7 +53,7 @@ describe('PrismaRuntimePlanStore', () => {
     const store = new PrismaRuntimePlanStore(db);
     const saved = plan({ mode: 'managed', version: 3 });
 
-    await store.save(TARGET_ID, saved);
+    await store.save(TARGET_ID, saved, 0);
 
     expect(await store.load(TARGET_ID)).toEqual({ ok: true, value: saved });
   });
@@ -55,7 +62,7 @@ describe('PrismaRuntimePlanStore', () => {
     const { db, rows } = fakeDb();
     const store = new PrismaRuntimePlanStore(db);
 
-    await store.save(TARGET_ID, plan());
+    await store.save(TARGET_ID, plan({ version: 1 }), 0);
 
     expect([...rows.keys()]).toEqual([KEY]);
   });
@@ -64,39 +71,51 @@ describe('PrismaRuntimePlanStore', () => {
     const { db, rows } = fakeDb();
     const store = new PrismaRuntimePlanStore(db);
 
-    await store.save(TARGET_ID, plan({ version: 1 }));
-    await store.save(TARGET_ID, plan({ version: 2 }));
+    await store.save(TARGET_ID, plan({ version: 1 }), 0);
+    await store.save(TARGET_ID, plan({ version: 2 }), 1);
 
     expect(rows.size).toBe(1);
     const loaded = await store.load(TARGET_ID);
     expect(loaded.ok && loaded.value?.version).toBe(2);
   });
 
-  it('degrades a corrupt row to "not managed" instead of failing every read', async () => {
+  it('fails closed for a corrupt row instead of silently switching to legacy mode', async () => {
     const { db, rows } = fakeDb();
     rows.set(KEY, 'this is not json');
 
     expect(await new PrismaRuntimePlanStore(db).load(TARGET_ID)).toMatchObject({ ok: false });
   });
 
-  it('ignores a row whose plan belongs to another target', async () => {
+  it('rejects a row whose plan belongs to another target', async () => {
     const { db, rows } = fakeDb();
     rows.set(KEY, JSON.stringify(plan({ targetId: 'someone-else' })));
 
-    expect(await new PrismaRuntimePlanStore(db).load(TARGET_ID)).toEqual({ ok: true, value: null });
+    expect(await new PrismaRuntimePlanStore(db).load(TARGET_ID)).toMatchObject({ ok: false });
   });
 
-  it.each(['[]', '"a string"', 'null', '42'])('ignores a row containing %s', async (value) => {
+  it.each(['[]', '"a string"', 'null', '42'])('rejects a row containing %s', async (value) => {
     const { db, rows } = fakeDb();
     rows.set(KEY, value);
 
-    expect(await new PrismaRuntimePlanStore(db).load(TARGET_ID)).toEqual({ ok: true, value: null });
+    expect(await new PrismaRuntimePlanStore(db).load(TARGET_ID)).toMatchObject({ ok: false });
+  });
+
+  it('rejects a stale compare-and-swap without overwriting the newer plan', async () => {
+    const { db } = fakeDb();
+    const store = new PrismaRuntimePlanStore(db);
+    const current = plan({ version: 1, mode: 'hybrid' });
+    await store.save(TARGET_ID, current, 0);
+
+    const stale = await store.save(TARGET_ID, plan({ version: 2, mode: 'managed' }), 0);
+
+    expect(stale).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await store.load(TARGET_ID)).toEqual({ ok: true, value: current });
   });
 
   it('deletes a plan, and deleting a missing one succeeds', async () => {
     const { db, rows } = fakeDb();
     const store = new PrismaRuntimePlanStore(db);
-    await store.save(TARGET_ID, plan());
+    await store.save(TARGET_ID, plan({ version: 1 }), 0);
 
     expect(await store.delete(TARGET_ID)).toEqual({ ok: true, value: undefined });
     expect(rows.size).toBe(0);
@@ -108,14 +127,15 @@ describe('PrismaRuntimePlanStore', () => {
     const db = {
       setting: {
         findUnique: vi.fn().mockRejectedValue(new Error('database is locked')),
-        upsert: vi.fn().mockRejectedValue(new Error('database is locked')),
+        create: vi.fn().mockRejectedValue(new Error('database is locked')),
+        updateMany: vi.fn().mockRejectedValue(new Error('database is locked')),
         deleteMany: vi.fn().mockRejectedValue(new Error('database is locked')),
       },
     } as unknown as Db;
     const store = new PrismaRuntimePlanStore(db);
 
     expect((await store.load(TARGET_ID)).ok).toBe(false);
-    expect((await store.save(TARGET_ID, plan())).ok).toBe(false);
+    expect((await store.save(TARGET_ID, plan({ version: 1 }), 0)).ok).toBe(false);
     expect((await store.delete(TARGET_ID)).ok).toBe(false);
   });
 });

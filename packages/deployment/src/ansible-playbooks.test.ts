@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 import type { AnsibleProfileId, ManagedNginxSite, NginxSite } from '@cloudforge/core';
 import { NGINX_SITE_MARKER, renderManagedNginxSite } from '@cloudforge/core';
 import { ANSIBLE_PROFILES, getPlaybook } from './ansible-playbooks.js';
+import { parsesAsShell } from './shell-syntax.test-helper.js';
 import { jenkinsServiceActionScript, parseProfileStates } from './ssh-ansible-manager.js';
 import { validateNginxSite } from './ssh-ansible-manager.js';
 import {
@@ -160,16 +160,6 @@ function firewallScript(profile: AnsibleProfileId): string {
     .flatMap((play) => play.tasks ?? [])
     .find((entry) => entry.name?.includes('through the active VPS firewall'));
   return task?.['ansible.builtin.shell'] ?? '';
-}
-
-/** `sh -n` parses without executing, so this is safe, offline, and catches quoting bugs. */
-function parsesAsShell(script: string): boolean {
-  try {
-    execFileSync('sh', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 describe('host firewall task', () => {

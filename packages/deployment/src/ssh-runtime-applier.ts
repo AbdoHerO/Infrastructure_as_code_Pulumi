@@ -118,24 +118,50 @@ export class SshRuntimeApplier implements RuntimeApplier {
     signal?: AbortSignal,
   ): Promise<Result<RuntimeApplyReport, DeploymentError>> {
     const outcomes: RuntimeOperationOutcome[] = [];
+    const commands: { operation: RuntimeOperation; command: string }[] = [];
+
+    // Compile the complete approved change before the first mutation. Without
+    // this pass, a malformed later operation could be discovered only after an
+    // earlier network had already been created or a container attached. Runtime
+    // apply is intentionally retryable, but a deterministic input error must
+    // never be allowed to produce a partial apply.
+    for (const operation of operations) {
+      const command = commandFor(operation, plan);
+      if (!command.ok) {
+        const failedIndex = commands.length;
+        return ok({
+          outcomes: [
+            ...commands.map(({ operation: compiled }): RuntimeOperationOutcome => ({
+              operationId: compiled.id,
+              status: 'skipped',
+              message: 'Not attempted: the approved operation set failed validation',
+            })),
+            {
+              operationId: operation.id,
+              status: 'failed',
+              message: command.error,
+            },
+            ...operations.slice(failedIndex + 1).map((remaining): RuntimeOperationOutcome => ({
+              operationId: remaining.id,
+              status: 'skipped',
+              message: 'Not attempted: the approved operation set failed validation',
+            })),
+          ],
+          applied: 0,
+          failed: 1,
+        });
+      }
+      commands.push({ operation, command: command.value });
+    }
 
     const result = await withSshConnection(
       target,
       { label: LABEL, ...(signal ? { signal } : {}) },
       async (client) => {
-        for (const operation of operations) {
-          const command = commandFor(operation, plan);
-          if (!command.ok) {
-            outcomes.push({
-              operationId: operation.id,
-              status: 'failed',
-              message: command.error,
-            });
-            break;
-          }
+        for (const { operation, command } of commands) {
           onEvent?.({ stream: 'step', message: operation.summary });
           try {
-            const output = await execCommand(client, command.value, {
+            const output = await execCommand(client, command, {
               label: LABEL,
               timeoutMs: TIMEOUT_MS,
               ...(onEvent ? { onEvent } : {}),

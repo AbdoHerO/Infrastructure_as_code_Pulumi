@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, type PersistenceError, type Result } from '@cloudforge/shared';
 import type {
   VpsTargetRecord,
@@ -93,10 +93,16 @@ const valid = {
 describe('VpsTargetService', () => {
   let repository: MemoryTargets;
   let service: VpsTargetService;
+  let deleteRuntimePlan: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     repository = new MemoryTargets();
-    service = new VpsTargetService(repository);
+    deleteRuntimePlan = vi.fn(() => Promise.resolve(ok(undefined)));
+    service = new VpsTargetService(repository, {
+      load: vi.fn(),
+      save: vi.fn(),
+      delete: deleteRuntimePlan,
+    });
   });
 
   it('persists and parses the latest preflight report', async () => {
@@ -126,6 +132,7 @@ describe('VpsTargetService', () => {
     const created = await service.create(valid);
     if (!created.ok) return;
     expect((await service.remove(created.value.id)).ok).toBe(true);
+    expect(deleteRuntimePlan).toHaveBeenCalledWith(created.value.id);
     const listed = await service.list();
     expect(listed.ok && listed.value).toHaveLength(0);
   });
@@ -147,6 +154,7 @@ describe('VpsTargetService', () => {
     expect(repository.values.size).toBe(1);
     await service.removeManagedProject('project-1');
     expect(repository.values.size).toBe(0);
+    expect(deleteRuntimePlan).toHaveBeenCalledWith(first.ok ? first.value.id : '');
   });
 
   it('removes orphaned generated targets but preserves manual targets', async () => {

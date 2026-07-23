@@ -159,6 +159,52 @@ describe('NginxService', () => {
       }),
     ]);
   });
+
+  it('resynchronizes Runtime routes after restoring a backup', async () => {
+    const restore = vi.fn().mockResolvedValue(ok({ summary: 'restored', backupId: 'backup-1' }));
+    const listSites = vi.fn().mockResolvedValue(ok([{ ...site, managed: true }]));
+    const replaceRoutes = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new NginxService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { restore, listSites } as unknown as NginxManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      { replaceRoutes } as never,
+    );
+
+    const result = await service.restore('target-1', 'backup-1');
+
+    expect(result.ok).toBe(true);
+    expect(replaceRoutes).toHaveBeenCalledWith(
+      'target-1',
+      expect.arrayContaining([
+        expect.objectContaining({ domain: site.domain, upstreamPort: site.upstreamPort }),
+      ]),
+    );
+  });
+
+  it('resynchronizes Runtime routes after saving the advanced main configuration', async () => {
+    const saveMainConfig = vi
+      .fn()
+      .mockResolvedValue(ok({ summary: 'saved', backupId: 'backup-main' }));
+    const listSites = vi.fn().mockResolvedValue(ok([{ ...site, managed: true }]));
+    const replaceRoutes = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new NginxService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { saveMainConfig, listSites } as unknown as NginxManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      { replaceRoutes } as never,
+    );
+
+    const result = await service.saveMainConfig('target-1', 'events {} http {}');
+
+    expect(result.ok).toBe(true);
+    expect(replaceRoutes).toHaveBeenCalledWith(
+      'target-1',
+      expect.arrayContaining([
+        expect.objectContaining({ domain: site.domain, upstreamPort: site.upstreamPort }),
+      ]),
+    );
+  });
 });
 
 describe('managed site metadata', () => {

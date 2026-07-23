@@ -307,6 +307,17 @@ export class SslService {
     const certificates = await this.certificates.list(target.value, volume);
     if (!certificates.ok || !this.runtime) return certificates;
     const sites = this.nginx ? await this.nginx.listSites(targetId) : null;
+    // A transient Nginx read failure is not evidence that HTTPS and redirect
+    // were disabled. Keep the last authoritative topology rather than
+    // publishing false values that create spurious certificate drift.
+    if (sites && !sites.ok) {
+      this.activities.recordSafe({
+        type: 'ssl.runtime.sync.skipped',
+        message: 'Loaded certificates but kept the previous Runtime HTTPS state',
+        metadata: { targetId, reason: sites.error.message },
+      });
+      return certificates;
+    }
     const synchronized = await this.runtime.replaceCertificates(
       targetId,
       volume,
@@ -362,8 +373,23 @@ export class SslService {
         : undefined;
       if (current && current.daysRemaining > settings.value.ssl.renewBeforeDays) continue;
       const renewed = await this.certificates.renew(target.value, { ...item, forceRenewal: false });
-      if (renewed.ok && this.nginx) await this.nginx.reload(item.targetId);
-      if (renewed.ok && this.runtime) {
+      let reloadSucceeded = true;
+      if (renewed.ok && this.nginx) {
+        const reloaded = await this.nginx.reload(item.targetId);
+        if (!reloaded.ok) {
+          reloadSucceeded = false;
+          this.activities.recordSafe({
+            type: 'ssl.reload.failed',
+            message: `Renewed ${item.domain}, but Nginx could not reload the certificate`,
+            metadata: {
+              targetId: item.targetId,
+              domain: item.domain,
+              error: reloaded.error.message,
+            },
+          });
+        }
+      }
+      if (renewed.ok && this.runtime && reloadSucceeded) {
         const sites = this.nginx ? await this.nginx.listSites(item.targetId) : null;
         const site = sites?.ok
           ? sites.value.find((candidate) => candidate.domain === item.domain)
@@ -389,6 +415,13 @@ export class SslService {
             },
           });
         }
+      }
+      if (renewed.ok && this.runtime && !reloadSucceeded) {
+        this.activities.recordSafe({
+          type: 'ssl.runtime.sync.skipped',
+          message: `Kept the last accepted Runtime certificate for ${item.domain} because Nginx did not reload`,
+          metadata: { targetId: item.targetId, domain: item.domain },
+        });
       }
       this.activities.recordSafe({
         type: renewed.ok ? 'ssl.renewed' : 'ssl.renewal.failed',

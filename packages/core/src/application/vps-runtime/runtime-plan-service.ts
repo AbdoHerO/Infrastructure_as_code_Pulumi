@@ -58,6 +58,7 @@ import {
   RUNTIME_PLAN_SCHEMA_VERSION,
   validateRuntimePlan,
   type RuntimeCertificate,
+  type RuntimeDnsRecord,
   type RuntimeAdoption,
   type RuntimeMode,
   type RuntimePlanIssue,
@@ -128,6 +129,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
    * it a claim about a server nobody has looked at.
    */
   private readonly previews = new Map<string, { token: string; fingerprint: string }>();
+  private readonly applyingTargets = new Set<string>();
 
   constructor(
     private readonly plans: RuntimePlanStore,
@@ -251,7 +253,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         ),
       );
 
-    const saved = await this.plans.save(targetId, next);
+    const saved = await this.plans.save(targetId, next, currentVersion);
     if (!saved.ok) return saved;
 
     this.activities.recordSafe({
@@ -506,11 +508,14 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
     targetId: string,
     options: RuntimeApplyOptions = NO_APPLY_OPTIONS,
   ): Promise<Result<RuntimePreview, RuntimePlanServiceError>> {
-    const change = await this.plannedChange(targetId, options);
-    if (!change.ok) return change;
+    const derived = await this.plannedChange(targetId, options);
+    if (!derived.ok) return derived;
     const token = newUuid();
-    this.previews.set(targetId, { token, fingerprint: fingerprintChange(change.value, options) });
-    return ok({ ...change.value, token });
+    this.previews.set(targetId, {
+      token,
+      fingerprint: fingerprintChange(derived.value.change, options),
+    });
+    return ok({ ...derived.value.change, token });
   }
 
   /**
@@ -535,9 +540,12 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
     signal?: AbortSignal,
   ): Promise<Result<RuntimeApplyReport, RuntimePlanServiceError>> {
     if (!this.applier) return err(new ValidationError('Runtime apply is not available'));
+    if (this.applyingTargets.has(targetId))
+      return err(new ConflictError('A runtime apply is already in progress for this target'));
 
-    const change = await this.plannedChange(targetId, options);
-    if (!change.ok) return change;
+    const derived = await this.plannedChange(targetId, options);
+    if (!derived.ok) return derived;
+    const change = derived.value.change;
 
     const approved = this.previews.get(targetId);
     if (!previewToken || approved?.token !== previewToken)
@@ -546,21 +554,21 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
           'Preview this change before applying it. The preview has expired or was never run.',
         ),
       );
-    if (approved.fingerprint !== fingerprintChange(change.value, options))
+    if (approved.fingerprint !== fingerprintChange(change, options))
       return err(
         new ValidationError(
           'The plan or the VPS changed since you previewed. Preview again to see what would happen now.',
         ),
       );
 
-    if (change.value.blockers.length > 0)
+    if (change.blockers.length > 0)
       return err(
-        new ConflictError(`This change cannot be applied yet: ${change.value.blockers.join(' ')}`, {
-          context: { blockers: change.value.blockers },
+        new ConflictError(`This change cannot be applied yet: ${change.blockers.join(' ')}`, {
+          context: { blockers: change.blockers },
         }),
       );
 
-    const required = destructiveNames(change.value);
+    const required = destructiveNames(change);
     const given = new Set(confirmations);
     const unconfirmed = required.filter((name) => !given.has(name));
     if (unconfirmed.length > 0)
@@ -571,25 +579,29 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         ),
       );
 
-    const operations = executableOperations(change.value);
+    const operations = executableOperations(change);
+    // Spend the approval before any asynchronous external work begins. This
+    // makes the token single-use even when two renderer calls arrive together,
+    // and forces a fresh observation after a failed or partial apply.
+    this.previews.delete(targetId);
     if (operations.length === 0) return ok({ outcomes: [], applied: 0, failed: 0 });
 
-    const loaded = await this.get(targetId);
-    if (!loaded.ok) return loaded;
     const target = await this.targets.resolve(targetId);
     if (!target.ok) return target;
 
-    const result = await this.applier.apply(
-      target.value,
-      loaded.value.plan,
-      operations,
-      onEvent,
-      signal,
-    );
-
-    // The token is spent either way. A half-applied VPS is a different VPS, and
-    // the next apply must be authorised against what is actually there now.
-    this.previews.delete(targetId);
+    this.applyingTargets.add(targetId);
+    let result: Result<RuntimeApplyReport, DeploymentError>;
+    try {
+      result = await this.applier.apply(
+        target.value,
+        derived.value.plan,
+        operations,
+        onEvent,
+        signal,
+      );
+    } finally {
+      this.applyingTargets.delete(targetId);
+    }
 
     this.activities.recordSafe({
       type: result.ok && result.value.failed === 0 ? 'runtime.applied' : 'runtime.apply.failed',
@@ -598,7 +610,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         : `Runtime apply failed: ${result.error.message}`,
       metadata: {
         targetId,
-        planVersion: change.value.planVersion,
+        planVersion: change.planVersion,
         operations: operations.length,
         ...(result.ok ? { applied: result.value.applied, failed: result.value.failed } : {}),
       },
@@ -766,6 +778,28 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
           daysRemaining: null,
           observedAt: new Date().toISOString(),
         }));
+      const replacements = certificates.map((certificate) => {
+        const previous = plan.certificates.find(
+          (item) =>
+            item.source.module === 'ssl' &&
+            item.source.resourceId === certificate.sourceId &&
+            (item.collectionId ?? collectionId) === collectionId,
+        );
+        const observed = toRuntimeCertificate(certificate);
+        if (
+          previous?.fingerprint &&
+          observed.fingerprint &&
+          previous.fingerprint !== observed.fingerprint
+        ) {
+          return {
+            ...observed,
+            status: 'changed' as const,
+            fingerprint: previous.fingerprint,
+            observedFingerprint: observed.fingerprint,
+          };
+        }
+        return observed;
+      });
       return {
         ...plan,
         certificates: [
@@ -775,7 +809,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
               item.source.module === 'ssl' && (item.collectionId ?? collectionId) !== collectionId,
           ),
           ...missing,
-          ...certificates.map(toRuntimeCertificate),
+          ...replacements,
         ],
       };
     });
@@ -802,7 +836,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
     const targetId =
       record.targetId ?? (await this.targetCatalog?.findTargetIdByAddress(record.content)) ?? null;
     if (!targetId) return ok(undefined);
-    return this.mutateTopology(targetId, (plan) => ({
+    const synchronized = await this.mutateTopology(targetId, (plan) => ({
       ...plan,
       dnsRecords: [
         ...plan.dnsRecords.filter(
@@ -828,6 +862,21 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         },
       ],
     }));
+    if (!synchronized.ok) return synchronized;
+
+    const targetIds = (await this.targetCatalog?.targetIds()) ?? [];
+    for (const otherTargetId of targetIds) {
+      if (otherTargetId === targetId) continue;
+      const removed = await this.mutateTopology(otherTargetId, (plan) => ({
+        ...plan,
+        dnsRecords: plan.dnsRecords.filter(
+          (item) =>
+            !(item.source.module === 'cloudflare' && item.source.resourceId === record.sourceId),
+        ),
+      }));
+      if (!removed.ok) return removed;
+    }
+    return ok(undefined);
   }
 
   async removeDnsRecord(
@@ -853,17 +902,51 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
     records: readonly RuntimeDnsRecordSync[],
   ): Promise<Result<void, RuntimeTopologySyncError>> {
     const targetIds = (await this.targetCatalog?.targetIds()) ?? [];
+    const observed = await Promise.all(
+      records.map(async (record) => ({
+        record,
+        targetId:
+          record.targetId ??
+          (await this.targetCatalog?.findTargetIdByAddress(record.content)) ??
+          null,
+      })),
+    );
+    const observedBySource = new Map(observed.map((item) => [item.record.sourceId, item]));
+    const observedAt = new Date().toISOString();
+
     for (const targetId of targetIds) {
-      const cleared = await this.mutateTopology(targetId, (plan) => ({
-        ...plan,
-        dnsRecords: plan.dnsRecords.filter(
-          (record) => !(record.source.module === 'cloudflare' && record.zoneId === zoneId),
-        ),
-      }));
-      if (!cleared.ok) return cleared;
-    }
-    for (const record of records) {
-      const synchronized = await this.upsertDnsRecord(record);
+      const synchronized = await this.mutateTopology(targetId, (plan) => {
+        const previous = plan.dnsRecords.filter(
+          (record) => record.source.module === 'cloudflare' && record.zoneId === zoneId,
+        );
+        const drifted: RuntimeDnsRecord[] = previous.flatMap<RuntimeDnsRecord>((record) => {
+          const live = observedBySource.get(record.source.resourceId);
+          if (!live) return [{ ...record, status: 'missing' as const, observedAt }];
+          if (live.targetId === targetId) return [];
+          return [
+            {
+              ...record,
+              content: live.record.content,
+              status: 'error' as const,
+              targetId: live.targetId,
+              observedAt: live.record.observedAt,
+            },
+          ];
+        });
+        const current = observed
+          .filter((item) => item.targetId === targetId)
+          .map((item) => toRuntimeDnsRecord(item.record, targetId));
+        return {
+          ...plan,
+          dnsRecords: [
+            ...plan.dnsRecords.filter(
+              (record) => !(record.source.module === 'cloudflare' && record.zoneId === zoneId),
+            ),
+            ...drifted,
+            ...current,
+          ],
+        };
+      });
       if (!synchronized.ok) return synchronized;
     }
     return ok(undefined);
@@ -880,7 +963,9 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const loaded = await this.get(targetId);
       if (!loaded.ok) return loaded;
-      const saved = await this.save(targetId, mutate(loaded.value.plan));
+      const next = mutate(loaded.value.plan);
+      if (sameTopology(loaded.value.plan, next)) return ok(undefined);
+      const saved = await this.save(targetId, next);
       if (saved.ok) return ok(undefined);
       if (!(saved.error instanceof ConflictError) || attempt === 2) return saved;
     }
@@ -891,12 +976,20 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
   private async plannedChange(
     targetId: string,
     options: RuntimeApplyOptions,
-  ): Promise<Result<RuntimePlannedChange, RuntimePlanServiceError>> {
+  ): Promise<
+    Result<
+      { readonly plan: VpsRuntimePlan; readonly change: RuntimePlannedChange },
+      RuntimePlanServiceError
+    >
+  > {
     const loaded = await this.get(targetId);
     if (!loaded.ok) return loaded;
     const observed = await this.inspect(targetId);
     if (!observed.ok) return observed;
-    return ok(planRuntimeOperations(loaded.value.plan, observed.value, options));
+    return ok({
+      plan: loaded.value.plan,
+      change: planRuntimeOperations(loaded.value.plan, observed.value, options),
+    });
   }
 
   /**
@@ -1158,4 +1251,68 @@ function toRuntimeCertificate(input: RuntimeCertificateSync): RuntimeCertificate
     },
     observedAt: input.observedAt,
   };
+}
+
+function toRuntimeDnsRecord(input: RuntimeDnsRecordSync, targetId: string): RuntimeDnsRecord {
+  return {
+    domain: input.domain,
+    recordId: input.recordId,
+    zoneId: input.zoneId,
+    type: input.type,
+    content: input.content,
+    ttl: input.ttl,
+    proxied: input.proxied,
+    status: input.status,
+    targetId,
+    source: {
+      module: 'cloudflare' as const,
+      resourceId: input.sourceId,
+      ownership: input.ownership,
+    },
+    observedAt: input.observedAt,
+  };
+}
+
+/**
+ * Feature reads frequently re-observe the same topology. Observation timestamps
+ * and store metadata are not topology changes and must not invalidate a preview
+ * or create a new plan version.
+ */
+function sameTopology(left: VpsRuntimePlan, right: VpsRuntimePlan): boolean {
+  return JSON.stringify(comparableTopology(left)) === JSON.stringify(comparableTopology(right));
+}
+
+function comparableTopology(plan: VpsRuntimePlan): unknown {
+  return canonicalTopology({
+    ...plan,
+    version: 0,
+    updatedAt: '',
+    certificates: plan.certificates.map(
+      ({ observedAt: _observedAt, ...certificate }) => certificate,
+    ),
+    dnsRecords: plan.dnsRecords.map(({ observedAt: _observedAt, ...record }) => record),
+  });
+}
+
+/**
+ * Runtime topology collections are sets, not ordered workflows. APIs such as
+ * Cloudflare, Jenkins and certificate discovery may return the same resources
+ * in a different order on consecutive reads. Canonicalising only for equality
+ * prevents that harmless reorder from incrementing the plan version and
+ * invalidating a preview.
+ */
+function canonicalTopology(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => canonicalTopology(item))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalTopology(item)]),
+    );
+  }
+  return value;
 }

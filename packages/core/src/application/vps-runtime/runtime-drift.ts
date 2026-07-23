@@ -734,8 +734,18 @@ function topologyResourceDrift(plan: VpsRuntimePlan): RuntimeDriftEntry[] {
         message:
           certificate.status === 'missing'
             ? `The certificate for ${certificate.domain} was previously managed but is no longer present`
-            : `Certificate ${certificate.domain} is ${certificate.status}`,
-        ...(certificate.expiresAt ? { actual: certificate.expiresAt } : {}),
+            : certificate.status === 'changed'
+              ? `The certificate fingerprint for ${certificate.domain} changed outside CloudForge`
+              : `Certificate ${certificate.domain} is ${certificate.status}`,
+        ...(certificate.status === 'changed' && certificate.fingerprint
+          ? { expected: certificate.fingerprint }
+          : {}),
+        ...(certificate.status === 'changed' && certificate.observedFingerprint
+          ? { actual: certificate.observedFingerprint }
+          : {}),
+        ...(certificate.expiresAt && certificate.status !== 'changed'
+          ? { actual: certificate.expiresAt }
+          : {}),
       }),
     );
   }
@@ -744,17 +754,23 @@ function topologyResourceDrift(plan: VpsRuntimePlan): RuntimeDriftEntry[] {
     entries.push(
       entry({
         id: record.targetId === plan.targetId ? `dns.${record.status}` : 'dns.target.modified',
-        kind: 'modified',
+        kind: record.status === 'missing' ? 'missing' : 'modified',
         severity:
-          record.status === 'error' || record.targetId !== plan.targetId ? 'error' : 'warning',
+          record.status === 'error' ||
+          record.status === 'missing' ||
+          record.targetId !== plan.targetId
+            ? 'error'
+            : 'warning',
         resourceKind: 'dns',
         resource: record.domain,
         dockerName: record.recordId,
         ownership: record.source.ownership,
         message:
-          record.targetId !== plan.targetId
-            ? `${record.domain} no longer points to this saved VPS target`
-            : `DNS record ${record.domain} is ${record.status}`,
+          record.status === 'missing'
+            ? `${record.domain} was previously managed but is no longer present in Cloudflare`
+            : record.targetId !== plan.targetId
+              ? `${record.domain} no longer points to this saved VPS target`
+              : `DNS record ${record.domain} is ${record.status}`,
         expected: plan.targetId,
         actual: record.targetId ?? record.content,
       }),

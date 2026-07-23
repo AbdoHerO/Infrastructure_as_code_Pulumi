@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DeploymentError, err, ok } from '@cloudforge/shared';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { CertificateManager } from '../ports/certificate-manager.js';
+import { DEFAULT_SETTINGS } from '../settings/settings.js';
 import { SslService } from './ssl-service.js';
 
 const config = {
@@ -223,5 +224,103 @@ describe('SslService', () => {
     );
     expect(saveSite).toHaveBeenCalled();
     expect(enableStrictSslForDomain).toHaveBeenCalledWith('cloudflare-1', config.domain);
+  });
+
+  it('does not overwrite Runtime HTTPS state when Nginx inspection fails', async () => {
+    const certificate = {
+      domain: config.domain,
+      issuer: "Let's Encrypt",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      daysRemaining: 30,
+      sans: [config.domain],
+      wildcard: false,
+      keyAlgorithm: 'RSA',
+      fingerprint: 'abc',
+    };
+    const replaceCertificates = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new SslService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { resolve: vi.fn() },
+      { list: vi.fn().mockResolvedValue(ok([certificate])) } as unknown as CertificateManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      {
+        listSites: vi
+          .fn()
+          .mockResolvedValue(err(new DeploymentError('Nginx temporarily unavailable'))),
+      } as never,
+      undefined,
+      undefined,
+      { replaceCertificates } as never,
+    );
+
+    const result = await service.list('target', '/opt/certs');
+
+    expect(result).toEqual(ok([certificate]));
+    expect(replaceCertificates).not.toHaveBeenCalled();
+  });
+
+  it('keeps the accepted Runtime fingerprint when renewal succeeds but Nginx reload fails', async () => {
+    const renewed = {
+      domain: config.domain,
+      issuer: "Let's Encrypt",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 90 * 86_400_000).toISOString(),
+      daysRemaining: 90,
+      sans: [config.domain],
+      wildcard: false,
+      keyAlgorithm: 'RSA',
+      fingerprint: 'renewed-fingerprint',
+    };
+    const upsertCertificate = vi.fn().mockResolvedValue(ok(undefined));
+    const recorded: {
+      readonly type: string;
+      readonly metadata?: Record<string, unknown>;
+    }[] = [];
+    const recordSafe = vi.fn(
+      (entry: { readonly type: string; readonly metadata?: Record<string, unknown> }) => {
+        recorded.push(entry);
+      },
+    );
+    const service = new SslService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { resolve: vi.fn() },
+      {
+        list: vi.fn().mockResolvedValue(ok([])),
+        renew: vi.fn().mockResolvedValue(ok(renewed)),
+      } as unknown as CertificateManager,
+      { recordSafe } as unknown as ActivityService,
+      {
+        get: vi.fn().mockResolvedValue(
+          ok({
+            ...DEFAULT_SETTINGS,
+            ssl: {
+              ...DEFAULT_SETTINGS.ssl,
+              autoRenew: true,
+              managed: [{ targetId: 'target', ...config }],
+            },
+          }),
+        ),
+      } as never,
+      {
+        reload: vi.fn().mockResolvedValue(err(new DeploymentError('reload failed'))),
+      } as never,
+      undefined,
+      undefined,
+      { upsertCertificate } as never,
+    );
+
+    await service.renewDue();
+
+    expect(upsertCertificate).not.toHaveBeenCalled();
+    expect(
+      recorded.some(
+        (entry) =>
+          entry.type === 'ssl.runtime.sync.skipped' &&
+          entry.metadata?.targetId === 'target' &&
+          entry.metadata.domain === config.domain,
+      ),
+    ).toBe(true);
   });
 });

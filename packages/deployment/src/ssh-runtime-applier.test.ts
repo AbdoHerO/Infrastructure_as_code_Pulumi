@@ -6,7 +6,7 @@ import {
   type RuntimeService,
   type VpsRuntimePlan,
 } from '@cloudforge/core';
-import { commandFor } from './ssh-runtime-applier.js';
+import { commandFor, SshRuntimeApplier } from './ssh-runtime-applier.js';
 
 const TARGET = 'target-1';
 
@@ -262,5 +262,33 @@ describe('commandFor', () => {
 
       expect(result.ok).toBe(false);
     });
+  });
+});
+
+describe('SshRuntimeApplier', () => {
+  it('validates the complete operation set before connecting or applying an earlier operation', async () => {
+    const valid = op({ id: 'network.create:edge-net' });
+    const invalid = op({ id: 'network.frobnicate:edge-net' });
+
+    const result = await new SshRuntimeApplier().apply(
+      {
+        host: '127.0.0.1',
+        port: 22,
+        username: 'nobody',
+        password: 'unused',
+        hostKeySha256: 'SHA256:unused',
+      },
+      plan(),
+      [valid, invalid],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.applied).toBe(0);
+    expect(result.value.failed).toBe(1);
+    expect(result.value.outcomes).toEqual([
+      expect.objectContaining({ operationId: valid.id, status: 'skipped' }),
+      expect.objectContaining({ operationId: invalid.id, status: 'failed' }),
+    ]);
   });
 });

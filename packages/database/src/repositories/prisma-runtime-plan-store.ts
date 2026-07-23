@@ -1,4 +1,4 @@
-import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
+import { ConflictError, err, ok, PersistenceError, type Result } from '@cloudforge/shared';
 import { type RuntimePlanStore, type VpsRuntimePlan } from '@cloudforge/core';
 import type { Db } from '../client.js';
 
@@ -11,9 +11,9 @@ import type { Db } from '../client.js';
  * `cloudforge.db` also means portable backup covers it for free — `VACUUM INTO`
  * snapshots the whole file.
  *
- * Parsing is defensive rather than a bare cast: this row is the only record of a
- * target's intent, and a corrupt one should degrade to "not managed yet" instead
- * of failing every read for that target.
+ * Parsing is defensive rather than a bare cast. This row is the only record of a
+ * target's intent, so malformed or cross-target data must fail closed instead of
+ * silently turning a managed production target into an empty legacy plan.
  */
 export class PrismaRuntimePlanStore implements RuntimePlanStore {
   constructor(private readonly db: Db) {}
@@ -27,22 +27,53 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
       const row = await this.db.setting.findUnique({ where: { key: this.key(targetId) } });
       if (!row) return ok(null);
       const parsed: unknown = JSON.parse(row.value);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ok(null);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return err(new PersistenceError('Stored runtime plan is malformed'));
       const plan = parsed as VpsRuntimePlan;
-      return ok(plan.targetId === targetId ? plan : null);
+      if (plan.targetId !== targetId)
+        return err(new PersistenceError('Stored runtime plan belongs to a different target'));
+      return ok(plan);
     } catch (cause) {
       return err(new PersistenceError('Failed to load runtime plan', { cause }));
     }
   }
 
-  async save(targetId: string, plan: VpsRuntimePlan): Promise<Result<void, PersistenceError>> {
+  async save(
+    targetId: string,
+    plan: VpsRuntimePlan,
+    expectedVersion: number,
+  ): Promise<Result<void, PersistenceError | ConflictError>> {
     try {
+      const key = this.key(targetId);
       const value = JSON.stringify(plan);
-      await this.db.setting.upsert({
-        where: { key: this.key(targetId) },
-        create: { key: this.key(targetId), value },
-        update: { value },
+      const current = await this.db.setting.findUnique({ where: { key } });
+      if (!current) {
+        if (expectedVersion !== 0)
+          return err(new ConflictError('Runtime plan changed before it could be saved'));
+        try {
+          await this.db.setting.create({ data: { key, value } });
+        } catch (cause) {
+          if (isUniqueConstraint(cause))
+            return err(new ConflictError('Runtime plan changed before it could be saved'));
+          throw cause;
+        }
+        return ok(undefined);
+      }
+
+      const currentVersion = storedVersion(current.value);
+      if (currentVersion !== expectedVersion)
+        return err(new ConflictError('Runtime plan changed before it could be saved'));
+
+      // The value predicate is the actual compare-and-swap. Even if another
+      // process writes between the read above and this update, its value no
+      // longer matches and this writer receives a conflict instead of erasing
+      // the newer topology.
+      const updated = await this.db.setting.updateMany({
+        where: { key, value: current.value },
+        data: { value },
       });
+      if (updated.count !== 1)
+        return err(new ConflictError('Runtime plan changed before it could be saved'));
       return ok(undefined);
     } catch (cause) {
       return err(new PersistenceError('Failed to save runtime plan', { cause }));
@@ -59,4 +90,23 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
       return err(new PersistenceError('Failed to delete runtime plan', { cause }));
     }
   }
+}
+
+function storedVersion(value: string): number {
+  const parsed: unknown = JSON.parse(value);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('Stored runtime plan is malformed');
+  const version = (parsed as { version?: unknown }).version;
+  if (!Number.isInteger(version) || Number(version) < 0)
+    throw new Error('Stored runtime plan has an invalid version');
+  return Number(version);
+}
+
+function isUniqueConstraint(cause: unknown): boolean {
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'code' in cause &&
+    (cause as { code?: unknown }).code === 'P2002'
+  );
 }

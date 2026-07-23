@@ -65,7 +65,7 @@ export interface RuntimeDnsRecordSync {
   readonly content: string;
   readonly ttl: number;
   readonly proxied: boolean;
-  readonly status: 'active' | 'pending' | 'error' | 'unknown';
+  readonly status: 'active' | 'pending' | 'error' | 'missing' | 'unknown';
   readonly ownership: 'cloudforge-managed' | 'adopted' | 'unmanaged';
   readonly observedAt: string;
 }

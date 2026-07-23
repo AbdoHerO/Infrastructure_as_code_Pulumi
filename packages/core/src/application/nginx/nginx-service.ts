@@ -99,10 +99,13 @@ export class NginxService {
     const result = await this.withTarget(targetId, (target) =>
       this.nginx.saveMainConfig(target, content, onEvent),
     );
-    if (result.ok)
+    if (result.ok) {
+      const synchronized = await this.synchronizeRoutes(targetId);
+      if (!synchronized.ok) return synchronized;
       this.audit('nginx.config.saved', 'Saved the Nginx main configuration', targetId, {
         backupId: result.value.backupId,
       });
+    }
     return result;
   }
 
@@ -148,8 +151,11 @@ export class NginxService {
     const result = await this.withTarget(targetId, (target) =>
       this.nginx.restore(target, backupId, onEvent),
     );
-    if (result.ok)
+    if (result.ok) {
+      const synchronized = await this.synchronizeRoutes(targetId);
+      if (!synchronized.ok) return synchronized;
       this.audit('nginx.rollback', `Restored Nginx backup ${backupId}`, targetId, { backupId });
+    }
     return result;
   }
 

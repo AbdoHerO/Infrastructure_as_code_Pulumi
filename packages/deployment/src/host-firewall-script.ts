@@ -90,17 +90,32 @@ fi`;
 }
 
 /**
- * Persist iptables rules, which are otherwise lost on reboot.
+ * Persist raw firewall rules, which are otherwise lost on reboot.
  *
- * ufw, firewalld and nftables persist their own rules. Raw iptables does not,
- * and a firewall rule that disappears on reboot is worse than one that was never
- * added: it works until the machine restarts at 3am.
+ * UFW and firewalld own their persistence. Raw iptables and raw nftables do not:
+ * `nft add rule` only changes the live kernel ruleset. A firewall rule that
+ * disappears on reboot is worse than one that was never added: it works until
+ * the machine restarts at 3am.
  */
 function persistIptables(): string {
   return `if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save >/dev/null 2>&1
 elif [ -d /etc/iptables ]; then iptables-save > /etc/iptables/rules.v4
 elif [ -d /etc/sysconfig ]; then iptables-save > /etc/sysconfig/iptables
 fi`;
+}
+
+function persistNftables(): string {
+  return `tmp_rules=$(mktemp)
+if nft list ruleset > "$tmp_rules" && nft -c -f "$tmp_rules" && install -m 0600 "$tmp_rules" /etc/nftables.conf; then
+  if command -v systemctl >/dev/null 2>&1; then systemctl enable nftables >/dev/null 2>&1
+  elif command -v rc-update >/dev/null 2>&1; then rc-update add nftables default >/dev/null 2>&1
+  fi
+else
+  rm -f "$tmp_rules"
+  echo "Could not persist nftables rules" >&2
+  exit 1
+fi
+rm -f "$tmp_rules"`;
 }
 
 /** Ensure CloudForge's own nftables table and chain exist. Idempotent. */
@@ -163,15 +178,28 @@ cloudforge_open() {
 }
 
 /**
- * Persist the rules, but only if something was added and only on iptables.
+ * Persist raw rules, but only when something was added.
  *
  * Split out of `openPortsScript` so the Ansible playbook, which emits its own
  * `cloudforge_open` call rather than one this module generated, cannot forget the
  * step and leave behind a rule that works until the host reboots.
  */
 export function persistIfChanged(): string {
-  return `if [ "$changed" = 1 ] && [ "$backend" = iptables ]; then
-${persistIptables()}
+  return `if [ "$changed" = 1 ]; then
+  case "$backend" in
+    iptables)
+${persistIptables()
+  .split('\n')
+  .map((line) => `      ${line}`)
+  .join('\n')}
+      ;;
+    nftables)
+${persistNftables()
+  .split('\n')
+  .map((line) => `      ${line}`)
+  .join('\n')}
+      ;;
+  esac
 fi`;
 }
 
@@ -207,8 +235,10 @@ export function portStateFunction(sudo = ''): string {
       ${sudo}firewall-cmd --quiet --query-port="$port/$proto" 2>/dev/null && printf open || printf closed
       ;;
     nftables)
-      if ${sudo}nft list ruleset 2>/dev/null | grep -E "$proto dport" | grep -qE "(^|[^0-9])$port[^0-9]"; then printf open
-      elif ${sudo}nft list ruleset 2>/dev/null | grep -qE 'policy (drop|reject)'; then printf closed
+      rules=$(${sudo}nft list ruleset 2>/dev/null)
+      if printf '%s\n' "$rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' (drop|reject)( |$)'; then printf closed
+      elif printf '%s\n' "$rules" | grep -qE 'policy (drop|reject)'; then printf closed
+      elif printf '%s\n' "$rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' accept( |$)'; then printf open
       else printf open; fi
       ;;
     iptables)

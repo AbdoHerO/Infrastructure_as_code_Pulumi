@@ -1,4 +1,4 @@
-import type { PersistenceError, Result } from '@cloudforge/shared';
+import type { ConflictError, PersistenceError, Result } from '@cloudforge/shared';
 import type { VpsRuntimePlan } from '../vps-runtime/vps-runtime-plan.js';
 
 /**
@@ -10,6 +10,16 @@ import type { VpsRuntimePlan } from '../vps-runtime/vps-runtime-plan.js';
  */
 export interface RuntimePlanStore {
   load(targetId: string): Promise<Result<VpsRuntimePlan | null, PersistenceError>>;
-  save(targetId: string, plan: VpsRuntimePlan): Promise<Result<void, PersistenceError>>;
+  /**
+   * Atomically persist `plan` only when the stored version still equals
+   * `expectedVersion`. The store, rather than the Application service, owns the
+   * final compare-and-swap so two concurrent writers cannot both pass a
+   * read-then-write version check and silently overwrite one another.
+   */
+  save(
+    targetId: string,
+    plan: VpsRuntimePlan,
+    expectedVersion: number,
+  ): Promise<Result<void, PersistenceError | ConflictError>>;
   delete(targetId: string): Promise<Result<void, PersistenceError>>;
 }

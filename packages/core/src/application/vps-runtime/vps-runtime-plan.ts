@@ -221,12 +221,14 @@ export interface RuntimeCertificate {
   readonly domain: string;
   readonly collectionId?: string | undefined;
   readonly authority: 'letsencrypt' | 'cloudflare-origin-ca' | 'unknown';
-  readonly status: 'valid' | 'expiring' | 'expired' | 'missing' | 'unknown';
+  readonly status: 'valid' | 'expiring' | 'expired' | 'missing' | 'changed' | 'unknown';
   readonly expiresAt: string | null;
   readonly daysRemaining: number | null;
   readonly httpsEnabled: boolean;
   readonly httpRedirect: boolean;
   readonly fingerprint?: string | undefined;
+  /** Live fingerprint when it differs from the last CloudForge-accepted value. */
+  readonly observedFingerprint?: string | undefined;
   readonly source: RuntimeTopologySource;
   readonly observedAt: string;
 }
@@ -239,7 +241,7 @@ export interface RuntimeDnsRecord {
   readonly content: string;
   readonly ttl: number;
   readonly proxied: boolean;
-  readonly status: 'active' | 'pending' | 'error' | 'unknown';
+  readonly status: 'active' | 'pending' | 'error' | 'missing' | 'unknown';
   /** Saved VPS target whose public address this record targets, when known. */
   readonly targetId: string | null;
   readonly source: RuntimeTopologySource;

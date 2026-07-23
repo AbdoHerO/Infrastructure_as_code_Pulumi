@@ -13,6 +13,7 @@ import type {
   VpsTargetRepository,
   VpsTargetUpdate,
 } from '../ports/vps-target-repository.js';
+import type { RuntimePlanStore } from '../ports/runtime-plan-store.js';
 
 export interface VpsTargetDto {
   readonly id: string;
@@ -47,7 +48,10 @@ const USER_PATTERN = /^[a-z_][a-z0-9_-]{0,31}$/i;
 const FINGERPRINT_PATTERN = /^(?:SHA256:)?[A-Za-z0-9+/]{43}=?$/;
 
 export class VpsTargetService {
-  constructor(private readonly targets: VpsTargetRepository) {}
+  constructor(
+    private readonly targets: VpsTargetRepository,
+    private readonly runtimePlans?: RuntimePlanStore,
+  ) {}
 
   async list(): Promise<Result<VpsTargetDto[], PersistenceError>> {
     const result = await this.targets.list();
@@ -119,8 +123,10 @@ export class VpsTargetService {
     });
   }
 
-  remove(id: string): Promise<Result<void, PersistenceError>> {
-    return this.targets.remove(id);
+  async remove(id: string): Promise<Result<void, PersistenceError>> {
+    const removed = await this.targets.remove(id);
+    if (!removed.ok) return removed;
+    return this.deleteRuntimePlans([id]);
   }
 
   /** Create or update the shared target generated from a managed compute resource. */
@@ -169,29 +175,72 @@ export class VpsTargetService {
     );
   }
 
-  removeManagedProject(projectId: string): Promise<Result<void, PersistenceError>> {
-    return this.targets.removeManagedByProject(projectId);
+  async removeManagedProject(projectId: string): Promise<Result<void, PersistenceError>> {
+    const ids = await this.managedTargetIds((target) => target.managedProjectId === projectId);
+    if (!ids.ok) return ids;
+    const removed = await this.targets.removeManagedByProject(projectId);
+    if (!removed.ok) return removed;
+    return this.deleteRuntimePlans(ids.value);
   }
 
-  removeManagedResourcesOutside(
+  async removeManagedResourcesOutside(
     projectId: string,
     resourceNames: readonly string[],
   ): Promise<Result<void, PersistenceError>> {
-    return this.targets.removeManagedResourcesOutside(projectId, resourceNames);
+    const ids = await this.managedTargetIds(
+      (target) =>
+        target.managedProjectId === projectId &&
+        (!target.managedResourceName || !resourceNames.includes(target.managedResourceName)),
+    );
+    if (!ids.ok) return ids;
+    const removed = await this.targets.removeManagedResourcesOutside(projectId, resourceNames);
+    if (!removed.ok) return removed;
+    return this.deleteRuntimePlans(ids.value);
   }
 
   /** Remove generated targets whose owning Infrastructure project no longer exists. */
-  removeManagedOutsideProjects(
+  async removeManagedOutsideProjects(
     projectIds: readonly string[],
   ): Promise<Result<void, PersistenceError>> {
-    return this.targets.removeManagedOutsideProjects(projectIds);
+    const ids = await this.managedTargetIds((target) =>
+      Boolean(target.managedProjectId && !projectIds.includes(target.managedProjectId)),
+    );
+    if (!ids.ok) return ids;
+    const removed = await this.targets.removeManagedOutsideProjects(projectIds);
+    if (!removed.ok) return removed;
+    return this.deleteRuntimePlans(ids.value);
   }
 
-  removeManagedResource(
+  async removeManagedResource(
     projectId: string,
     resourceName: string,
   ): Promise<Result<void, PersistenceError>> {
-    return this.targets.removeManaged(projectId, resourceName);
+    const ids = await this.managedTargetIds(
+      (target) =>
+        target.managedProjectId === projectId && target.managedResourceName === resourceName,
+    );
+    if (!ids.ok) return ids;
+    const removed = await this.targets.removeManaged(projectId, resourceName);
+    if (!removed.ok) return removed;
+    return this.deleteRuntimePlans(ids.value);
+  }
+
+  private async managedTargetIds(
+    predicate: (target: VpsTargetRecord) => boolean,
+  ): Promise<Result<string[], PersistenceError>> {
+    const listed = await this.targets.list();
+    return listed.ok ? ok(listed.value.filter(predicate).map((target) => target.id)) : listed;
+  }
+
+  private async deleteRuntimePlans(
+    targetIds: readonly string[],
+  ): Promise<Result<void, PersistenceError>> {
+    if (!this.runtimePlans) return ok(undefined);
+    for (const targetId of targetIds) {
+      const deleted = await this.runtimePlans.delete(targetId);
+      if (!deleted.ok) return deleted;
+    }
+    return ok(undefined);
   }
 }
 

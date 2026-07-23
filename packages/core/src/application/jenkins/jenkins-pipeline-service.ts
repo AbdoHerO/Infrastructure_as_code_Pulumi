@@ -278,6 +278,10 @@ export class JenkinsPipelineService {
     }
     const runtime = await this.synchronizeRuntime(record);
     if (!runtime.ok) return runtime;
+    if (this.runtime && existing.value && existing.value.targetId !== record.targetId) {
+      const removedOldRuntime = await this.runtime.removeApplication(existing.value.targetId, id);
+      if (!removedOldRuntime.ok) return removedOldRuntime;
+    }
     this.activities.recordSafe({
       type: existing.value ? 'jenkins.pipeline.updated' : 'jenkins.pipeline.created',
       message: `${existing.value ? 'Updated' : 'Created'} Jenkins pipeline ${record.name}`,

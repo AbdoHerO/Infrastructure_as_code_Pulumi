@@ -59,7 +59,11 @@ function build() {
     Promise.resolve(ok(rows.get(id) ?? null)),
   );
   const save = vi.fn(
-    (id: string, plan: VpsRuntimePlan): Promise<Result<void, PersistenceError>> => {
+    (
+      id: string,
+      plan: VpsRuntimePlan,
+      _expectedVersion: number,
+    ): Promise<Result<void, PersistenceError>> => {
       rows.set(id, plan);
       return Promise.resolve(ok(undefined));
     },
@@ -637,6 +641,38 @@ describe('RuntimePlanService', () => {
       expect(ctx.applyImpl).not.toHaveBeenCalled();
     });
 
+    it('serializes applies for one target before external work starts', async () => {
+      await seedPlan();
+      const preview = await ctx.service.preview(TARGET);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      ctx.applyImpl.mockImplementationOnce(async (_target, _plan, operations) => {
+        await gate;
+        return ok({
+          outcomes: operations.map((operation) => ({
+            operationId: operation.id,
+            status: 'applied' as const,
+            message: 'Applied',
+          })),
+          applied: operations.length,
+          failed: 0,
+          rolledBack: false,
+        });
+      });
+
+      const first = ctx.service.apply(TARGET, tokenOf(preview));
+      await vi.waitFor(() => expect(ctx.applyImpl).toHaveBeenCalledTimes(1));
+      const concurrent = await ctx.service.apply(TARGET, tokenOf(preview));
+
+      expect(concurrent.ok).toBe(false);
+      expect(!concurrent.ok && concurrent.error.code).toBe('CONFLICT');
+      expect(ctx.applyImpl).toHaveBeenCalledTimes(1);
+      release();
+      expect((await first).ok).toBe(true);
+    });
+
     it('refuses to apply around an unresolved ownership conflict', async () => {
       await seedPlan();
       ctx.inspect.mockResolvedValue(
@@ -1040,7 +1076,7 @@ describe('RuntimePlanService', () => {
         name: 'backend',
         displayName: 'Backend',
         composeProject: 'backend',
-        deploymentMode: 'scm',
+        deploymentMode: 'scm' as const,
         repositoryUrl: 'https://example.test/backend.git',
         branch: 'main',
         hostPort: 8001,
@@ -1133,7 +1169,102 @@ describe('RuntimePlanService', () => {
       });
     });
 
-    it('moves a managed DNS record when its address points to another target', async () => {
+    it('does not create a new plan version for an unchanged feature observation', async () => {
+      const application = {
+        targetId: TARGET,
+        sourceId: 'pipeline-1',
+        name: 'backend',
+        displayName: 'Backend',
+        composeProject: 'backend',
+        deploymentMode: 'scm' as const,
+        repositoryUrl: 'https://github.com/example/backend.git',
+        branch: 'main',
+        hostPort: 8001,
+        applicationPort: 8001,
+        exposure: 'host-loopback' as const,
+        ownership: 'cloudforge-managed' as const,
+      };
+      await ctx.service.upsertApplication(application);
+      const first = await ctx.service.get(TARGET);
+      if (!first.ok) throw first.error;
+      ctx.save.mockClear();
+
+      await ctx.service.upsertApplication(application);
+      const second = await ctx.service.get(TARGET);
+      if (!second.ok) throw second.error;
+
+      expect(ctx.save).not.toHaveBeenCalled();
+      expect(second.value.plan.version).toBe(first.value.plan.version);
+    });
+
+    it('does not create a new plan version when discovery returns the same resources reordered', async () => {
+      const certificate = (domain: string) => ({
+        targetId: TARGET,
+        sourceId: domain,
+        collectionId: '/opt/certs',
+        domain,
+        authority: 'letsencrypt' as const,
+        status: 'valid' as const,
+        expiresAt: '2026-12-01T00:00:00.000Z',
+        daysRemaining: 120,
+        httpsEnabled: true,
+        httpRedirect: true,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      });
+      const firstObservation = [certificate('app.example.com'), certificate('api.example.com')];
+      await ctx.service.replaceCertificates(TARGET, '/opt/certs', firstObservation);
+      const first = await ctx.service.get(TARGET);
+      if (!first.ok) throw first.error;
+      ctx.save.mockClear();
+
+      await ctx.service.replaceCertificates(TARGET, '/opt/certs', [...firstObservation].reverse());
+      const second = await ctx.service.get(TARGET);
+      if (!second.ok) throw second.error;
+
+      expect(ctx.save).not.toHaveBeenCalled();
+      expect(second.value.plan.version).toBe(first.value.plan.version);
+    });
+
+    it('reports a changed certificate fingerprint until CloudForge explicitly accepts it', async () => {
+      const certificate = {
+        targetId: TARGET,
+        sourceId: 'app.example.com',
+        collectionId: '/opt/certs',
+        domain: 'app.example.com',
+        authority: 'letsencrypt' as const,
+        status: 'valid' as const,
+        expiresAt: '2026-12-01T00:00:00.000Z',
+        daysRemaining: 120,
+        httpsEnabled: true,
+        httpRedirect: true,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+      await ctx.service.upsertCertificate({ ...certificate, fingerprint: 'expected' });
+      await ctx.service.replaceCertificates(TARGET, '/opt/certs', [
+        { ...certificate, fingerprint: 'unexpected' },
+      ]);
+
+      const loaded = await ctx.service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.plan.certificates[0]).toMatchObject({
+        status: 'changed',
+        fingerprint: 'expected',
+        observedFingerprint: 'unexpected',
+      });
+
+      await ctx.service.upsertCertificate({ ...certificate, fingerprint: 'unexpected' });
+      const accepted = await ctx.service.get(TARGET);
+      if (!accepted.ok) throw accepted.error;
+      expect(accepted.value.plan.certificates[0]).toMatchObject({
+        status: 'valid',
+        fingerprint: 'unexpected',
+      });
+      expect(accepted.value.plan.certificates[0]?.observedFingerprint).toBeUndefined();
+    });
+
+    it('keeps managed DNS drift on the old target when its address moves externally', async () => {
       const second = '9d7b22d2-47d4-4fef-a780-41d7c13a7c20';
       const catalog = {
         targetIds: vi.fn(() => Promise.resolve([TARGET, second])),
@@ -1176,10 +1307,54 @@ describe('RuntimePlanService', () => {
       const newTarget = await service.get(second);
       if (!oldTarget.ok) throw oldTarget.error;
       if (!newTarget.ok) throw newTarget.error;
-      expect(oldTarget.value.plan.dnsRecords).toHaveLength(0);
+      expect(oldTarget.value.plan.dnsRecords[0]).toMatchObject({
+        domain: 'app.example.com',
+        status: 'error',
+        targetId: second,
+      });
       expect(newTarget.value.plan.dnsRecords[0]).toMatchObject({
         domain: 'app.example.com',
         targetId: second,
+      });
+    });
+
+    it('marks a previously managed Cloudflare record as missing', async () => {
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET])),
+        findTargetIdByAddress: vi.fn(() => Promise.resolve(TARGET)),
+      };
+      const service = new RuntimePlanService(
+        { load: ctx.load, save: ctx.save, delete: ctx.remove },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      const record = {
+        sourceId: 'dns-1',
+        recordId: 'dns-1',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        content: '203.0.113.10',
+        ttl: 300,
+        proxied: true,
+        status: 'active' as const,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+      await service.upsertDnsRecord(record);
+      await service.replaceDnsRecords('zone-1', []);
+
+      const loaded = await service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.plan.dnsRecords[0]).toMatchObject({
+        source: { resourceId: 'dns-1' },
+        status: 'missing',
       });
     });
   });

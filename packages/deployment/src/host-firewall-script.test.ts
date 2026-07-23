@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   closePortsScript,
@@ -13,29 +12,13 @@ import {
   persistIfChanged,
   portStateFunction,
 } from './host-firewall-script.js';
+import { parsesAsShell } from './shell-syntax.test-helper.js';
 
 const HTTP = [{ port: 80, protocol: 'tcp' as const }];
 const BOTH = [
   { port: 80, protocol: 'tcp' as const },
   { port: 443, protocol: 'tcp' as const },
 ];
-
-/**
- * Ask a real shell whether the generated script parses.
- *
- * `sh -n` reads and parses without executing anything, so this is safe and
- * offline. It catches the failure mode that matters most here: a quoting mistake
- * in a template literal produces a script that is syntactically broken, and
- * without this the first place anyone finds out is a production VPS.
- */
-function parsesAsShell(script: string): boolean {
-  try {
-    execFileSync('sh', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 describe('shell syntax', () => {
   // Guard the guard: if `sh` is unavailable these tests would silently pass by
@@ -126,6 +109,20 @@ describe('portStateFunction', () => {
     // A port opened by hand is open. Calling it closed because the marker is
     // missing would contradict the host.
     expect(portStateFunction()).toContain('--dport "$port" -j ACCEPT');
+  });
+
+  it('does not mistake an nftables drop rule for an open port', () => {
+    const script = portStateFunction();
+
+    expect(script).toContain("' (drop|reject)( |$)'");
+    expect(script).toContain("' accept( |$)'");
+    expect(script.indexOf("' (drop|reject)( |$)'")).toBeLessThan(script.indexOf("' accept( |$)'"));
+  });
+
+  it('conservatively reports an nftables drop policy before an accept in another base chain', () => {
+    const script = portStateFunction();
+
+    expect(script.indexOf('policy (drop|reject)')).toBeLessThan(script.indexOf("' accept( |$)'"));
   });
 
   it('escalates only the commands that need root', () => {
@@ -221,6 +218,16 @@ describe('openPortsScript', () => {
 
     expect(script).toContain('netfilter-persistent save');
     expect(script).toContain('iptables-save');
+  });
+
+  it('persists raw nftables rules and enables their boot loader', () => {
+    const script = openPortsScript(HTTP);
+
+    expect(script).toContain('nft list ruleset > "$tmp_rules"');
+    expect(script).toContain('nft -c -f "$tmp_rules"');
+    expect(script).toContain('/etc/nftables.conf');
+    expect(script).toContain('systemctl enable nftables');
+    expect(script).toContain('rc-update add nftables default');
   });
 
   it('marks its own iptables and nftables rules', () => {

@@ -181,6 +181,74 @@ describe('JenkinsPipelineService', () => {
     );
   });
 
+  it('moves the runtime application when an existing pipeline changes VPS target', async () => {
+    const repository = new MemoryPipelines();
+    repository.records.set('pipeline-1', {
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      applicationPort: null,
+      githubCredentialId: null,
+      environmentCredentialId: null,
+      applicationRoutes: [],
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+    });
+    const upsertApplication = vi.fn().mockResolvedValue(ok(undefined));
+    const removeApplication = vi.fn().mockResolvedValue(ok(undefined));
+    const service = new JenkinsPipelineService(
+      repository,
+      {
+        get: vi.fn((targetId: string) =>
+          Promise.resolve(
+            ok({
+              id: targetId,
+              name: targetId === 'target-1' ? 'Old VPS' : 'New VPS',
+              host: targetId === 'target-1' ? '203.0.113.10' : '203.0.113.11',
+            }),
+          ),
+        ),
+      } as unknown as VpsTargetService,
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: {
+              username: 'admin',
+              apiToken: 'jenkins-secret',
+              baseUrl: 'http://jenkins:8080',
+            },
+          }),
+        ),
+      } as unknown as CredentialService,
+      {
+        ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+        upsertJob: vi.fn().mockResolvedValue(ok(undefined)),
+        removeJob: vi.fn().mockResolvedValue(ok(undefined)),
+      } as unknown as JenkinsManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      undefined,
+      { upsertApplication, removeApplication } as never,
+    );
+
+    const result = await service.save({
+      ...input,
+      id: 'pipeline-1',
+      targetId: 'target-2',
+      githubCredentialId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(upsertApplication).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'target-2', sourceId: 'pipeline-1' }),
+    );
+    expect(removeApplication).toHaveBeenCalledWith('target-1', 'pipeline-1');
+  });
+
   it('synchronizes an encrypted environment file as a folder-scoped Jenkins secret', async () => {
     const repository = new MemoryPipelines();
     const environmentContent =

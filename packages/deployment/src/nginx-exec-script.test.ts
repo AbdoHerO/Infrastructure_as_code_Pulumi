@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   MOUNT_PROBE,
@@ -6,16 +5,7 @@ import {
   reloadScript,
   restoreScript,
 } from './nginx-exec-script.js';
-
-/** `sh -n` parses without executing, so this is safe, offline, and catches quoting bugs. */
-function parsesAsShell(script: string): boolean {
-  try {
-    execFileSync('sh', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { parsesAsShell } from './shell-syntax.test-helper.js';
 
 describe('shell syntax', () => {
   // Guard the guard: without a working `sh` these would pass by never being able

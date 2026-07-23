@@ -206,7 +206,11 @@ export async function initContainer(): Promise<AppContainer> {
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
   const ansibleManager = new SshAnsibleManager();
-  const vpsTargetService = new VpsTargetService(new PrismaVpsTargetRepository(db));
+  const runtimePlanStore = new PrismaRuntimePlanStore(db);
+  const vpsTargetService = new VpsTargetService(
+    new PrismaVpsTargetRepository(db),
+    runtimePlanStore,
+  );
   const targetSyncService = new ManagedVpsTargetSyncService(
     vpsTargetService,
     sshKeyService,
@@ -256,7 +260,7 @@ export async function initContainer(): Promise<AppContainer> {
     activityService,
   );
   const runtimePlanService = new RuntimePlanService(
-    new PrismaRuntimePlanStore(db),
+    runtimePlanStore,
     remoteTargetResolver,
     runtimeInspector,
     activityService,
