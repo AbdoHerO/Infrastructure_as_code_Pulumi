@@ -23,6 +23,15 @@ describe('NodeSshKeyGenerator', () => {
     expect(inspected.ok && inspected.value.fingerprint).toBe(generated.value.fingerprint);
   });
 
+  it('generates unencrypted keys through the portable OpenSSH serializer', () => {
+    for (let index = 0; index < 16; index += 1) {
+      const generated = generator.generate('ed25519');
+      expect(generated.ok).toBe(true);
+      if (!generated.ok) continue;
+      expect(sshUtils.parseKey(generated.value.privateKey)).not.toBeInstanceOf(Error);
+    }
+  });
+
   it('encrypts generated private keys and requires the correct passphrase', () => {
     const generated = generator.generate('ed25519', 'correct horse');
     expect(generated.ok).toBe(true);

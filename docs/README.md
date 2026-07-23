@@ -54,19 +54,19 @@ the current module; no internet connection is required to read bundled guides.
 
 ## At a glance
 
-|                            |                                                                                                                                                                                    |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                                                                                                                               |
-| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)                                                                                                                       |
-| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand                                                                                                         |
-| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                                                                                                                        |
-| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                                                                                                                    |
-| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                                                                                                                      |
-| **Service integrations**   | Cloudflare DNS/edge management and per-VPS Jenkins Pipelines                                                                                                                       |
-| **Cloud providers**        | Oracle Cloud and AWS provisioning, discovery, lifecycle and dependency-safe destruction                                                                                            |
-| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 8 packages + 1 app                                                                                                          |
-| **Tests**                  | 739 unit tests (Vitest), including cross-feature runtime synchronization, generated shell parsed by a real `sh -n`, portable backup, VPS preflight, Ansible YAML, and safety paths |
-| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                                                                                                                   |
+|                            |                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Type**                   | Cross-platform desktop app (Windows / macOS / Linux)                                                                                                                                                                |
+| **Shell**                  | Electron 43 · electron-vite · React 18 · TypeScript (strict)                                                                                                                                                        |
+| **UI**                     | TailwindCSS · Radix UI · Framer Motion · Lucide · TanStack Query · Zustand                                                                                                                                          |
+| **Backend (main process)** | Node.js · Prisma 5 + SQLite                                                                                                                                                                                         |
+| **Infra engine**           | Pulumi Automation API 3 (encapsulated; never exposed to the UI)                                                                                                                                                     |
+| **Configuration engine**   | Verified SSH plus self-managed remote Ansible                                                                                                                                                                       |
+| **Service integrations**   | Cloudflare DNS/edge management and per-VPS Jenkins Pipelines                                                                                                                                                        |
+| **Cloud providers**        | Oracle Cloud and AWS provisioning, discovery, lifecycle and dependency-safe destruction                                                                                                                             |
+| **Architecture**           | Monorepo (pnpm + Turborepo), Clean Architecture / DDD, 8 packages + 1 app                                                                                                                                           |
+| **Tests**                  | 740 unit tests (Vitest), including cross-feature runtime synchronization, portable OpenSSH key generation, generated shell parsed by a real `sh -n`, portable backup, VPS preflight, Ansible YAML, and safety paths |
+| **Quality gates**          | `typecheck` · `lint` (ESLint 9, type-checked) · `test` · `build`                                                                                                                                                    |
 
 ## Reading order
 

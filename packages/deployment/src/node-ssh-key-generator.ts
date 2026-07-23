@@ -1,5 +1,6 @@
 import {
   createHash,
+  generateKeyPairSync,
   createPrivateKey,
   createPublicKey,
   randomBytes,
@@ -15,14 +16,31 @@ export class NodeSshKeyGenerator implements SshKeyGenerator {
     passphrase?: string,
   ): Result<SshKeyMaterial, ValidationError> {
     try {
-      const encryption = passphrase
-        ? { passphrase, cipher: 'aes256-ctr' as const, rounds: 16 }
-        : {};
+      if (!passphrase) {
+        const pair =
+          algorithm === 'rsa'
+            ? generateKeyPairSync('rsa', { modulusLength: 3072 })
+            : generateKeyPairSync('ed25519');
+        const privateObject = pair.privateKey;
+        return this.inspect(openSshPrivateKey(privateObject.export({ format: 'jwk' }), algorithm));
+      }
+
       const pair = sshUtils.generateKeyPairSync(
         algorithm,
         algorithm === 'rsa'
-          ? { bits: 3072, comment: 'cloudforge', ...encryption }
-          : { comment: 'cloudforge', ...encryption },
+          ? {
+              bits: 3072,
+              comment: 'cloudforge',
+              passphrase,
+              cipher: 'aes256-ctr',
+              rounds: 16,
+            }
+          : {
+              comment: 'cloudforge',
+              passphrase,
+              cipher: 'aes256-ctr',
+              rounds: 16,
+            },
       );
       return this.inspect(pair.private, passphrase);
     } catch (cause) {
@@ -112,7 +130,10 @@ function openSshPrivateKey(jwk: JsonWebKey, algorithm: SshKeyAlgorithm): string 
           sshField(Buffer.from('cloudforge')),
         ]);
   const unpadded = Buffer.concat([check, check, privateFields]);
-  const paddingLength = (8 - (unpadded.length % 8)) % 8;
+  // OpenSSH specifies deterministic 1..block-size padding. Always write a
+  // complete padding block when the payload is already aligned rather than an
+  // empty tail, which some Windows OpenSSH/ssh2 combinations reject.
+  const paddingLength = 8 - (unpadded.length % 8);
   const padding = Buffer.from(Array.from({ length: paddingLength }, (_, index) => index + 1));
   const encoded = Buffer.concat([
     Buffer.from('openssh-key-v1\0'),
