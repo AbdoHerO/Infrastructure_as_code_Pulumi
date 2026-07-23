@@ -117,6 +117,7 @@ describe('JenkinsPipelineService', () => {
     const repository = new MemoryPipelines();
     const ensureFolder = vi.fn().mockResolvedValue(ok(undefined));
     const ensureGithubCredential = vi.fn().mockResolvedValue(ok(undefined));
+    const upsertApplication = vi.fn().mockResolvedValue(ok(undefined));
     const manager = {
       ensureFolder,
       ensureGithubCredential,
@@ -148,6 +149,9 @@ describe('JenkinsPipelineService', () => {
       credentials,
       manager,
       { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      undefined,
+      { upsertApplication } as never,
     );
 
     const result = await service.save(input);
@@ -165,6 +169,16 @@ describe('JenkinsPipelineService', () => {
     );
     expect(JSON.stringify([...repository.records.values()])).not.toContain('github-secret');
     expect(JSON.stringify([...repository.records.values()])).not.toContain('jenkins-secret');
+    expect(upsertApplication).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetId: 'target-1',
+        name: 'shop-production',
+        deploymentMode: 'scm',
+        repositoryUrl: 'https://github.com/example/shop.git',
+        branch: 'main',
+        ownership: 'cloudforge-managed',
+      }),
+    );
   });
 
   it('synchronizes an encrypted environment file as a folder-scoped Jenkins secret', async () => {

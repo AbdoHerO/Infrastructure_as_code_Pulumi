@@ -330,6 +330,29 @@ describe('checkConnectivity', () => {
   it('checks nothing when nothing is required', () => {
     expect(checkConnectivity([], view([]), view([]))).toEqual([]);
   });
+
+  it('uses a live firewall matcher for ranges that cannot be represented as exact ports', () => {
+    const provider = view([], {
+      allows: (port, protocol) => protocol === 'tcp' && port >= 8_000 && port <= 9_000,
+    });
+
+    expect(checkConnectivity(requirement, view([portKey(80, 'tcp')]), provider)).toEqual([
+      expect.objectContaining({
+        port: 80,
+        state: 'blocked-provider',
+      }),
+    ]);
+
+    const rangeRequirement: FirewallRequirement[] = [
+      { port: 8_081, protocol: 'tcp', reason: 'Reverb', requiredBy: ['app.example.com'] },
+    ];
+    expect(checkConnectivity(rangeRequirement, view([portKey(8_081, 'tcp')]), provider)).toEqual([
+      expect.objectContaining({
+        port: 8_081,
+        state: 'reachable',
+      }),
+    ]);
+  });
 });
 
 describe('toProviderFirewallView', () => {
@@ -374,7 +397,11 @@ describe('toProviderFirewallView', () => {
   });
 
   it('opens a port covered by a range that does not name it', () => {
-    expect(open([rule({ portFrom: 8000, portTo: 9000 })], 8080)).toBe(true);
+    const view = toProviderFirewallView([rule({ portFrom: 8000, portTo: 9000 })], need(8080));
+
+    expect(view.allowed.has(portKey(8080, 'tcp'))).toBe(true);
+    expect(view.allows?.(8080, 'tcp')).toBe(true);
+    expect(view.allows?.(9001, 'tcp')).toBe(false);
   });
 
   it('leaves a port outside the range closed', () => {

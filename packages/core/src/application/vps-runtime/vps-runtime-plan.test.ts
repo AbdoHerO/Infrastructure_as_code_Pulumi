@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   emptyRuntimePlan,
   isApplyable,
+  normalizeRuntimePlan,
   type RuntimeNetwork,
   type RuntimeService,
   validateRuntimePlan,
@@ -65,6 +66,35 @@ describe('emptyRuntimePlan', () => {
     expect(fresh.version).toBe(0);
     expect(fresh.services).toEqual([]);
     expect(validateRuntimePlan(fresh)).toEqual([]);
+  });
+
+  it('normalizes a persisted schema-v1 plan without a database migration', () => {
+    const legacy = {
+      ...emptyRuntimePlan(TARGET_ID),
+      schemaVersion: 1,
+      certificates: undefined,
+      dnsRecords: undefined,
+      services: [service('api', { runtimeKind: undefined })],
+      routes: [
+        {
+          domain: 'example.com',
+          path: '/',
+          serviceName: 'api',
+          servicePort: 80,
+          websocket: false,
+          tls: true,
+        },
+      ],
+    } as unknown as VpsRuntimePlan;
+
+    const normalized = normalizeRuntimePlan(legacy);
+
+    expect(normalized.schemaVersion).toBe(2);
+    expect(normalized.certificates).toEqual([]);
+    expect(normalized.dnsRecords).toEqual([]);
+    expect(normalized.services[0]?.runtimeKind).toBe('container');
+    expect(normalized.routes[0]?.applicationName).toBe('shop');
+    expect(normalized.routes[0]?.httpRedirect).toBe(false);
   });
 });
 

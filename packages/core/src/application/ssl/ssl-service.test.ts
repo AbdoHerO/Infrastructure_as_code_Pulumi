@@ -47,16 +47,31 @@ describe('SslService', () => {
     };
     const issue = vi.fn().mockResolvedValue(ok(certificate));
     const recordSafe = vi.fn();
+    const upsertCertificate = vi.fn().mockResolvedValue(ok(undefined));
     const service = new SslService(
       { resolve: vi.fn().mockResolvedValue(ok(target)) },
       { resolve: vi.fn().mockResolvedValue(ok(['203.0.113.10'])) },
       { issue } as unknown as CertificateManager,
       { recordSafe } as unknown as ActivityService,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { upsertCertificate } as never,
     );
     const result = await service.issue('target', config);
     expect(result).toEqual(ok(certificate));
     expect(issue.mock.calls).toHaveLength(1);
     expect(recordSafe.mock.calls).toHaveLength(1);
+    expect(upsertCertificate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetId: 'target',
+        domain: 'app.example.com',
+        authority: 'letsencrypt',
+        status: 'expiring',
+        ownership: 'cloudforge-managed',
+      }),
+    );
   });
 
   it('verifies a proxied Cloudflare record against its origin instead of edge IPs', async () => {

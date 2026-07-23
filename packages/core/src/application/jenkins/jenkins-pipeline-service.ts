@@ -29,6 +29,10 @@ import type {
   JenkinsApplicationRoute,
 } from '../ports/jenkins-pipeline-repository.js';
 import type { VpsTargetService } from '../vps-targets/vps-target-service.js';
+import type {
+  RuntimeTopologySynchronizer,
+  RuntimeTopologySyncError,
+} from '../ports/runtime-topology-synchronizer.js';
 
 export interface SaveJenkinsPipelineInput {
   readonly id?: string;
@@ -55,7 +59,12 @@ export interface SaveJenkinsPipelineInput {
 }
 
 export type JenkinsPipelineServiceError =
-  ValidationError | NotFoundError | PersistenceError | DeploymentError | CredentialServiceError;
+  | ValidationError
+  | NotFoundError
+  | PersistenceError
+  | DeploymentError
+  | CredentialServiceError
+  | RuntimeTopologySyncError;
 
 export class JenkinsPipelineService {
   constructor(
@@ -66,10 +75,19 @@ export class JenkinsPipelineService {
     private readonly activities: ActivityService,
     private readonly managedDns?: ManagedDnsCoordinator,
     private readonly nginx?: NginxService,
+    private readonly runtime?: RuntimeTopologySynchronizer,
   ) {}
 
-  list(): Promise<Result<JenkinsPipelineRecord[], PersistenceError>> {
-    return this.pipelines.list();
+  async list(): Promise<Result<JenkinsPipelineRecord[], JenkinsPipelineServiceError>> {
+    const records = await this.pipelines.list();
+    if (!records.ok) return records;
+    if (this.runtime) {
+      for (const record of records.value) {
+        const synchronized = await this.synchronizeRuntime(record);
+        if (!synchronized.ok) return synchronized;
+      }
+    }
+    return records;
   }
 
   async test(
@@ -258,6 +276,8 @@ export class JenkinsPipelineService {
         metadata: { pipelineId: record.id, targetId: record.targetId, domain: record.domain },
       });
     }
+    const runtime = await this.synchronizeRuntime(record);
+    if (!runtime.ok) return runtime;
     this.activities.recordSafe({
       type: existing.value ? 'jenkins.pipeline.updated' : 'jenkins.pipeline.created',
       message: `${existing.value ? 'Updated' : 'Created'} Jenkins pipeline ${record.name}`,
@@ -362,6 +382,10 @@ export class JenkinsPipelineService {
     if (!removed.ok) return removed;
     const pruned = await this.jenkins.pruneEmptyFolder(connection.value, loaded.value.folder);
     if (!pruned.ok) return pruned;
+    if (this.runtime) {
+      const runtime = await this.runtime.removeApplication(loaded.value.targetId, id);
+      if (!runtime.ok) return runtime;
+    }
     const deleted = await this.pipelines.remove(id);
     if (!deleted.ok) return deleted;
     this.activities.recordSafe({
@@ -375,6 +399,26 @@ export class JenkinsPipelineService {
       },
     });
     return ok(undefined);
+  }
+
+  private synchronizeRuntime(
+    record: JenkinsPipelineRecord,
+  ): Promise<Result<void, RuntimeTopologySyncError>> {
+    if (!this.runtime) return Promise.resolve(ok(undefined));
+    return this.runtime.upsertApplication({
+      targetId: record.targetId,
+      sourceId: record.id,
+      name: record.name,
+      displayName: record.name,
+      composeProject: `${record.folder}-${record.name}`,
+      deploymentMode: record.definitionMode,
+      ...(record.repositoryUrl ? { repositoryUrl: record.repositoryUrl } : {}),
+      ...(record.branch ? { branch: record.branch } : {}),
+      hostPort: record.applicationPort ?? null,
+      applicationPort: record.applicationPort ?? null,
+      exposure: record.applicationPort ? 'host-loopback' : 'internal',
+      ownership: 'cloudforge-managed',
+    });
   }
 
   private async load(

@@ -1,10 +1,9 @@
 # VPS Runtime
 
 **Manage → VPS Runtime** is the single authoritative model of what a VPS's
-container topology is meant to be: its Docker networks, which services attach to
-them under which aliases, which ports are published to the world versus bound to
-loopback, who owns each resource, and which firewall ports the whole arrangement
-needs open.
+runtime topology is meant to be: applications, services, Docker networks,
+routes, certificates, Cloudflare DNS records, exposure, ownership, and which
+firewall ports the whole arrangement needs open.
 
 Before this existed, those facts had no home. Each feature had grown its own
 partial answer — the Ansible page knew about native service ports, Jenkins knew
@@ -39,6 +38,30 @@ Upgrading to this release changes nothing on any VPS. Every existing target
 reads as `legacy` because it has no stored plan, and legacy mode is always
 `inSync` by construction — there is nothing to drift from when nothing is
 claimed.
+
+## Automatic synchronization
+
+The normal feature workflows now maintain this model. There is no second
+"import into Runtime" button:
+
+- Saving, updating, listing, or deleting a Jenkins pipeline reconciles its
+  runtime application and host endpoint. `HOST_PORT`, deployment mode,
+  repository, branch, exposure, and ownership come from the pipeline record.
+- Listing or changing Nginx sites reconciles `/` and custom location routes.
+  Each route names the application and service it targets.
+- Issuing, renewing, or listing certificates reconciles certificate authority,
+  expiry, status, HTTPS, and redirect state. Missing and expired certificates
+  become drift findings.
+- Cloudflare DNS CRUD and record refresh reconcile only records with the
+  existing `Managed by CloudForge` ownership marker. Foreign records remain
+  outside the plan.
+- Connectivity reads both firewalls live. Host rules come from the VPS over
+  SSH; provider rules come through the target's existing project and provider
+  binding. Neither firewall is copied into the plan.
+
+Older records are reconciled lazily when their normal page loads them. This
+updates CloudForge's stored knowledge only; it does not edit Jenkins, Nginx,
+Cloudflare, certificates, firewalls, or the VPS.
 
 ## Ownership and adoption
 
@@ -122,13 +145,14 @@ the real table is how rules appear to vanish.
 
 ## Related modules
 
-| Module            | What the runtime model changed                                                                                                                                                                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ansible           | Profiles declare their ports, so the rest of the system can see a native service. The playbook and the probe share the one firewall implementation.                                                                                                                             |
-| Jenkins Pipelines | `HOST_PORT` is a parameter CloudForge owns. See [JENKINS-PIPELINES.md](JENKINS-PIPELINES.md).                                                                                                                                                                                   |
-| Nginx             | A route's reachability is validated against the plan's proxy mode: a host-based Nginx cannot resolve a container name, so such a route is rejected rather than 502. A containerised proxy can now be edited, validated and reloaded — see [NGINX-MANAGER.md](NGINX-MANAGER.md). |
-| Cloudflare        | A DNS record CloudForge did not create is never repointed. See [CLOUDFLARE.md](CLOUDFLARE.md).                                                                                                                                                                                  |
-| Firewall          | Provider security-list rules can be passed into the connectivity check, which respects direction, CIDR, port range and protocol.                                                                                                                                                |
+| Module            | What the runtime model changed                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ansible           | Profiles declare their ports, so the rest of the system can see a native service. The playbook and the probe share the one firewall implementation.                                                                 |
+| Jenkins Pipelines | Pipelines synchronize runtime applications and endpoints; `HOST_PORT` remains a parameter CloudForge owns. See [JENKINS-PIPELINES.md](JENKINS-PIPELINES.md).                                                        |
+| Nginx             | Managed sites synchronize application-linked routes. Reachability is validated against the proxy mode, and an impossible upstream is rejected rather than becoming a 502. See [NGINX-MANAGER.md](NGINX-MANAGER.md). |
+| SSL & Domains     | Certificate inventory synchronizes authority, expiry, HTTPS, and redirect intent so missing or expired certificates appear as runtime drift. See [SSL-DOMAINS.md](SSL-DOMAINS.md).                                  |
+| Cloudflare        | Owned DNS records synchronize their domain and target. A DNS record CloudForge did not create is never claimed or repointed. See [CLOUDFLARE.md](CLOUDFLARE.md).                                                    |
+| Firewall          | Connectivity reads current host and provider rules automatically and respects direction, CIDR, port range, and protocol. The optional IPC rule payload remains only for older callers.                              |
 
 ## Security
 

@@ -10,9 +10,10 @@ target without a plan reads as `legacy` — the mode in which CloudForge inspect
 and never writes. Legacy plans are `inSync` by construction: there is nothing to
 drift from when nothing is claimed.
 
-There is no database migration. The plan is versioned JSON in `Setting`, written
-the first time you save one. No table changed, no column was added, and no
-startup code writes a plan for you.
+There is no database migration. The plan is versioned JSON in `Setting`. No
+table changed and no column was added. Schema-version-1 JSON is normalized in
+memory with empty certificate and DNS collections and legacy defaults, then is
+written as schema version 2 on its next normal synchronization or save.
 
 So on upgrade:
 
@@ -20,7 +21,14 @@ So on upgrade:
 - No Docker network or volume is created or removed.
 - No firewall port is opened or closed.
 - No Nginx site, SSL certificate, Cloudflare record or Pulumi resource is touched.
-- No Jenkins job is reconfigured until you save that pipeline.
+- No Jenkins job is reconfigured by Runtime. Loading or saving a pipeline only
+  reconciles CloudForge's runtime plan after the existing Jenkins workflow
+  succeeds.
+
+Normal page refreshes now reconcile successful, CloudForge-owned feature state
+into the plan. This is a database-only migration: it can add applications,
+routes, certificate observations, and owned DNS records to the runtime JSON,
+but it does not change the corresponding external resource.
 
 ## What actually changed in behaviour
 
@@ -141,14 +149,15 @@ Release is the inverse of adopt and is equally inert. There is no step here that
 cannot be undone by pressing the other button, up until apply — and apply shows
 you exactly what it will do first.
 
-## Rolling back
+## Rolling back the application build
 
-The runtime work is on its own branch and nothing in it is load-bearing for the
-rest of the application:
+Runtime topology remains isolated behind optional Application-layer ports, so
+an older application build can still be installed:
 
 ```sh
 git checkout main && pnpm install && pnpm build
 ```
 
-There is no database migration to reverse. A plan written by the newer build is
-an unread row in `Setting` to the older one.
+There is no relational database migration to reverse. An older build does not
+understand schema-version-2 certificate and DNS collections, so back up the
+database before downgrading and avoid editing runtime plans from both versions.

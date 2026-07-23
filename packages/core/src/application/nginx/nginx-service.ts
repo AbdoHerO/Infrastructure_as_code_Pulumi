@@ -14,22 +14,31 @@ import type {
 } from '../ports/nginx-manager.js';
 import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
 import type { DeploymentTarget } from '../ports/deployer.js';
+import type {
+  RuntimeRouteSync,
+  RuntimeTopologySynchronizer,
+  RuntimeTopologySyncError,
+} from '../ports/runtime-topology-synchronizer.js';
 
-export type NginxServiceError = ValidationError | DeploymentError;
+export type NginxServiceError = ValidationError | DeploymentError | RuntimeTopologySyncError;
 
 export class NginxService {
   constructor(
     private readonly targets: RemoteTargetResolver,
     private readonly nginx: NginxManager,
     private readonly activities: ActivityService,
+    private readonly runtime?: RuntimeTopologySynchronizer,
   ) {}
 
   inspect(targetId: string): Promise<Result<NginxOverview, NginxServiceError>> {
     return this.withTarget(targetId, (target) => this.nginx.inspect(target));
   }
 
-  listSites(targetId: string): Promise<Result<ManagedNginxSite[], NginxServiceError>> {
-    return this.withTarget(targetId, (target) => this.nginx.listSites(target));
+  async listSites(targetId: string): Promise<Result<ManagedNginxSite[], NginxServiceError>> {
+    const sites = await this.withTarget(targetId, (target) => this.nginx.listSites(target));
+    if (!sites.ok || !this.runtime) return sites;
+    const synchronized = await this.runtime.replaceRoutes(targetId, runtimeRoutes(sites.value));
+    return synchronized.ok ? sites : synchronized;
   }
 
   async saveSite(
@@ -42,11 +51,14 @@ export class NginxService {
     const result = await this.withTarget(targetId, (target) =>
       this.nginx.applySite(target, valid.value, renderManagedNginxSite(valid.value), onEvent),
     );
-    if (result.ok)
+    if (result.ok) {
+      const synchronized = await this.synchronizeRoutes(targetId);
+      if (!synchronized.ok) return synchronized;
       this.audit('nginx.site.saved', `Saved Nginx site ${site.domain}`, targetId, {
         domain: site.domain,
         backupId: result.value.backupId,
       });
+    }
     return result;
   }
 
@@ -60,11 +72,14 @@ export class NginxService {
     const result = await this.withTarget(targetId, (target) =>
       this.nginx.removeSite(target, validDomain.value, onEvent),
     );
-    if (result.ok)
+    if (result.ok) {
+      const synchronized = await this.synchronizeRoutes(targetId);
+      if (!synchronized.ok) return synchronized;
       this.audit('nginx.site.deleted', `Deleted Nginx site ${validDomain.value}`, targetId, {
         domain: validDomain.value,
         backupId: result.value.backupId,
       });
+    }
     return result;
   }
 
@@ -147,6 +162,13 @@ export class NginxService {
     return resolved.ok ? action(resolved.value) : resolved;
   }
 
+  private async synchronizeRoutes(targetId: string): Promise<Result<void, NginxServiceError>> {
+    if (!this.runtime) return ok(undefined);
+    const sites = await this.withTarget(targetId, (target) => this.nginx.listSites(target));
+    if (!sites.ok) return sites;
+    return this.runtime.replaceRoutes(targetId, runtimeRoutes(sites.value));
+  }
+
   private audit(
     type: string,
     message: string,
@@ -155,6 +177,39 @@ export class NginxService {
   ): void {
     this.activities.recordSafe({ type, message, metadata: { targetId, ...metadata } });
   }
+}
+
+function runtimeRoutes(sites: readonly ManagedNginxSite[]): RuntimeRouteSync[] {
+  return sites
+    .filter((site) => site.managed === true)
+    .flatMap((site) => {
+      const siteId = site.configPath ?? site.domain;
+      const root: RuntimeRouteSync = {
+        sourceId: `${siteId}:/`,
+        domain: site.domain,
+        path: '/',
+        upstreamHost: site.upstreamHost,
+        upstreamPort: site.upstreamPort,
+        websocket: site.websocket,
+        tls: site.ssl,
+        httpRedirect: site.httpRedirect,
+        ownership: 'cloudforge-managed',
+      };
+      return [
+        root,
+        ...site.locations.map((location): RuntimeRouteSync => ({
+          sourceId: `${siteId}:${location.path}`,
+          domain: site.domain,
+          path: location.path,
+          upstreamHost: location.upstreamHost ?? site.upstreamHost,
+          upstreamPort: location.upstreamPort ?? site.upstreamPort,
+          websocket: location.websocket ?? site.websocket,
+          tls: site.ssl,
+          httpRedirect: site.httpRedirect,
+          ownership: 'cloudforge-managed',
+        })),
+      ];
+    });
 }
 
 const DOMAIN = /^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;

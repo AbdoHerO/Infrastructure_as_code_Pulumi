@@ -26,8 +26,14 @@ import type {
   CloudflareZoneSettings,
 } from './cloudflare.js';
 import type { ServiceConnection } from './service-provider.js';
+import type {
+  RuntimeDnsRecordSync,
+  RuntimeTopologySynchronizer,
+  RuntimeTopologySyncError,
+} from '../ports/runtime-topology-synchronizer.js';
 
-type CloudflareFailure = ServiceProviderError | ValidationError | ConflictError;
+export type CloudflareFailure =
+  ServiceProviderError | ValidationError | ConflictError | RuntimeTopologySyncError;
 
 export class CloudflareService {
   constructor(
@@ -35,6 +41,7 @@ export class CloudflareService {
     private readonly factory: ServiceProviderFactory,
     private readonly activities: ActivityService,
     private readonly settings?: SettingsService,
+    private readonly runtime?: RuntimeTopologySynchronizer,
   ) {}
 
   async test(credentialId: string): Promise<Result<ServiceConnection, CloudflareFailure>> {
@@ -77,7 +84,15 @@ export class CloudflareService {
   ): Promise<Result<readonly CloudflareDnsRecord[], CloudflareFailure>> {
     const zone = required(zoneId, 'Zone');
     if (!zone.ok) return zone;
-    return this.withProvider(credentialId, (provider) => provider.dnsRecords(zone.value));
+    const records = await this.withProvider(credentialId, (provider) =>
+      provider.dnsRecords(zone.value),
+    );
+    if (!records.ok || !this.runtime) return records;
+    const synchronized = await this.runtime.replaceDnsRecords(
+      zone.value,
+      records.value.filter(isCloudForgeDnsRecord).map(toRuntimeDnsRecord),
+    );
+    return synchronized.ok ? records : synchronized;
   }
 
   async createDnsRecord(
@@ -105,6 +120,10 @@ export class CloudflareService {
     const result = await this.withProvider(credentialId, (provider) =>
       provider.createDnsRecord(zone.value, valid.value),
     );
+    if (result.ok && this.runtime && isCloudForgeDnsRecord(result.value)) {
+      const synchronized = await this.runtime.upsertDnsRecord(toRuntimeDnsRecord(result.value));
+      if (!synchronized.ok) return synchronized;
+    }
     await this.record(
       result.ok ? 'cloudflare.dns.created' : 'cloudflare.dns.failed',
       `${result.ok ? 'Created' : 'Failed to create'} ${valid.value.type} record ${valid.value.name}`,
@@ -142,6 +161,12 @@ export class CloudflareService {
     const result = await this.withProvider(credentialId, (provider) =>
       provider.updateDnsRecord(zone.value, record.value, valid.value),
     );
+    if (result.ok && this.runtime) {
+      const synchronized = isCloudForgeDnsRecord(result.value)
+        ? await this.runtime.upsertDnsRecord(toRuntimeDnsRecord(result.value))
+        : await this.runtime.removeDnsRecord(record.value);
+      if (!synchronized.ok) return synchronized;
+    }
     await this.record(
       result.ok ? 'cloudflare.dns.updated' : 'cloudflare.dns.failed',
       `${result.ok ? 'Updated' : 'Failed to update'} ${valid.value.type} record ${valid.value.name}`,
@@ -162,6 +187,10 @@ export class CloudflareService {
     const result = await this.withProvider(credentialId, (provider) =>
       provider.deleteDnsRecord(zone.value, record.value),
     );
+    if (result.ok && this.runtime) {
+      const synchronized = await this.runtime.removeDnsRecord(record.value);
+      if (!synchronized.ok) return synchronized;
+    }
     await this.record(
       result.ok ? 'cloudflare.dns.deleted' : 'cloudflare.dns.failed',
       `${result.ok ? 'Deleted' : 'Failed to delete'} Cloudflare DNS record`,
@@ -516,6 +545,26 @@ export class CloudflareService {
     }
     this.activities.recordSafe({ type, message, metadata });
   }
+}
+
+function isCloudForgeDnsRecord(record: CloudflareDnsRecord): boolean {
+  return record.comment.includes('Managed by CloudForge');
+}
+
+function toRuntimeDnsRecord(record: CloudflareDnsRecord): RuntimeDnsRecordSync {
+  return {
+    sourceId: record.id,
+    recordId: record.id,
+    zoneId: record.zoneId,
+    domain: record.name.replace(/\.$/, '').toLowerCase(),
+    type: record.type,
+    content: record.content,
+    ttl: record.ttl,
+    proxied: record.proxied,
+    status: 'active',
+    ownership: 'cloudforge-managed',
+    observedAt: record.modifiedAt || new Date().toISOString(),
+  };
 }
 
 function required(value: string, label: string): Result<string, ValidationError> {

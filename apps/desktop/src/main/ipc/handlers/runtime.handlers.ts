@@ -44,10 +44,9 @@ export function registerRuntimeHandlers(): void {
 
   registerHandler('runtime:connectivity', async ({ targetId, providerRules }) => {
     if (!providerRules) return orThrow(await service().connectivity(targetId));
-    // The requirements have to be derived twice — once to know which ports the
-    // provider view needs an answer for, once inside the service. They are pure
-    // and cheap, and the alternative is the service reaching for a cloud
-    // credential it should not hold.
+    // Backward-compatible path for older callers that already loaded provider
+    // rules. New callers omit this payload: the service reads the same live
+    // provider state through its provider-independent Application port.
     const plan = orThrow(await service().get(targetId));
     return orThrow(
       await service().connectivity(

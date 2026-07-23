@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { validateDnsRecord } from './cloudflare-service.js';
+import { describe, expect, it, vi } from 'vitest';
+import { ok } from '@cloudforge/shared';
+import type { ActivityService } from '../activity/activity-service.js';
+import type { CredentialService } from '../credentials/credential-service.js';
+import type { RuntimeTopologySynchronizer } from '../ports/runtime-topology-synchronizer.js';
+import type { CloudflareProvider } from './cloudflare.js';
+import { CloudflareService, validateDnsRecord } from './cloudflare-service.js';
 
 describe('validateDnsRecord', () => {
   it('normalizes valid proxied A records', () => {
@@ -65,5 +70,74 @@ describe('validateDnsRecord', () => {
     const result = validateDnsRecord(input);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain(message);
+  });
+});
+
+describe('Cloudflare runtime synchronization', () => {
+  it('publishes only CloudForge-owned DNS records into the runtime topology', async () => {
+    const replaceDnsRecords = vi.fn().mockResolvedValue(ok(undefined));
+    const runtime = {
+      upsertApplication: vi.fn(),
+      removeApplication: vi.fn(),
+      replaceRoutes: vi.fn(),
+      upsertRoute: vi.fn(),
+      removeRoute: vi.fn(),
+      replaceCertificates: vi.fn(),
+      upsertCertificate: vi.fn(),
+      upsertDnsRecord: vi.fn(),
+      replaceDnsRecords,
+      removeDnsRecord: vi.fn(),
+    } as unknown as RuntimeTopologySynchronizer;
+    const managed = {
+      id: 'managed-record',
+      zoneId: 'zone-1',
+      type: 'A',
+      name: 'app.example.com',
+      content: '203.0.113.10',
+      ttl: 1,
+      proxied: true,
+      proxiable: true,
+      comment: 'Managed by CloudForge',
+      tags: [],
+      priority: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      modifiedAt: '2026-01-02T00:00:00.000Z',
+    } as const;
+    const external = {
+      ...managed,
+      id: 'external-record',
+      name: 'mail.example.com',
+      comment: 'Created by the user',
+    };
+    const provider = {
+      kind: 'cloudflare',
+      dnsRecords: vi.fn().mockResolvedValue(ok([managed, external])),
+    } as unknown as CloudflareProvider;
+    const service = new CloudflareService(
+      {
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'cloudflare',
+            data: { apiToken: 'not-exposed-to-runtime' },
+          }),
+        ),
+      } as unknown as CredentialService,
+      { create: vi.fn().mockReturnValue(ok(provider)) },
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+      undefined,
+      runtime,
+    );
+
+    const result = await service.dnsRecords('credential-1', 'zone-1');
+
+    expect(result.ok).toBe(true);
+    expect(replaceDnsRecords).toHaveBeenCalledWith('zone-1', [
+      expect.objectContaining({
+        sourceId: 'managed-record',
+        domain: 'app.example.com',
+        content: '203.0.113.10',
+        ownership: 'cloudforge-managed',
+      }),
+    ]);
   });
 });

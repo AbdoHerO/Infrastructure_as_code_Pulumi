@@ -137,6 +137,7 @@ export function ownershipLabels(
 function desiredMembers(plan: VpsRuntimePlan, network: RuntimeNetwork): Map<string, string[]> {
   const members = new Map<string, string[]>();
   for (const service of plan.services) {
+    if ((service.runtimeKind ?? 'container') === 'host') continue;
     const attachment = service.networks.find((n) => n.networkName === network.name);
     if (attachment) members.set(service.containerName, [...attachment.aliases]);
   }
@@ -369,7 +370,9 @@ function manualOperations(drift: RuntimeDriftReport): RuntimeOperation[] {
         id,
         kind: 'manual',
         risk: 'safe',
-        resourceKind: item.resourceKind,
+        // Every id accepted by REDEPLOY above is a container drift. Certificate
+        // and DNS drift are observational and never become Docker operations.
+        resourceKind: 'container',
         resource: item.resource,
         dockerName: item.dockerName,
         summary: `"${item.dockerName}" needs a redeploy to match the plan`,

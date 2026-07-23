@@ -11,7 +11,7 @@ import type { DomainResolver } from '../ports/certificate-manager.js';
 import type { SettingsService } from '../settings/settings-service.js';
 import type { AppSettings } from '../settings/settings.js';
 import type { CloudflareDnsRecord } from './cloudflare.js';
-import type { CloudflareService } from './cloudflare-service.js';
+import type { CloudflareFailure, CloudflareService } from './cloudflare-service.js';
 
 export interface CloudflareDnsPropagation {
   readonly domain: string;
@@ -311,7 +311,8 @@ export class CloudflareDnsAutomationService {
   }
 }
 
-type CloudflareDnsAutomationFailure = ServiceProviderError | ValidationError | ConflictError;
+type CloudflareDnsAutomationFailure =
+  ServiceProviderError | ValidationError | ConflictError | CloudflareFailure;
 
 function validIp(value: string): boolean {
   if (value.includes(':')) return /^[0-9a-f:]+$/i.test(value);

@@ -778,6 +778,78 @@ describe('detectRuntimeDrift', () => {
     });
   });
 
+  describe('cross-feature topology', () => {
+    it('detects expired and missing certificates recorded by SSL', () => {
+      const source = {
+        module: 'ssl' as const,
+        resourceId: 'certificate-1',
+        ownership: 'cloudforge-managed' as const,
+      };
+      const report = detectRuntimeDrift(
+        plan({
+          certificates: [
+            {
+              domain: 'expired.example.com',
+              authority: 'letsencrypt',
+              status: 'expired',
+              expiresAt: '2025-12-01T00:00:00.000Z',
+              daysRemaining: -31,
+              httpsEnabled: true,
+              httpRedirect: true,
+              source,
+              observedAt: '2026-01-01T00:00:00.000Z',
+            },
+            {
+              domain: 'missing.example.com',
+              authority: 'unknown',
+              status: 'missing',
+              expiresAt: null,
+              daysRemaining: null,
+              httpsEnabled: false,
+              httpRedirect: false,
+              source: { ...source, resourceId: 'certificate-2' },
+              observedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+        observation(),
+      );
+
+      expect(ids(report)).toEqual(['certificate.expired', 'certificate.missing']);
+      expect(report.counts.error).toBe(2);
+    });
+
+    it('detects a Cloudflare record that no longer points to this VPS', () => {
+      const report = detectRuntimeDrift(
+        plan({
+          dnsRecords: [
+            {
+              domain: 'app.example.com',
+              recordId: 'record-1',
+              zoneId: 'zone-1',
+              type: 'A',
+              content: '203.0.113.20',
+              ttl: 300,
+              proxied: true,
+              status: 'active',
+              targetId: 'another-target',
+              source: {
+                module: 'cloudflare',
+                resourceId: 'record-1',
+                ownership: 'cloudforge-managed',
+              },
+              observedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+        observation(),
+      );
+
+      expect(ids(report)).toEqual(['dns.target.modified']);
+      expect(report.entries[0]?.actual).toBe('another-target');
+    });
+  });
+
   it('counts findings by severity', () => {
     const report = detectRuntimeDrift(
       plan({

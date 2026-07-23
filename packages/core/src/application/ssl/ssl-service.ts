@@ -13,6 +13,13 @@ import type { SettingsService } from '../settings/settings-service.js';
 import type { NginxService } from '../nginx/nginx-service.js';
 import type { ManagedNginxSite } from '../ports/nginx-manager.js';
 import type { CloudflareService } from '../service-providers/cloudflare-service.js';
+import type {
+  RuntimeCertificateSync,
+  RuntimeTopologySynchronizer,
+  RuntimeTopologySyncError,
+} from '../ports/runtime-topology-synchronizer.js';
+
+type SslServiceError = ValidationError | DeploymentError | RuntimeTopologySyncError;
 
 export class SslService {
   constructor(
@@ -24,6 +31,7 @@ export class SslService {
     private readonly nginx?: NginxService,
     private readonly managedDns?: ManagedDnsCoordinator,
     private readonly cloudflare?: CloudflareService,
+    private readonly runtime?: RuntimeTopologySynchronizer,
   ) {}
 
   async verifyDns(
@@ -103,7 +111,7 @@ export class SslService {
     targetId: string,
     config: CertificateIssueConfig,
     onEvent?: CertificateEventSink,
-  ): Promise<Result<CertificateDetails, ValidationError | DeploymentError>> {
+  ): Promise<Result<CertificateDetails, SslServiceError>> {
     const valid = validateConfig(config);
     if (!valid.ok) return valid;
     const target = await this.targets.resolve(targetId);
@@ -272,17 +280,51 @@ export class SslService {
           ),
         );
     }
+    if (issued.ok && this.runtime) {
+      const runtime = await this.runtime.upsertCertificate(
+        toRuntimeCertificate(
+          targetId,
+          valid.value.certificateVolume,
+          issued.value,
+          authority,
+          true,
+          currentSettings?.ok ? currentSettings.value.cloudflare.automaticHttpsRedirect : true,
+        ),
+      );
+      if (!runtime.ok) return runtime;
+    }
     return issued;
   }
 
   async list(
     targetId: string,
     volume: string,
-  ): Promise<Result<CertificateDetails[], ValidationError | DeploymentError>> {
+  ): Promise<Result<CertificateDetails[], SslServiceError>> {
     if (!validAbsolutePath(volume))
       return err(new ValidationError('Certificate volume must be an absolute path'));
     const target = await this.targets.resolve(targetId);
-    return target.ok ? this.certificates.list(target.value, volume) : target;
+    if (!target.ok) return target;
+    const certificates = await this.certificates.list(target.value, volume);
+    if (!certificates.ok || !this.runtime) return certificates;
+    const sites = this.nginx ? await this.nginx.listSites(targetId) : null;
+    const synchronized = await this.runtime.replaceCertificates(
+      targetId,
+      volume,
+      certificates.value.map((certificate) => {
+        const site = sites?.ok
+          ? sites.value.find((item) => item.domain === certificate.domain)
+          : undefined;
+        return toRuntimeCertificate(
+          targetId,
+          volume,
+          certificate,
+          authorityFromIssuer(certificate.issuer),
+          site?.ssl ?? false,
+          site?.httpRedirect ?? false,
+        );
+      }),
+    );
+    return synchronized.ok ? certificates : synchronized;
   }
 
   async export(
@@ -321,6 +363,33 @@ export class SslService {
       if (current && current.daysRemaining > settings.value.ssl.renewBeforeDays) continue;
       const renewed = await this.certificates.renew(target.value, { ...item, forceRenewal: false });
       if (renewed.ok && this.nginx) await this.nginx.reload(item.targetId);
+      if (renewed.ok && this.runtime) {
+        const sites = this.nginx ? await this.nginx.listSites(item.targetId) : null;
+        const site = sites?.ok
+          ? sites.value.find((candidate) => candidate.domain === item.domain)
+          : undefined;
+        const synchronized = await this.runtime.upsertCertificate(
+          toRuntimeCertificate(
+            item.targetId,
+            item.certificateVolume,
+            renewed.value,
+            authorityFromIssuer(renewed.value.issuer),
+            site?.ssl ?? true,
+            site?.httpRedirect ?? false,
+          ),
+        );
+        if (!synchronized.ok) {
+          this.activities.recordSafe({
+            type: 'ssl.runtime.sync.failed',
+            message: `Renewed ${item.domain}, but could not synchronize its Runtime certificate`,
+            metadata: {
+              targetId: item.targetId,
+              domain: item.domain,
+              error: synchronized.error.message,
+            },
+          });
+        }
+      }
       this.activities.recordSafe({
         type: renewed.ok ? 'ssl.renewed' : 'ssl.renewal.failed',
         message: renewed.ok
@@ -330,6 +399,42 @@ export class SslService {
       });
     }
   }
+}
+
+function authorityFromIssuer(issuer: string): RuntimeCertificateSync['authority'] {
+  if (/let'?s encrypt/i.test(issuer)) return 'letsencrypt';
+  if (/cloudflare/i.test(issuer)) return 'cloudflare-origin-ca';
+  return 'unknown';
+}
+
+function toRuntimeCertificate(
+  targetId: string,
+  collectionId: string,
+  certificate: CertificateDetails,
+  authority: RuntimeCertificateSync['authority'],
+  httpsEnabled: boolean,
+  httpRedirect: boolean,
+): RuntimeCertificateSync {
+  return {
+    targetId,
+    sourceId: `${collectionId}:${certificate.domain}`,
+    collectionId,
+    domain: certificate.domain,
+    authority,
+    status:
+      certificate.daysRemaining <= 0
+        ? 'expired'
+        : certificate.daysRemaining <= 30
+          ? 'expiring'
+          : 'valid',
+    expiresAt: certificate.expiresAt,
+    daysRemaining: certificate.daysRemaining,
+    httpsEnabled,
+    httpRedirect,
+    fingerprint: certificate.fingerprint,
+    ownership: 'cloudforge-managed',
+    observedAt: new Date().toISOString(),
+  };
 }
 
 function cloudflareSslMessage(

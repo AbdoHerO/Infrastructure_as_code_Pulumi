@@ -69,6 +69,10 @@ import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs } from './logging/logger.js';
 import { projectStackReference } from './infra/stack-reference.js';
 import { emitEvent } from './ipc/emit.js';
+import {
+  LiveRuntimeProviderFirewall,
+  VpsRuntimeTargetCatalog,
+} from './runtime/runtime-target-adapters.js';
 
 /**
  * The composition root. Wires concrete Infrastructure implementations into the
@@ -198,14 +202,6 @@ export async function initContainer(): Promise<AppContainer> {
     );
   }
   const activityService = new ActivityService(new PrismaActivityRepository(db));
-  const cloudflareService = new CloudflareService(
-    credentialService,
-    new DefaultServiceProviderFactory(
-      process.env.CLOUDFLARE_API_BASE_URL ?? 'https://api.cloudflare.com/client/v4',
-    ),
-    activityService,
-    settingsService,
-  );
   const pluginService = new PluginService(new PrismaPluginRepository(db));
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
@@ -252,11 +248,6 @@ export async function initContainer(): Promise<AppContainer> {
       });
     },
   };
-  const nginxService = new NginxService(
-    remoteTargetResolver,
-    new SshNginxManager(),
-    activityService,
-  );
   const runtimeInspector = new SshRuntimeInspector();
   const containerService = new ContainerService(
     remoteTargetResolver,
@@ -272,6 +263,23 @@ export async function initContainer(): Promise<AppContainer> {
     new SshRuntimeApplier(),
     new SshHostFirewallManager(),
     new AnsibleNativeServiceRequirements(ansibleManager),
+    new LiveRuntimeProviderFirewall(vpsTargetService, projectService, providerService),
+    new VpsRuntimeTargetCatalog(vpsTargetService),
+  );
+  const cloudflareService = new CloudflareService(
+    credentialService,
+    new DefaultServiceProviderFactory(
+      process.env.CLOUDFLARE_API_BASE_URL ?? 'https://api.cloudflare.com/client/v4',
+    ),
+    activityService,
+    settingsService,
+    runtimePlanService,
+  );
+  const nginxService = new NginxService(
+    remoteTargetResolver,
+    new SshNginxManager(),
+    activityService,
+    runtimePlanService,
   );
   const sshTerminalService = new SshTerminalService(
     remoteTargetResolver,
@@ -312,6 +320,7 @@ export async function initContainer(): Promise<AppContainer> {
     activityService,
     cloudflareDnsAutomationService,
     nginxService,
+    runtimePlanService,
   );
   const sslService = new SslService(
     remoteTargetResolver,
@@ -322,6 +331,7 @@ export async function initContainer(): Promise<AppContainer> {
     nginxService,
     cloudflareDnsAutomationService,
     cloudflareService,
+    runtimePlanService,
   );
   const sslRenewalTimer = setInterval(
     () => void sslService.renewDue(),

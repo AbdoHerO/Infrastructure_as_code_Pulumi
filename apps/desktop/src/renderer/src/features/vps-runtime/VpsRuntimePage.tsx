@@ -75,6 +75,12 @@ function findingTone(state: ConnectivityFinding['state']): string {
   return 'text-warning';
 }
 
+function isAdoptableDockerKind(
+  kind: RuntimeDriftEntry['resourceKind'],
+): kind is 'container' | 'network' | 'volume' {
+  return kind === 'container' || kind === 'network' || kind === 'volume';
+}
+
 export function VpsRuntimePage(): JSX.Element {
   const confirm = useConfirmation();
   const targets = useVpsTargets();
@@ -146,6 +152,7 @@ export function VpsRuntimePage(): JSX.Element {
   };
 
   const adopt = async (entry: RuntimeDriftEntry): Promise<void> => {
+    if (!isAdoptableDockerKind(entry.resourceKind)) return;
     const ok = await confirm({
       title: `Adopt ${entry.dockerName}?`,
       description:
@@ -254,6 +261,31 @@ export function VpsRuntimePage(): JSX.Element {
         </Card>
       )}
 
+      {targetId && plan.data && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Authoritative topology</CardTitle>
+            <CardDescription>
+              Applications, routes, certificates and managed DNS synchronized by the existing
+              CloudForge workflows.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ['Applications', plan.data.plan.applications.length],
+              ['Routes', plan.data.plan.routes.length],
+              ['Certificates', plan.data.plan.certificates.length],
+              ['Managed DNS', plan.data.plan.dnsRecords.length],
+            ].map(([label, count]) => (
+              <div key={String(label)} className="border-border rounded-md border px-3 py-3">
+                <p className="text-muted-foreground text-xs">{label}</p>
+                <p className="mt-1 text-xl font-semibold">{count}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {inspected && (
         <Card>
           <CardHeader>
@@ -297,31 +329,35 @@ export function VpsRuntimePage(): JSX.Element {
                         {entry.ownership}
                       </TableCell>
                       <TableCell className="text-right">
-                        {entry.kind === 'adoptable' && (
-                          <Button size="sm" variant="secondary" onClick={() => void adopt(entry)}>
-                            Adopt
-                          </Button>
-                        )}
-                        {entry.ownership === 'adopted' && entry.kind !== 'adoptable' && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              actions.release.mutate(
-                                {
-                                  resourceKind: entry.resourceKind,
-                                  dockerName: entry.dockerName,
-                                },
-                                {
-                                  onSuccess: () => toast.success(`Released ${entry.dockerName}`),
-                                  onError: (error) => toast.error(error.message),
-                                },
-                              )
-                            }
-                          >
-                            <Unlink className="mr-1 h-3 w-3" /> Release
-                          </Button>
-                        )}
+                        {entry.kind === 'adoptable' &&
+                          isAdoptableDockerKind(entry.resourceKind) && (
+                            <Button size="sm" variant="secondary" onClick={() => void adopt(entry)}>
+                              Adopt
+                            </Button>
+                          )}
+                        {entry.ownership === 'adopted' &&
+                          entry.kind !== 'adoptable' &&
+                          isAdoptableDockerKind(entry.resourceKind) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                actions.release.mutate(
+                                  {
+                                    resourceKind: entry.resourceKind as
+                                      'container' | 'network' | 'volume',
+                                    dockerName: entry.dockerName,
+                                  },
+                                  {
+                                    onSuccess: () => toast.success(`Released ${entry.dockerName}`),
+                                    onError: (error) => toast.error(error.message),
+                                  },
+                                )
+                              }
+                            >
+                              <Unlink className="mr-1 h-3 w-3" /> Release
+                            </Button>
+                          )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -349,8 +385,9 @@ export function VpsRuntimePage(): JSX.Element {
             )}
             {connectivity.data?.providerUnknown && (
               <p className="text-muted-foreground text-xs">
-                The cloud provider’s rules were not supplied, so no port can honestly be called
-                reachable. Load them on the Firewall page to complete this picture.
+                This target has no resolvable managed project/provider binding, so no port can
+                honestly be called reachable. Managed targets load their provider firewall
+                automatically; standalone VPS targets remain unknown.
               </p>
             )}
             {connectivity.data?.host.indeterminate && (

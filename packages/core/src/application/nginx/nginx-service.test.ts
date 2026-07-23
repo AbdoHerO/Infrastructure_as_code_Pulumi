@@ -129,13 +129,16 @@ describe('NginxService', () => {
 
   it('resolves saved target credentials and delegates a rendered transaction', async () => {
     const applySite = vi.fn().mockResolvedValue(ok({ summary: 'done', backupId: 'backup' }));
-    const manager = { applySite } as unknown as NginxManager;
+    const listSites = vi.fn().mockResolvedValue(ok([{ ...site, managed: true }]));
+    const manager = { applySite, listSites } as unknown as NginxManager;
     const recordSafe = vi.fn();
+    const replaceRoutes = vi.fn().mockResolvedValue(ok(undefined));
     const activity = { recordSafe } as unknown as ActivityService;
     const service = new NginxService(
       { resolve: vi.fn().mockResolvedValue(ok(target)) },
       manager,
       activity,
+      { replaceRoutes } as never,
     );
     const result = await service.saveSite('target-1', site);
     expect(result.ok).toBe(true);
@@ -146,6 +149,15 @@ describe('NginxService', () => {
       undefined,
     );
     expect(recordSafe.mock.calls).toHaveLength(1);
+    expect(replaceRoutes).toHaveBeenCalledWith('target-1', [
+      expect.objectContaining({
+        domain: 'app.example.com',
+        path: '/',
+        upstreamHost: '127.0.0.1',
+        upstreamPort: 3000,
+        ownership: 'cloudforge-managed',
+      }),
+    ]);
   });
 });
 

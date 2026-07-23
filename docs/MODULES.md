@@ -101,11 +101,17 @@ unauthenticated TCP socket. Channels: `containers:*`.
 
 ## VPS Runtime (`/vps-runtime`)
 
-The authoritative model of a target's container topology: networks, service
-attachments and aliases, published versus loopback ports, ownership, and the
-firewall ports the arrangement needs. Reports drift between the plan and the VPS,
-and whether each required port can actually carry traffic on both the host
-firewall and the cloud security list.
+The authoritative model of a target's runtime topology: applications, services,
+networks, routes, certificates, owned Cloudflare DNS, exposure, ownership, and
+the firewall ports the arrangement needs. Reports drift between the plan and
+live observations, and whether each required port can carry traffic through
+both the host firewall and the provider firewall.
+
+Jenkins, Nginx, SSL, and Cloudflare synchronize their successful workflows into
+this model through an Application-layer port. Existing records reconcile when
+their normal page loads; this updates the stored plan only and never changes a
+VPS merely because a page was opened. Firewall state is always read live and is
+not duplicated in the runtime plan.
 
 Read-only except for one apply, which needs a preview token bound to that exact
 change plus an exact-name confirmation for anything destructive. Every target

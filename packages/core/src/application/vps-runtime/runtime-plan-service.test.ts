@@ -377,7 +377,7 @@ describe('RuntimePlanService', () => {
     it('forces the current schema version onto whatever it is handed', async () => {
       const result = await ctx.service.save(TARGET, managed({ schemaVersion: 99 }), NOW);
 
-      expect(result.ok && result.value.plan.schemaVersion).toBe(1);
+      expect(result.ok && result.value.plan.schemaVersion).toBe(2);
     });
   });
 
@@ -1029,6 +1029,158 @@ describe('RuntimePlanService', () => {
 
       expect((await bare.connectivity(TARGET)).ok).toBe(false);
       expect((await bare.openRequiredPorts(TARGET)).ok).toBe(false);
+    });
+  });
+
+  describe('cross-feature topology synchronization', () => {
+    it('upserts a Jenkins application and keeps the target in legacy mode', async () => {
+      const result = await ctx.service.upsertApplication({
+        targetId: TARGET,
+        sourceId: 'pipeline-1',
+        name: 'backend',
+        displayName: 'Backend',
+        composeProject: 'backend',
+        deploymentMode: 'scm',
+        repositoryUrl: 'https://example.test/backend.git',
+        branch: 'main',
+        hostPort: 8001,
+        applicationPort: 8001,
+        exposure: 'host-loopback',
+        ownership: 'cloudforge-managed',
+      });
+
+      const loaded = await ctx.service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      const plan = loaded.value.plan;
+      expect(result.ok).toBe(true);
+      expect(plan.mode).toBe('legacy');
+      expect(plan.applications[0]).toMatchObject({
+        name: 'backend',
+        deploymentMode: 'scm',
+      });
+      expect(plan.services[0]).toMatchObject({
+        applicationName: 'backend',
+        runtimeKind: 'host',
+        exposure: 'host-loopback',
+        ports: [{ containerPort: 8001, hostPort: 8001, bindAddress: '127.0.0.1' }],
+      });
+    });
+
+    it('links an Nginx route to the Jenkins application that owns its upstream port', async () => {
+      await ctx.service.upsertApplication({
+        targetId: TARGET,
+        sourceId: 'pipeline-1',
+        name: 'backend',
+        displayName: 'Backend',
+        composeProject: 'backend',
+        deploymentMode: 'scm',
+        hostPort: 8001,
+        applicationPort: 8001,
+        exposure: 'host-loopback',
+        ownership: 'cloudforge-managed',
+      });
+
+      const result = await ctx.service.upsertRoute(TARGET, {
+        sourceId: 'site:/',
+        domain: 'app.example.com',
+        path: '/',
+        upstreamHost: '127.0.0.1',
+        upstreamPort: 8001,
+        websocket: true,
+        tls: true,
+        httpRedirect: true,
+        ownership: 'cloudforge-managed',
+      });
+
+      const loaded = await ctx.service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      const plan = loaded.value.plan;
+      expect(result.ok).toBe(true);
+      expect(plan.routes[0]).toMatchObject({
+        applicationName: 'backend',
+        serviceName: plan.services[0]?.name,
+        servicePort: 8001,
+      });
+    });
+
+    it('tracks certificate status and marks a disappeared certificate as missing', async () => {
+      await ctx.service.replaceCertificates(TARGET, '/opt/certs', [
+        {
+          targetId: TARGET,
+          sourceId: 'app.example.com',
+          collectionId: '/opt/certs',
+          domain: 'app.example.com',
+          authority: 'letsencrypt',
+          status: 'valid',
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          daysRemaining: 120,
+          httpsEnabled: true,
+          httpRedirect: true,
+          ownership: 'cloudforge-managed',
+          observedAt: NOW.toISOString(),
+        },
+      ]);
+
+      await ctx.service.replaceCertificates(TARGET, '/opt/certs', []);
+
+      const loaded = await ctx.service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      const plan = loaded.value.plan;
+      expect(plan.certificates[0]).toMatchObject({
+        domain: 'app.example.com',
+        status: 'missing',
+        httpsEnabled: true,
+      });
+    });
+
+    it('moves a managed DNS record when its address points to another target', async () => {
+      const second = '9d7b22d2-47d4-4fef-a780-41d7c13a7c20';
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET, second])),
+        findTargetIdByAddress: vi.fn((address: string) =>
+          Promise.resolve(address === '203.0.113.20' ? second : TARGET),
+        ),
+      };
+      const service = new RuntimePlanService(
+        {
+          load: ctx.load,
+          save: ctx.save,
+          delete: ctx.remove,
+        },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      const base = {
+        sourceId: 'dns-1',
+        recordId: 'dns-1',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        ttl: 300,
+        proxied: true,
+        status: 'active' as const,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+
+      await service.upsertDnsRecord({ ...base, content: '203.0.113.10' });
+      await service.replaceDnsRecords('zone-1', [{ ...base, content: '203.0.113.20' }]);
+
+      const oldTarget = await service.get(TARGET);
+      const newTarget = await service.get(second);
+      if (!oldTarget.ok) throw oldTarget.error;
+      if (!newTarget.ok) throw newTarget.error;
+      expect(oldTarget.value.plan.dnsRecords).toHaveLength(0);
+      expect(newTarget.value.plan.dnsRecords[0]).toMatchObject({
+        domain: 'app.example.com',
+        targetId: second,
+      });
     });
   });
 });

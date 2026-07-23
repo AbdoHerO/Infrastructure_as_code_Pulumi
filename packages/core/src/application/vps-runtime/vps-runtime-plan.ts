@@ -126,6 +126,19 @@ export interface RuntimeApplication {
   readonly sourceMode: RuntimeSourceMode;
   /** CloudForge-owned directory for generated overrides and metadata. */
   readonly runtimeDirectory?: string | undefined;
+  /** Feature record that owns this topology entry (for example a Jenkins pipeline). */
+  readonly source?: RuntimeTopologySource | undefined;
+  /** How the application is deployed. Older plans omit this field. */
+  readonly deploymentMode?: 'scm' | 'inline' | 'compose' | 'external' | undefined;
+  readonly repositoryUrl?: string | undefined;
+  readonly branch?: string | undefined;
+}
+
+/** Stable cross-feature identity and authority for a runtime topology entry. */
+export interface RuntimeTopologySource {
+  readonly module: 'jenkins' | 'nginx' | 'ssl' | 'cloudflare';
+  readonly resourceId: string;
+  readonly ownership: 'cloudforge-managed' | 'adopted' | 'unmanaged';
 }
 
 export const SERVICE_REFERENCE_MODES = ['network-alias', 'container-name'] as const;
@@ -176,6 +189,12 @@ export interface RuntimeService {
   readonly serviceReferences: readonly RuntimeServiceReference[];
   readonly volumes: readonly string[];
   readonly restartPolicy: string;
+  /**
+   * `container` is the schema-v1 default. `host` describes an endpoint whose
+   * lifecycle belongs to Jenkins/Compose but which is published on this VPS.
+   */
+  readonly runtimeKind?: 'container' | 'host' | undefined;
+  readonly source?: RuntimeTopologySource | undefined;
 }
 
 export interface RuntimeVolume {
@@ -187,10 +206,44 @@ export interface RuntimeVolume {
 export interface RuntimeRoute {
   readonly domain: string;
   readonly path: string;
+  /** Explicit application link; inferred from the service for schema-v1 plans. */
+  readonly applicationName?: string | undefined;
   readonly serviceName: string;
   readonly servicePort: number;
   readonly websocket: boolean;
   readonly tls: boolean;
+  readonly httpRedirect?: boolean | undefined;
+  readonly upstreamHost?: string | undefined;
+  readonly source?: RuntimeTopologySource | undefined;
+}
+
+export interface RuntimeCertificate {
+  readonly domain: string;
+  readonly collectionId?: string | undefined;
+  readonly authority: 'letsencrypt' | 'cloudflare-origin-ca' | 'unknown';
+  readonly status: 'valid' | 'expiring' | 'expired' | 'missing' | 'unknown';
+  readonly expiresAt: string | null;
+  readonly daysRemaining: number | null;
+  readonly httpsEnabled: boolean;
+  readonly httpRedirect: boolean;
+  readonly fingerprint?: string | undefined;
+  readonly source: RuntimeTopologySource;
+  readonly observedAt: string;
+}
+
+export interface RuntimeDnsRecord {
+  readonly domain: string;
+  readonly recordId: string;
+  readonly zoneId: string;
+  readonly type: string;
+  readonly content: string;
+  readonly ttl: number;
+  readonly proxied: boolean;
+  readonly status: 'active' | 'pending' | 'error' | 'unknown';
+  /** Saved VPS target whose public address this record targets, when known. */
+  readonly targetId: string | null;
+  readonly source: RuntimeTopologySource;
+  readonly observedAt: string;
 }
 
 /**
@@ -217,7 +270,7 @@ export interface RuntimeAdoption {
   readonly note?: string | undefined;
 }
 
-export const RUNTIME_PLAN_SCHEMA_VERSION = 1;
+export const RUNTIME_PLAN_SCHEMA_VERSION = 2;
 
 export interface VpsRuntimePlan {
   readonly schemaVersion: number;
@@ -231,6 +284,8 @@ export interface VpsRuntimePlan {
   readonly services: readonly RuntimeService[];
   readonly volumes: readonly RuntimeVolume[];
   readonly routes: readonly RuntimeRoute[];
+  readonly certificates: readonly RuntimeCertificate[];
+  readonly dnsRecords: readonly RuntimeDnsRecord[];
   /** Explicitly adopted pre-existing resources. See {@link RuntimeAdoption}. */
   readonly adoptions: readonly RuntimeAdoption[];
   readonly metadata: Readonly<Record<string, unknown>>;
@@ -409,7 +464,10 @@ export function validateRuntimePlan(plan: VpsRuntimePlan): RuntimePlanIssue[] {
           `Unknown application "${service.applicationName}"`,
         ),
       );
-    if (!DOCKER_NAME.test(service.containerName))
+    if (
+      (service.runtimeKind ?? 'container') === 'container' &&
+      !DOCKER_NAME.test(service.containerName)
+    )
       issues.push(
         error(
           'service.containerName',
@@ -438,7 +496,7 @@ export function validateRuntimePlan(plan: VpsRuntimePlan): RuntimePlanIssue[] {
           issues.push(error('service.alias', service.name, `Invalid network alias "${alias}"`));
       }
     }
-    if (service.networks.length === 0)
+    if ((service.runtimeKind ?? 'container') === 'container' && service.networks.length === 0)
       issues.push(
         warning(
           'service.network.none',
@@ -584,6 +642,14 @@ export function validateRuntimePlan(plan: VpsRuntimePlan): RuntimePlanIssue[] {
     // an unreachable service reference, and deserves the same treatment.
     const target = plan.services.find((service) => service.name === route.serviceName);
     if (target) {
+      if (route.applicationName && route.applicationName !== target.applicationName)
+        issues.push(
+          error(
+            'route.application',
+            route.domain,
+            `Route application "${route.applicationName}" does not own service "${target.name}"`,
+          ),
+        );
       if (plan.reverseProxy === 'native-nginx') {
         // Nginx on the host is not on any Docker network, so a container name
         // means nothing to it: the host's resolver cannot answer Docker DNS.
@@ -635,6 +701,29 @@ export function validateRuntimePlan(plan: VpsRuntimePlan): RuntimePlanIssue[] {
           'A route needs a reverse proxy, but this target has none configured',
         ),
       );
+  }
+
+  const certificateDomains = new Set<string>();
+  for (const certificate of plan.certificates ?? []) {
+    if (!DOMAIN.test(certificate.domain))
+      issues.push(
+        error('certificate.domain', certificate.domain, `Invalid domain "${certificate.domain}"`),
+      );
+    if (certificateDomains.has(certificate.domain))
+      issues.push(
+        error('certificate.duplicate', certificate.domain, 'Duplicate runtime certificate'),
+      );
+    certificateDomains.add(certificate.domain);
+  }
+
+  const dnsIds = new Set<string>();
+  for (const record of plan.dnsRecords ?? []) {
+    if (!DOMAIN.test(record.domain))
+      issues.push(error('dns.domain', record.domain, `Invalid domain "${record.domain}"`));
+    const key = `${record.zoneId}:${record.recordId}`;
+    if (dnsIds.has(key))
+      issues.push(error('dns.duplicate', record.domain, 'Duplicate runtime DNS record'));
+    dnsIds.add(key);
   }
 
   const adopted = new Set<string>();
@@ -695,9 +784,46 @@ export function emptyRuntimePlan(targetId: string, now: Date = new Date()): VpsR
     services: [],
     volumes: [],
     routes: [],
+    certificates: [],
+    dnsRecords: [],
     adoptions: [],
     metadata: {},
     createdAt: timestamp,
     updatedAt: timestamp,
+  };
+}
+
+/**
+ * Upgrade persisted/IPC plans without a database migration.
+ *
+ * Runtime plans are JSON and schema-v1 clients do not know the new collections.
+ * Normalising at the Application boundary keeps old databases and a renderer
+ * from an earlier packaged build readable while every internal consumer gets a
+ * complete schema-v2 value.
+ */
+export function normalizeRuntimePlan(plan: VpsRuntimePlan): VpsRuntimePlan {
+  const services = (plan.services ?? []).map((service) => ({
+    ...service,
+    runtimeKind: service.runtimeKind ?? ('container' as const),
+  }));
+  const applicationByService = new Map(
+    services.map((service) => [service.name, service.applicationName]),
+  );
+  return {
+    ...plan,
+    schemaVersion: RUNTIME_PLAN_SCHEMA_VERSION,
+    networks: plan.networks ?? [],
+    applications: plan.applications ?? [],
+    services,
+    volumes: plan.volumes ?? [],
+    routes: (plan.routes ?? []).map((route) => ({
+      ...route,
+      applicationName: route.applicationName ?? applicationByService.get(route.serviceName),
+      httpRedirect: route.httpRedirect ?? false,
+    })),
+    certificates: plan.certificates ?? [],
+    dnsRecords: plan.dnsRecords ?? [],
+    adoptions: plan.adoptions ?? [],
+    metadata: plan.metadata ?? {},
   };
 }

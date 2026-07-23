@@ -37,6 +37,8 @@ export * from './application/ports/native-service-requirements.js';
 export * from './application/ports/runtime-applier.js';
 export * from './application/ports/runtime-inspector.js';
 export * from './application/ports/runtime-plan-store.js';
+export * from './application/ports/runtime-topology-synchronizer.js';
+export * from './application/ports/runtime-provider-firewall.js';
 export * from './application/ports/ansible-manager.js';
 export * from './application/ports/vps-target-repository.js';
 export * from './application/ports/remote-target-resolver.js';

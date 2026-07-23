@@ -132,3 +132,21 @@ External application services are separate from infrastructure providers.
 `InfrastructureEngine`, or Pulumi. The renderer sends credential IDs over typed
 IPC and the main process resolves/decrypts tokens immediately before an adapter
 call. This boundary is reusable for GitHub, GitLab, registries, and AI services.
+
+## 10. Authoritative VPS runtime topology
+
+`VpsRuntimePlan` is the provider-independent source of truth for desired and
+CloudForge-owned runtime topology. It includes applications, endpoints, routes,
+certificates, and DNS-to-target relationships as well as Docker topology.
+
+Feature services do not write the plan repository directly. They call
+`RuntimeTopologySynchronizer`, an Application port implemented by the existing
+`RuntimePlanService`. This keeps external workflows and persistence ordered:
+Jenkins, Nginx, SSL, or Cloudflare must first succeed in its own adapter and
+repository; only then is the successful state reconciled into Runtime. Writes
+retain the existing optimistic plan version and validation rules.
+
+Live firewall state deliberately stays outside the plan. The runtime service
+reads the host firewall through `HostFirewallManager` and the current provider
+firewall through `RuntimeProviderFirewall` for every connectivity request.
+This prevents a stored firewall snapshot from becoming a second authority.

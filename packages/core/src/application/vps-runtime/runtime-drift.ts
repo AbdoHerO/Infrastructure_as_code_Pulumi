@@ -92,7 +92,7 @@ export interface RuntimeDriftEntry {
   readonly id: string;
   readonly kind: RuntimeDriftKind;
   readonly severity: DriftSeverity;
-  readonly resourceKind: RuntimeResourceKind;
+  readonly resourceKind: RuntimeResourceKind | 'certificate' | 'dns';
   /** Logical name when the plan knows it, otherwise the Docker name. */
   readonly resource: string;
   readonly dockerName: string;
@@ -116,7 +116,7 @@ interface EntryInput {
   readonly id: string;
   readonly kind: RuntimeDriftKind;
   readonly severity: DriftSeverity;
-  readonly resourceKind: RuntimeResourceKind;
+  readonly resourceKind: RuntimeResourceKind | 'certificate' | 'dns';
   readonly resource: string;
   readonly dockerName: string;
   readonly ownership: RuntimeOwnership;
@@ -386,6 +386,9 @@ function compareService(
   service: RuntimeService,
   containers: ReadonlyMap<string, ObservedContainer>,
 ): RuntimeDriftEntry[] {
+  // Host endpoints are observed by Jenkins/Nginx and synchronized into the
+  // plan. They deliberately have no Docker container to compare.
+  if ((service.runtimeKind ?? 'container') === 'host') return [];
   const container = containers.get(service.containerName);
   if (!container)
     return [
@@ -537,7 +540,11 @@ function unexpectedResources(
 ): RuntimeDriftEntry[] {
   const issues: RuntimeDriftEntry[] = [];
   const plannedNetworks = new Set(plan.networks.map((network) => network.dockerName));
-  const plannedContainers = new Set(plan.services.map((service) => service.containerName));
+  const plannedContainers = new Set(
+    plan.services
+      .filter((service) => (service.runtimeKind ?? 'container') === 'container')
+      .map((service) => service.containerName),
+  );
   const plannedVolumes = new Set(plan.volumes.map((volume) => volume.dockerName));
 
   for (const network of observation.networks) {
@@ -667,7 +674,11 @@ export function detectRuntimeDrift(
   // Without Docker every planned resource would read as missing, which says
   // nothing useful. One accurate finding beats a page of derived ones.
   if (!observation.docker.available) {
-    if (plan.mode !== 'legacy' || plan.services.length > 0)
+    const needsDocker =
+      plan.networks.length > 0 ||
+      plan.volumes.length > 0 ||
+      plan.services.some((service) => (service.runtimeKind ?? 'container') === 'container');
+    if (plan.mode !== 'legacy' && needsDocker)
       entries.push(
         entry({
           id: 'docker.unavailable',
@@ -680,6 +691,8 @@ export function detectRuntimeDrift(
           message: 'Docker is not available on this target, so no runtime resource can exist',
         }),
       );
+    if (plan.mode === 'legacy') return report(plan, observation, entries);
+    entries.push(...topologyResourceDrift(plan));
     return report(plan, observation, entries);
   }
 
@@ -695,8 +708,59 @@ export function detectRuntimeDrift(
   entries.push(...compareVolumes(plan, volumes));
   for (const service of plan.services) entries.push(...compareService(plan, service, containers));
   entries.push(...unexpectedResources(plan, observation));
+  entries.push(...topologyResourceDrift(plan));
 
   return report(plan, observation, entries);
+}
+
+function topologyResourceDrift(plan: VpsRuntimePlan): RuntimeDriftEntry[] {
+  const entries: RuntimeDriftEntry[] = [];
+  for (const certificate of plan.certificates ?? []) {
+    if (certificate.status === 'valid') continue;
+    entries.push(
+      entry({
+        id: `certificate.${certificate.status}`,
+        kind: certificate.status === 'missing' ? 'missing' : 'modified',
+        severity:
+          certificate.status === 'expired' || certificate.status === 'missing'
+            ? 'error'
+            : certificate.status === 'expiring'
+              ? 'warning'
+              : 'info',
+        resourceKind: 'certificate',
+        resource: certificate.domain,
+        dockerName: certificate.domain,
+        ownership: certificate.source.ownership,
+        message:
+          certificate.status === 'missing'
+            ? `The certificate for ${certificate.domain} was previously managed but is no longer present`
+            : `Certificate ${certificate.domain} is ${certificate.status}`,
+        ...(certificate.expiresAt ? { actual: certificate.expiresAt } : {}),
+      }),
+    );
+  }
+  for (const record of plan.dnsRecords ?? []) {
+    if (record.status === 'active' && record.targetId === plan.targetId) continue;
+    entries.push(
+      entry({
+        id: record.targetId === plan.targetId ? `dns.${record.status}` : 'dns.target.modified',
+        kind: 'modified',
+        severity:
+          record.status === 'error' || record.targetId !== plan.targetId ? 'error' : 'warning',
+        resourceKind: 'dns',
+        resource: record.domain,
+        dockerName: record.recordId,
+        ownership: record.source.ownership,
+        message:
+          record.targetId !== plan.targetId
+            ? `${record.domain} no longer points to this saved VPS target`
+            : `DNS record ${record.domain} is ${record.status}`,
+        expected: plan.targetId,
+        actual: record.targetId ?? record.content,
+      }),
+    );
+  }
+  return entries;
 }
 
 function report(

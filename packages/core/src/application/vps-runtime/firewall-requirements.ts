@@ -152,6 +152,12 @@ export interface ConnectivityFinding {
 export interface FirewallView {
   /** Ports the firewall allows. */
   readonly allowed: ReadonlySet<string>;
+  /**
+   * Optional live matcher for firewalls that expose ranges rather than a
+   * materialised set of ports. Kept optional so every existing adapter and
+   * persisted fixture remains compatible.
+   */
+  readonly allows?: (port: number, protocol: 'tcp' | 'udp') => boolean;
   /** True when this firewall's state could not be determined. */
   readonly indeterminate: boolean;
   /** True when nothing is being filtered, so every port is allowed. */
@@ -197,20 +203,21 @@ export function toProviderFirewallView(
   const ingress = rules.filter(
     (rule) => rule.direction === 'ingress' && WORLD.has(rule.cidr.trim()),
   );
-
-  for (const requirement of requirements) {
-    const open = ingress.some((rule) => {
-      if (rule.protocol !== 'all' && rule.protocol !== requirement.protocol) return false;
-      // A null range is the provider's way of saying every port.
+  const allows = (port: number, protocol: 'tcp' | 'udp'): boolean =>
+    ingress.some((rule) => {
+      if (rule.protocol !== 'all' && rule.protocol !== protocol) return false;
       if (rule.portFrom === null && rule.portTo === null) return true;
       const from = rule.portFrom ?? rule.portTo ?? 0;
       const to = rule.portTo ?? rule.portFrom ?? 65_535;
-      return requirement.port >= from && requirement.port <= to;
+      return port >= from && port <= to;
     });
-    if (open) allowed.add(portKey(requirement.port, requirement.protocol));
+
+  for (const requirement of requirements) {
+    if (allows(requirement.port, requirement.protocol))
+      allowed.add(portKey(requirement.port, requirement.protocol));
   }
 
-  return { allowed, indeterminate: false, permitsEverything: false };
+  return { allowed, allows, indeterminate: false, permitsEverything: false };
 }
 
 /**
@@ -227,8 +234,14 @@ export function checkConnectivity(
 ): readonly ConnectivityFinding[] {
   return requirements.map((requirement) => {
     const key = portKey(requirement.port, requirement.protocol);
-    const hostOk = host.permitsEverything || host.allowed.has(key);
-    const providerOk = provider.permitsEverything || provider.allowed.has(key);
+    const hostOk =
+      host.permitsEverything ||
+      host.allowed.has(key) ||
+      (host.allows?.(requirement.port, requirement.protocol) ?? false);
+    const providerOk =
+      provider.permitsEverything ||
+      provider.allowed.has(key) ||
+      (provider.allows?.(requirement.port, requirement.protocol) ?? false);
     const unknown = (host.indeterminate && !hostOk) || (provider.indeterminate && !providerOk);
 
     const state: ConnectivityState = unknown
