@@ -5,6 +5,7 @@ import type {
   NginxBackup,
   NginxEventSink,
   NginxLiveStatus,
+  NginxLocation,
   NginxLogQuery,
   NginxManager,
   NginxOperationOutcome,
@@ -222,6 +223,13 @@ export function validateManagedNginxSite(
         location.upstreamPort > 65_535)
     )
       return err(new ValidationError('A location upstream port must be 1–65535'));
+    if (
+      location.proxyTimeoutSeconds !== undefined &&
+      (!Number.isInteger(location.proxyTimeoutSeconds) ||
+        location.proxyTimeoutSeconds < 1 ||
+        location.proxyTimeoutSeconds > 86_400)
+    )
+      return err(new ValidationError('A location proxy timeout must be 1–86400 seconds'));
   }
   return ok({
     ...site,
@@ -250,35 +258,8 @@ export function renderManagedNginxSite(site: ManagedNginxSite): string {
   if (site.httpRedirect && site.ssl)
     lines.push('  location / {', '    return 301 https://$host$request_uri;', '  }');
   else {
-    lines.push(
-      '  location / {',
-      `    proxy_pass http://${site.upstreamHost}:${site.upstreamPort};`,
-      '    proxy_set_header Host $host;',
-      '    proxy_set_header X-Real-IP $remote_addr;',
-      '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
-      '    proxy_set_header X-Forwarded-Proto $scheme;',
-      `    proxy_connect_timeout ${site.proxyTimeoutSeconds}s;`,
-      `    proxy_read_timeout ${site.proxyTimeoutSeconds}s;`,
-    );
-    for (const header of site.headers)
-      lines.push(`    proxy_set_header ${header.name} ${header.value};`);
-    if (site.websocket)
-      lines.push(
-        '    proxy_http_version 1.1;',
-        '    proxy_set_header Upgrade $http_upgrade;',
-        '    proxy_set_header Connection "upgrade";',
-      );
-    if (site.cache) lines.push('    proxy_cache_bypass $http_upgrade;');
-    for (const directive of site.extraDirectives) lines.push(`    ${terminate(directive)}`);
-    lines.push('  }');
-    for (const location of site.locations) {
-      lines.push(`  location ${location.path} {`);
-      if (location.upstreamHost && location.upstreamPort)
-        lines.push(`    proxy_pass http://${location.upstreamHost}:${location.upstreamPort};`);
-      for (const directive of location.extraDirectives ?? [])
-        lines.push(`    ${terminate(directive)}`);
-      lines.push('  }');
-    }
+    appendMainProxyLocation(lines, site);
+    appendAdditionalLocations(lines, site);
     if (site.compression)
       lines.push(
         '  gzip on;',
@@ -296,22 +277,55 @@ export function renderManagedNginxSite(site: ManagedNginxSite): string {
       `  ssl_certificate ${certificatePath}/fullchain.pem;`,
       `  ssl_certificate_key ${certificatePath}/privkey.pem;`,
       `  client_max_body_size ${site.clientMaxBodySize};`,
-      '  location / {',
-      `    proxy_pass http://${site.upstreamHost}:${site.upstreamPort};`,
-      '    proxy_set_header Host $host;',
-      '    proxy_set_header X-Real-IP $remote_addr;',
-      '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
-      '    proxy_set_header X-Forwarded-Proto $scheme;',
     );
-    if (site.websocket)
-      lines.push(
-        '    proxy_http_version 1.1;',
-        '    proxy_set_header Upgrade $http_upgrade;',
-        '    proxy_set_header Connection "upgrade";',
-      );
-    lines.push('  }', '}', '');
+    appendMainProxyLocation(lines, site);
+    appendAdditionalLocations(lines, site);
+    lines.push('}', '');
   }
   return lines.join('\n');
+}
+
+function appendMainProxyLocation(lines: string[], site: ManagedNginxSite): void {
+  appendProxyLocation(lines, {
+    path: '/',
+    upstreamHost: site.upstreamHost,
+    upstreamPort: site.upstreamPort,
+    websocket: site.websocket,
+    proxyTimeoutSeconds: site.proxyTimeoutSeconds,
+    extraDirectives: [
+      ...site.headers.map((header) => `proxy_set_header ${header.name} ${header.value}`),
+      ...(site.cache ? ['proxy_cache_bypass $http_upgrade'] : []),
+      ...site.extraDirectives,
+    ],
+  });
+}
+
+function appendAdditionalLocations(lines: string[], site: ManagedNginxSite): void {
+  for (const location of site.locations) appendProxyLocation(lines, location);
+}
+
+function appendProxyLocation(lines: string[], location: NginxLocation): void {
+  lines.push(`  location ${location.path} {`);
+  if (location.upstreamHost && location.upstreamPort)
+    lines.push(`    proxy_pass http://${location.upstreamHost}:${location.upstreamPort};`);
+  lines.push(
+    '    proxy_set_header Host $host;',
+    '    proxy_set_header X-Real-IP $remote_addr;',
+    '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;',
+    '    proxy_set_header X-Forwarded-Proto $scheme;',
+  );
+  const timeout = location.proxyTimeoutSeconds;
+  if (timeout) lines.push(`    proxy_connect_timeout ${timeout}s;`);
+  if (location.websocket) {
+    lines.push(
+      '    proxy_http_version 1.1;',
+      '    proxy_set_header Upgrade $http_upgrade;',
+      '    proxy_set_header Connection "upgrade";',
+      `    proxy_read_timeout ${timeout ?? 3_600}s;`,
+    );
+  } else if (timeout) lines.push(`    proxy_read_timeout ${timeout}s;`);
+  for (const directive of location.extraDirectives ?? []) lines.push(`    ${terminate(directive)}`);
+  lines.push('  }');
 }
 
 function terminate(value: string): string {

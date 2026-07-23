@@ -54,6 +54,27 @@ The commonly required Jenkins plugin IDs are `workflow-aggregator`, `git`,
 authentication plugins are optional unless the Jenkinsfile uses their specific
 features.
 
+### Run the same pipeline directly from Jenkins
+
+CloudForge stores the selected deployment environment as a folder-scoped Jenkins
+secret-text credential. The `CLOUDFORGE_ENV_CREDENTIAL_ID` build parameter contains
+only the credential ID, never the environment file contents. For a declarative
+Jenkinsfile, preserve the ID supplied by CloudForge as the parameter default:
+
+```groovy
+string(
+    name: 'CLOUDFORGE_ENV_CREDENTIAL_ID',
+    defaultValue: params.CLOUDFORGE_ENV_CREDENTIAL_ID ?: '',
+    description: 'Managed by CloudForge.'
+)
+```
+
+Save the pipeline in CloudForge and run it once from CloudForge after adding or
+changing its environment credential. That managed run synchronizes the encrypted
+secret and supplies its stable ID. Later **Build with Parameters** runs from Jenkins
+reuse the same ID automatically. Editing the environment in CloudForge updates the
+stored Jenkins secret without exposing it or changing the ID.
+
 ## Create a pipeline
 
 Open **Jenkins Pipelines**, select the VPS and Jenkins credential, then choose either:

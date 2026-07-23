@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArchiveRestore,
@@ -73,6 +73,7 @@ export function NginxPage(): JSX.Element {
   const nginx = useNginx(targetId, streamId);
   const events = useNginxEvents(streamId);
   const [site, setSite] = useState<ManagedNginxSite>(NEW_SITE);
+  const siteEditorRef = useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState('');
   const [originalConfig, setOriginalConfig] = useState('');
   const [logKind, setLogKind] = useState<'access' | 'error'>('error');
@@ -111,6 +112,12 @@ export function NginxPage(): JSX.Element {
   }, [liveTail, logKind, search, targetId]);
   const update = <K extends keyof ManagedNginxSite>(key: K, value: ManagedNginxSite[K]): void =>
     setSite((current) => ({ ...current, [key]: value }));
+  const editSite = (selected: ManagedNginxSite): void => {
+    setSite(selected);
+    window.requestAnimationFrame(() =>
+      siteEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  };
   const saveSite = (): void => {
     events.clear();
     nginx.saveSite.mutate(
@@ -252,7 +259,7 @@ export function NginxPage(): JSX.Element {
                               size="sm"
                               variant="outline"
                               disabled={item.managed === false}
-                              onClick={() => setSite(item)}
+                              onClick={() => editSite(item)}
                             >
                               Edit
                             </Button>
@@ -283,7 +290,7 @@ export function NginxPage(): JSX.Element {
                   </Table>
                 </CardContent>
               </Card>
-              <Card>
+              <Card ref={siteEditorRef} className="scroll-mt-4">
                 <CardHeader>
                   <CardTitle>{site.domain ? 'Edit site' : 'Create site'}</CardTitle>
                   <CardDescription>

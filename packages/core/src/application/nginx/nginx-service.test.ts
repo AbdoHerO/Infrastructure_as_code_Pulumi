@@ -57,6 +57,29 @@ describe('NginxService', () => {
     expect(rendered).toContain('return 301 https://$host$request_uri;');
   });
 
+  it('renders WebSocket application routes in the HTTPS server', () => {
+    const rendered = renderManagedNginxSite({
+      ...site,
+      ssl: true,
+      httpRedirect: true,
+      locations: [
+        {
+          path: '/app',
+          upstreamHost: '127.0.0.1',
+          upstreamPort: 8081,
+          websocket: true,
+          proxyTimeoutSeconds: 3_600,
+        },
+      ],
+    });
+    const httpsServer = rendered.slice(rendered.indexOf('listen 443 ssl http2;'));
+    expect(httpsServer).toContain('location /app {');
+    expect(httpsServer).toContain('proxy_pass http://127.0.0.1:8081;');
+    expect(httpsServer).toContain('proxy_set_header Upgrade $http_upgrade;');
+    expect(httpsServer).toContain('proxy_set_header Connection "upgrade";');
+    expect(httpsServer).toContain('proxy_read_timeout 3600s;');
+  });
+
   it('resolves saved target credentials and delegates a rendered transaction', async () => {
     const applySite = vi.fn().mockResolvedValue(ok({ summary: 'done', backupId: 'backup' }));
     const manager = { applySite } as unknown as NginxManager;

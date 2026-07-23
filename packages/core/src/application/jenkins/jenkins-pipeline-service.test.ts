@@ -360,6 +360,7 @@ describe('JenkinsPipelineService', () => {
       githubCredentialId: null,
       domain: 'hanoutplus.ma',
       applicationPort: 8000,
+      applicationRoutes: [{ path: '/app', port: 8081 }],
       cloudflareCredentialId: 'cloudflare-1',
       configureDomain: true,
     });
@@ -373,6 +374,15 @@ describe('JenkinsPipelineService', () => {
         ssl: true,
         httpRedirect: true,
         certificatePath: '/opt/cloudforge/certs/live/hanoutplus.ma',
+        locations: [
+          {
+            path: '/app',
+            upstreamHost: '127.0.0.1',
+            upstreamPort: 8081,
+            websocket: true,
+            proxyTimeoutSeconds: 3600,
+          },
+        ],
       }),
     );
   });

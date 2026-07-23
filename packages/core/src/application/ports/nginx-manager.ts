@@ -25,6 +25,8 @@ export interface NginxLocation {
   readonly path: string;
   readonly upstreamHost?: string;
   readonly upstreamPort?: number;
+  readonly websocket?: boolean;
+  readonly proxyTimeoutSeconds?: number;
   readonly extraDirectives?: readonly string[];
 }
 

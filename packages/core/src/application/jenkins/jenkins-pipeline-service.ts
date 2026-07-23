@@ -593,6 +593,8 @@ function toNginxLocations(routes: readonly JenkinsApplicationRoute[]): readonly 
     path: route.path,
     upstreamHost: '127.0.0.1',
     upstreamPort: route.port,
+    websocket: true,
+    proxyTimeoutSeconds: 3_600,
   }));
 }
 
