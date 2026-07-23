@@ -1,4 +1,5 @@
 import type { AnsibleProfile, AnsibleProfileId } from '@cloudforge/core';
+import { openPortsPreamble, persistIfChanged } from './host-firewall-script.js';
 
 export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
   {
@@ -15,6 +16,11 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         description: 'Comma-separated users to add to the docker group.',
       },
     ],
+    // Docker listens on a Unix socket, not a port. CloudForge reaches it over
+    // SSH and never over TCP, so there is nothing here to open — and declaring a
+    // port would invite exactly the unauthenticated Docker socket that must not
+    // exist.
+    runtime: { ports: [], providesContainerRuntime: true },
   },
   {
     id: 'dockhand',
@@ -36,6 +42,17 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         defaultValue: 'fnsys/dockhand:latest',
       },
     ],
+    runtime: {
+      ports: [
+        {
+          protocol: 'tcp',
+          variableKey: 'service_port',
+          defaultPort: 3000,
+          reason: 'Dockhand web interface',
+          reach: 'public',
+        },
+      ],
+    },
   },
   {
     id: 'portainer',
@@ -57,6 +74,17 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         defaultValue: 'portainer/portainer-ce:lts',
       },
     ],
+    runtime: {
+      ports: [
+        {
+          protocol: 'tcp',
+          variableKey: 'service_port',
+          defaultPort: 9443,
+          reason: 'Portainer HTTPS interface',
+          reach: 'public',
+        },
+      ],
+    },
   },
   {
     id: 'jenkins',
@@ -79,6 +107,17 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         description: 'Allow the Jenkins port through UFW, firewalld, or iptables.',
       },
     ],
+    runtime: {
+      ports: [
+        {
+          protocol: 'tcp',
+          variableKey: 'service_port',
+          defaultPort: 8080,
+          reason: 'Jenkins web interface',
+          reach: 'public',
+        },
+      ],
+    },
   },
   {
     id: 'nginx',
@@ -94,6 +133,24 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
         description: 'Allow HTTP port 80 through UFW, firewalld, or iptables.',
       },
     ],
+    // 80 only, deliberately. Nginx is an HTTP server, so it needs 80 the moment
+    // it exists — and ACME's HTTP-01 challenge needs it even for a site that only
+    // ever serves HTTPS. 443 is *not* declared here: it is needed only when a
+    // route actually terminates TLS, which the runtime plan already derives from
+    // its own routes. Declaring it in both places would create the second
+    // competing source of truth this refactor exists to remove, and would ask the
+    // user to open 443 on a VPS that serves nothing over it.
+    runtime: {
+      ports: [
+        {
+          protocol: 'tcp',
+          defaultPort: 80,
+          reason: 'HTTP traffic and ACME HTTP-01 certificate challenges',
+          reach: 'public',
+        },
+      ],
+      providesReverseProxy: true,
+    },
   },
 ] as const;
 
@@ -300,25 +357,42 @@ const PORTAINER = `${HEADER}
       changed_when: "'Started' in compose_result.stdout or 'Created' in compose_result.stdout or 'Recreated' in compose_result.stdout"
 `;
 
+/** Indent a generated script into a YAML block scalar without disturbing its own layout. */
+function indent(text: string, spaces: number): string {
+  const pad = ' '.repeat(spaces);
+  return text
+    .split('\n')
+    .map((line) => (line.trim() === '' ? '' : `${pad}${line}`))
+    .join('\n');
+}
+
+/**
+ * Open a native service's port, using the same shell as everything else that
+ * touches a host firewall.
+ *
+ * This task cannot call `openPortsScript`, because `port` may be a Jinja
+ * expression — `{{ service_port }}` — that Ansible only resolves on the VPS, long
+ * after this string is built. So it emits the shared preamble and makes the call
+ * itself. The value is validated as an integer between 1 and 65535 before it is
+ * rendered into `vars.json`, so no unchecked value reaches the shell.
+ *
+ * Before this was shared, this copy knew only ufw, firewalld and iptables. A host
+ * filtering with nftables fell through to the `iptables` branch and drove the
+ * compatibility shim, or — where no iptables binary exists at all — silently
+ * opened nothing and reported success.
+ */
 function hostFirewallTask(service: string, port: string): string {
+  const script = indent(
+    `set -eu
+${openPortsPreamble()}
+cloudforge_open "${port}" tcp
+${persistIfChanged()}
+echo "cloudforge_changed=$changed"`,
+    8,
+  );
   return `    - name: Allow ${service} through the active VPS firewall
       ansible.builtin.shell: |
-        set -eu
-        port="${port}"
-        changed=0
-        if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-          ufw status 2>/dev/null | grep -Eq "(^|[[:space:]])$port/tcp[[:space:]].*ALLOW" || { ufw allow "$port/tcp"; changed=1; }
-        elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
-          firewall-cmd --quiet --query-port="$port/tcp" || { firewall-cmd --permanent --add-port="$port/tcp"; firewall-cmd --reload; changed=1; }
-        elif command -v iptables >/dev/null 2>&1; then
-          iptables -C INPUT -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT 2>/dev/null || { iptables -I INPUT 1 -p tcp --dport "$port" -m comment --comment 'CloudForge managed service' -j ACCEPT; changed=1; }
-          if [ "$changed" -eq 1 ]; then
-            if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save >/dev/null
-            elif [ -d /etc/sysconfig ]; then iptables-save > /etc/sysconfig/iptables
-            fi
-          fi
-        fi
-        echo "cloudforge_changed=$changed"
+${script}
       args:
         executable: /bin/sh
       register: cloudforge_firewall

@@ -141,6 +141,28 @@ are sent explicitly, so a repository Jenkinsfile can publish its container with
 hardcoded VPS default. For example, a container listening internally on `8080`
 can use host port `8000`; Nginx then routes the domain to `127.0.0.1:8000`.
 
+### `HOST_PORT` is managed, not suggested
+
+`HOST_PORT` is the port the generated Nginx site proxies to, so the two cannot be
+allowed to disagree. Anything that moved one without the other would deploy the
+container where the proxy is not looking, and the domain would answer 502 with
+nothing in the build log to explain it.
+
+CloudForge therefore owns the parameter outright:
+
+- It is read-only in the **Run pipeline** card, and shown as a labelled fact
+  rather than editable fields in the pipeline editor.
+- A value supplied at trigger time is overridden, not honoured.
+- It is restated on every status read, so an edit made in the Jenkins UI does not
+  silently become CloudForge's intent. Jenkins is not the record of intent; the
+  pipeline is.
+- Switching domain automation off withdraws it — but only if CloudForge added it.
+  A `HOST_PORT` you wrote by hand on a pipeline that never had domain automation
+  enabled is not CloudForge's to remove.
+
+To change the port, change the pipeline's application port. `CLOUDFORGE_ENV_CREDENTIAL_ID`
+is managed on the same terms.
+
 Repository Jenkinsfiles should still define a safe default for direct/manual
 Jenkins runs:
 

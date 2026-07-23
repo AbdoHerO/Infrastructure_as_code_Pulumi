@@ -263,4 +263,20 @@ update operation.
    TanStack Query hook under the feature folder).
 
 TypeScript enforces every step: an unknown channel, a mismatched payload or a
-missing entry in `IPC_CHANNELS` is a compile error.
+missing entry in `IPC_CHANNELS` / `IPC_EVENT_CHANNELS` is a compile error.
+
+The list completeness check is the `IpcChannelsAreExhaustive` /
+`IpcEventChannelsAreExhaustive` aliases at the bottom of `contract.ts`. They are
+required because `as const satisfies readonly IpcChannel[]` proves only that each
+**listed** name is a real channel — never that each real channel is listed. The
+guards name the missing channel in the compile error.
+
+`IPC_EVENT_CHANNELS` is additionally load-bearing at runtime: the preload uses it
+as the `subscribe` allow-list, so an event channel omitted from it throws
+`Unknown event channel` in the renderer rather than failing the build. The guard
+turns that into a build failure instead.
+
+`src/main/ipc/ipc-contract.test.ts` closes the remaining gap the type system
+cannot see: that every declared channel is actually registered, that nothing is
+registered or emitted which was never declared, and that no channel is
+registered twice.

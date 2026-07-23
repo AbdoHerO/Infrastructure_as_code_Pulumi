@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   FileText,
-  Fingerprint,
   Loader2,
+  Network,
   Play,
   RefreshCw,
   RotateCw,
@@ -22,86 +22,71 @@ import {
   Textarea,
   toast,
 } from '@cloudforge/ui';
-import type { ContainerAction, RemoteContainer } from '@cloudforge/core';
-import type { ContainerTargetRequest } from '@shared/ipc/contract.js';
+import type { ContainerAction, ObservedContainer, RuntimeOwnership } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
-import { useInspectHostKey, useSshCredentials } from '../deployments/useDeployments.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
+import { ContainerPorts } from './ContainerPorts.js';
 import {
   useContainerAction,
   useContainerLogs,
   useContainerStats,
   useDeployCompose,
-  useListContainers,
+  useRefreshRuntime,
+  useRuntime,
 } from './useContainers.js';
+
+const OWNERSHIP_LABEL: Record<RuntimeOwnership, string> = {
+  'cloudforge-managed': 'Managed',
+  adopted: 'Adopted',
+  'legacy-managed': 'Legacy',
+  unmanaged: 'Unmanaged',
+};
+
+const OWNERSHIP_HINT: Record<RuntimeOwnership, string> = {
+  'cloudforge-managed': 'Created by CloudForge and safe for it to change.',
+  adopted: 'Pre-existing, and explicitly handed over to CloudForge.',
+  'legacy-managed':
+    'Created by an earlier CloudForge release, before ownership labels existed. Recognised, but not managed until you adopt it.',
+  unmanaged: 'Not created by CloudForge. Reported only; CloudForge will not change it.',
+};
+
+const OWNERSHIP_VARIANT: Record<RuntimeOwnership, 'success' | 'secondary' | 'warning'> = {
+  'cloudforge-managed': 'success',
+  adopted: 'success',
+  'legacy-managed': 'warning',
+  unmanaged: 'secondary',
+};
 
 export function ContainersPage(): JSX.Element {
   const confirm = useConfirmation();
-  const credentials = useSshCredentials();
   const targets = useVpsTargets();
-  const inspect = useInspectHostKey();
-  const list = useListContainers();
+  const [targetId, setTargetId] = useState('');
+  const runtime = useRuntime(targetId);
+  const refreshRuntime = useRefreshRuntime(targetId);
   const action = useContainerAction();
   const logs = useContainerLogs();
   const stats = useContainerStats();
   const compose = useDeployCompose();
-  const [host, setHost] = useState('');
-  const [selectedTargetId, setSelectedTargetId] = useState('');
-  const [port, setPort] = useState(22);
-  const [username, setUsername] = useState('opc');
-  const [sshCredentialId, setSshCredentialId] = useState('');
-  const [hostKeySha256, setHostKeySha256] = useState('');
   const [projectName, setProjectName] = useState('');
   const [composeYaml, setComposeYaml] = useState(
     'services:\n  app:\n    image: nginx:1.27-alpine\n    ports:\n      - "80:80"\n',
   );
-  const lastAutomaticLoad = useRef('');
 
-  const selectTarget = useCallback(
-    (id: string): void => {
-      setSelectedTargetId(id);
-      const selected = targets.data?.find((target) => target.id === id);
-      if (!selected) {
-        setHost('');
-        setPort(22);
-        setUsername('opc');
-        setSshCredentialId('');
-        setHostKeySha256('');
-        return;
-      }
-      setHost(selected.host);
-      setPort(selected.port);
-      setUsername(selected.username);
-      setSshCredentialId(selected.sshCredentialId ?? '');
-      setHostKeySha256(selected.hostKeySha256);
-    },
-    [targets.data],
-  );
   useEffect(() => {
     if (!targets.data) return;
-    const selectedExists = targets.data.some((target) => target.id === selectedTargetId);
-    if (!selectedExists) selectTarget(targets.data[0]?.id ?? '');
-  }, [selectedTargetId, targets.data, selectTarget]);
+    if (!targets.data.some((target) => target.id === targetId))
+      setTargetId(targets.data[0]?.id ?? '');
+  }, [targetId, targets.data]);
 
-  const target: ContainerTargetRequest = { host, port, username, sshCredentialId, hostKeySha256 };
-  const ready = host && username && sshCredentialId && hostKeySha256;
-  const reload = (): void =>
-    list.mutate(target, { onError: (error) => toast.error(error.message) });
-  useEffect(() => {
-    if (!ready) {
-      lastAutomaticLoad.current = '';
-      return;
-    }
-    const signature = [host, port, username, sshCredentialId, hostKeySha256].join('|');
-    if (lastAutomaticLoad.current === signature) return;
-    lastAutomaticLoad.current = signature;
-    list.mutate(target, { onError: (error) => toast.error(error.message) });
-    // The primitive connection fields deliberately control synchronization;
-    // the mutation object itself is stable but would obscure that intent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host, hostKeySha256, port, ready, sshCredentialId, username]);
-  const perform = async (container: RemoteContainer, operation: ContainerAction): Promise<void> => {
+  const containers = runtime.data?.containers ?? [];
+  const networks = runtime.data?.networks ?? [];
+  const reload = (): void => void refreshRuntime();
+
+  const perform = async (
+    container: ObservedContainer,
+    operation: ContainerAction,
+  ): Promise<void> => {
     if (operation === 'remove' || operation === 'stop') {
       const confirmed = await confirm({
         title: `${operation === 'remove' ? 'Remove' : 'Stop'} container?`,
@@ -115,7 +100,7 @@ export function ContainersPage(): JSX.Element {
       if (!confirmed) return;
     }
     action.mutate(
-      { ...target, containerId: container.id, action: operation },
+      { targetId, containerId: container.id, action: operation },
       { onSuccess: reload, onError: (error) => toast.error(error.message) },
     );
   };
@@ -124,140 +109,113 @@ export function ContainersPage(): JSX.Element {
     <>
       <PageHeader
         title="Containers"
-        description="Manage Docker and Compose securely over a verified SSH connection."
+        description="Inspect and manage Docker and Compose over a verified SSH connection."
         actions={
-          <Button variant="outline" disabled={!ready || list.isPending} onClick={reload}>
-            {list.isPending ? (
+          <Button variant="outline" disabled={!targetId || runtime.isFetching} onClick={reload}>
+            {runtime.isFetching ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <RefreshCw className="size-4" />
             )}
-            Load containers
+            Refresh
           </Button>
         }
       />
 
       <Card className="mb-5">
-        <CardContent className="grid gap-3 pt-6 md:grid-cols-2 xl:grid-cols-6">
-          <Field label="Saved VPS target">
-            <Select value={selectedTargetId} onChange={(event) => selectTarget(event.target.value)}>
-              <option value="">Manual connection…</option>
+        <CardContent className="grid gap-3 pt-6 md:grid-cols-3">
+          <Field label="VPS target">
+            <Select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
+              <option value="">Select a saved target…</option>
               {(targets.data ?? []).map((target) => (
                 <option key={target.id} value={target.id}>
                   {target.name} · {target.host}
                 </option>
               ))}
             </Select>
-          </Field>
-          <Field label="Host">
-            <Input
-              value={host}
-              onChange={(event) => {
-                setSelectedTargetId('');
-                setHost(event.target.value);
-                setHostKeySha256('');
-              }}
-            />
-          </Field>
-          <Field label="Port">
-            <Input
-              type="number"
-              value={port}
-              onChange={(event) => {
-                setSelectedTargetId('');
-                setPort(Number(event.target.value) || 22);
-                setHostKeySha256('');
-              }}
-            />
-          </Field>
-          <Field label="SSH user">
-            <Input
-              value={username}
-              onChange={(event) => {
-                setSelectedTargetId('');
-                setUsername(event.target.value);
-              }}
-            />
-          </Field>
-          <Field label="SSH key">
-            <Select
-              value={sshCredentialId}
-              onChange={(event) => {
-                setSelectedTargetId('');
-                setSshCredentialId(event.target.value);
-              }}
-            >
-              <option value="">Select a key…</option>
-              {credentials.map((credential) => (
-                <option key={credential.id} value={credential.id}>
-                  {credential.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Host fingerprint">
-            <Button
-              className="w-full"
-              variant="outline"
-              disabled={!host || inspect.isPending}
-              onClick={() =>
-                inspect.mutate(
-                  { host, port },
-                  {
-                    onSuccess: ({ fingerprint }) => setHostKeySha256(fingerprint),
-                    onError: (error) => toast.error(error.message),
-                  },
-                )
-              }
-            >
-              {inspect.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Fingerprint className="size-4" />
-              )}
-              {hostKeySha256 ? 'Fingerprint trusted' : 'Inspect host'}
-            </Button>
-          </Field>
-          {hostKeySha256 ? (
-            <p className="text-warning break-all text-xs md:col-span-2 xl:col-span-6">
-              Verify before use: {hostKeySha256}
+            <p className="text-muted-foreground text-xs">
+              Save a target in Ansible first. CloudForge connects using its pinned host fingerprint.
             </p>
+          </Field>
+          {runtime.data ? (
+            <>
+              <Field label="Docker">
+                <p className="text-sm">
+                  {runtime.data.docker.available
+                    ? `Engine ${runtime.data.docker.version ?? '—'}${
+                        runtime.data.docker.composeVersion
+                          ? ` · Compose ${runtime.data.docker.composeVersion}`
+                          : ''
+                      }`
+                    : 'Not installed on this VPS'}
+                </p>
+              </Field>
+              <Field label="Inventory">
+                <p className="text-sm">
+                  {containers.length} containers · {networks.length} networks ·{' '}
+                  {runtime.data.volumes.length} volumes
+                </p>
+              </Field>
+            </>
           ) : null}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
-          {list.isPending ? (
+          {runtime.isLoading ? (
             <Card>
               <CardContent className="text-muted-foreground flex items-center gap-2 py-8 text-sm">
-                <Loader2 className="size-4 animate-spin" /> Loading Docker containers from the
-                selected VPS…
+                <Loader2 className="size-4 animate-spin" /> Reading the runtime on the selected VPS…
               </CardContent>
             </Card>
           ) : null}
-          {list.isError ? (
+          {runtime.isError ? (
             <Card className="border-destructive/40">
               <CardContent className="text-destructive py-5 text-sm">
-                Docker state could not be loaded: {list.error.message}
+                The runtime could not be read: {runtime.error.message}
               </CardContent>
             </Card>
           ) : null}
-          {list.data?.map((container) => (
+          {containers.map((container) => (
             <Card key={container.id}>
               <CardContent className="space-y-3 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{container.name}</p>
                     <p className="text-muted-foreground truncate text-xs">
-                      {container.image} · {container.ports || 'no published ports'}
+                      {container.image}
+                      {container.composeProject ? ` · ${container.composeProject}` : ''}
                     </p>
                   </div>
-                  <Badge variant={container.state === 'running' ? 'success' : 'secondary'}>
-                    {container.state}
-                  </Badge>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Badge
+                      variant={OWNERSHIP_VARIANT[container.ownership]}
+                      title={OWNERSHIP_HINT[container.ownership]}
+                    >
+                      {OWNERSHIP_LABEL[container.ownership]}
+                    </Badge>
+                    <Badge variant={container.state === 'running' ? 'success' : 'secondary'}>
+                      {container.health ?? container.state}
+                    </Badge>
+                  </div>
                 </div>
-                <p className="text-muted-foreground text-xs">{container.status}</p>
+
+                <ContainerPorts ports={container.ports} />
+
+                {container.networks.length > 0 ? (
+                  <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                    <Network className="size-3.5 shrink-0" />
+                    {container.networks
+                      .map((attachment) =>
+                        attachment.aliases.length > 0
+                          ? `${attachment.network} (${attachment.aliases.join(', ')})`
+                          : attachment.network,
+                      )
+                      .join(' · ')}
+                  </p>
+                ) : null}
+
                 <div className="flex flex-wrap gap-2">
                   <Action
                     icon={<Play className="size-3.5" />}
@@ -277,12 +235,12 @@ export function ContainersPage(): JSX.Element {
                   <Action
                     icon={<FileText className="size-3.5" />}
                     label="Logs"
-                    onClick={() => logs.mutate({ ...target, containerId: container.id })}
+                    onClick={() => logs.mutate({ targetId, containerId: container.id })}
                   />
                   <Action
                     icon={<Activity className="size-3.5" />}
                     label="Stats"
-                    onClick={() => stats.mutate({ ...target, containerId: container.id })}
+                    onClick={() => stats.mutate({ targetId, containerId: container.id })}
                   />
                   <Button
                     size="sm"
@@ -296,12 +254,37 @@ export function ContainersPage(): JSX.Element {
               </CardContent>
             </Card>
           ))}
-          {list.data?.length === 0 ? (
+          {runtime.data && containers.length === 0 ? (
             <p className="text-muted-foreground text-sm">No containers found on this host.</p>
           ) : null}
         </div>
 
         <div className="space-y-4">
+          {networks.length > 0 ? (
+            <Card>
+              <CardContent className="space-y-2 py-4">
+                <p className="font-medium">Networks</p>
+                {networks.map((network) => (
+                  <div key={network.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate">
+                      {network.name}
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {network.driver}
+                        {network.internal ? ' · internal' : ''}
+                      </span>
+                    </span>
+                    <Badge
+                      variant={OWNERSHIP_VARIANT[network.ownership]}
+                      title={OWNERSHIP_HINT[network.ownership]}
+                    >
+                      {network.containerNames.length}
+                    </Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardContent className="space-y-3 py-5">
               <p className="font-medium">Deploy Compose project</p>
@@ -317,10 +300,10 @@ export function ContainersPage(): JSX.Element {
               />
               <Button
                 className="w-full"
-                disabled={!ready || !projectName || !composeYaml || compose.isPending}
+                disabled={!targetId || !projectName || !composeYaml || compose.isPending}
                 onClick={() =>
                   compose.mutate(
-                    { ...target, projectName, composeYaml },
+                    { targetId, projectName, composeYaml },
                     {
                       onSuccess: () => {
                         toast.success('Compose project deployed');

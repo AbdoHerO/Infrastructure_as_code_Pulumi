@@ -1,8 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { Client, type ConnectConfig } from 'ssh2';
+import { randomUUID } from 'node:crypto';
+import type { Client } from 'ssh2';
 import {
+  decodeManagedNginxSite,
   type DeploymentTarget,
+  inferUpstreamKind,
   type ManagedNginxSite,
+  NGINX_SITE_MARKER,
   type NginxBackup,
   type NginxEventSink,
   type NginxLiveStatus,
@@ -11,11 +14,42 @@ import {
   type NginxOperationOutcome,
   type NginxOverview,
 } from '@cloudforge/core';
-import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
+import type { DeploymentError, Result } from '@cloudforge/shared';
+import {
+  base64,
+  execCommand,
+  privilegedScript,
+  quote,
+  type SshCommandOutput,
+  withSshConnection,
+} from './ssh-transport.js';
+import { managedSiteFilePath, siteFilePaths } from './nginx-site-file.js';
+import { nginxExecPreamble, reloadScript, restoreScript } from './nginx-exec-script.js';
 
-const CONNECT_TIMEOUT_MS = 20_000;
 const COMMAND_TIMEOUT_MS = 120_000;
 const BACKUP_DIR = '/var/lib/cloudforge/nginx/backups';
+const LABEL = 'Nginx';
+
+/** Thin bindings of the shared SSH transport to this adapter's label and timeout. */
+function withConnection<T>(
+  target: DeploymentTarget,
+  signal: AbortSignal | undefined,
+  action: (client: Client) => Promise<T>,
+): Promise<Result<T, DeploymentError>> {
+  return withSshConnection(target, { label: LABEL, ...(signal ? { signal } : {}) }, action);
+}
+
+function execute(
+  client: Client,
+  command: string,
+  onEvent?: NginxEventSink,
+): Promise<SshCommandOutput> {
+  return execCommand(client, command, { label: LABEL, timeoutMs: COMMAND_TIMEOUT_MS, onEvent });
+}
+
+function privileged(script: string): string {
+  return privilegedScript(script, 'cloudforge-nginx');
+}
 
 export class SshNginxManager implements NginxManager {
   inspect(target: DeploymentTarget): Promise<Result<NginxOverview, DeploymentError>> {
@@ -79,22 +113,16 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
       const { stdout } = await execute(
         client,
         privileged(
-          `grep -Rhs '^# cloudforge-site: ' /etc/nginx/conf.d /etc/nginx/sites-available 2>/dev/null || true`,
+          `grep -Rhs '^${NGINX_SITE_MARKER}' /etc/nginx/conf.d /etc/nginx/sites-available 2>/dev/null || true`,
         ),
       );
       const managed = stdout.split('\n').flatMap((line) => {
         const encoded = line.replace(/^# cloudforge-site:\s*/, '').trim();
         if (!encoded) return [];
-        try {
-          return [
-            {
-              ...(JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as ManagedNginxSite),
-              managed: true,
-            },
-          ];
-        } catch {
-          return [];
-        }
+        // Decoding (and defaulting) lives in core so one reader serves every
+        // schema version this file may have been written by.
+        const site = decodeManagedNginxSite(encoded);
+        return site ? [{ ...site, managed: true }] : [];
       });
       const files = await execute(
         client,
@@ -112,13 +140,14 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
           (match) => match[1]?.trim().split(/\s+/) ?? [],
         );
         const upstream = /proxy_pass\s+https?:\/\/([^/:;]+)(?::(\d+))?/.exec(config);
+        const upstreamHost = upstream?.[1] ?? 'unknown';
         return serverNames
           .filter((domain) => domain !== '_' && !known.has(domain))
           .map((domain) => ({
             domain,
             enabled: path.includes('/sites-enabled/') || path.endsWith('.conf'),
-            upstreamKind: 'host' as const,
-            upstreamHost: upstream?.[1] ?? 'unknown',
+            upstreamKind: inferUpstreamKind(upstreamHost),
+            upstreamHost,
             upstreamPort: Number(upstream?.[2]) || 80,
             websocket: /proxy_set_header\s+Upgrade/i.test(config),
             ssl: /listen\s+443|ssl_certificate\s/i.test(config),
@@ -146,12 +175,22 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
     renderedConfig: string,
     onEvent?: NginxEventSink,
   ): Promise<Result<NginxOperationOutcome, DeploymentError>> {
-    const safeName = site.domain.replace(/^\*\./, 'wildcard.').replace(/[^a-z0-9.-]/gi, '-');
-    const path = `/etc/nginx/conf.d/cloudforge-${safeName}.conf`;
+    const path = managedSiteFilePath(site.domain);
+    // Drop any file this domain occupied under the pre-unification name; two
+    // files with one server_name is a conflict Nginx resolves by ignoring one.
+    // The surrounding transaction restores /etc/nginx wholesale on failure, so
+    // this removal is covered by the same rollback as the write.
+    const stale = siteFilePaths(site.domain)
+      .filter((candidate) => candidate !== path)
+      .flatMap((candidate) => [
+        `rm -f ${quote(candidate)}`,
+        `rm -f ${quote(`${candidate}.disabled`)}`,
+      ])
+      .join('\n');
     return this.transaction(
       target,
-      `save-site-${safeName}`,
-      `printf '%s' '${base64(renderedConfig)}' | base64 -d > '${path}'\n${site.enabled ? '' : `mv '${path}' '${path}.disabled'`}`,
+      `save-site-${backupTag(site.domain)}`,
+      `${stale}\nprintf '%s' '${base64(renderedConfig)}' | base64 -d > ${quote(path)}\n${site.enabled ? '' : `mv ${quote(path)} ${quote(`${path}.disabled`)}`}`,
       onEvent,
     );
   }
@@ -161,11 +200,11 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
     domain: string,
     onEvent?: NginxEventSink,
   ): Promise<Result<NginxOperationOutcome, DeploymentError>> {
-    const safeName = domain.replace(/^\*\./, 'wildcard.').replace(/[^a-z0-9.-]/gi, '-');
+    const files = siteFilePaths(domain).flatMap((path) => [path, `${path}.disabled`]);
     return this.transaction(
       target,
-      `remove-site-${safeName}`,
-      `rm -f '/etc/nginx/conf.d/cloudforge-${safeName}.conf' '/etc/nginx/conf.d/cloudforge-${safeName}.conf.disabled'`,
+      `remove-site-${backupTag(domain)}`,
+      `rm -f ${files.map((path) => quote(path)).join(' ')}`,
       onEvent,
     );
   }
@@ -197,7 +236,7 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
   ): Promise<Result<NginxOperationOutcome, DeploymentError>> {
     return withConnection(target, undefined, async (client) => {
       onEvent?.({ stream: 'step', message: 'Validating Nginx configuration before reload' });
-      await execute(client, privileged(reloadScript()), onEvent);
+      await execute(client, privileged(`${nginxExecPreamble()}\n${reloadScript()}`), onEvent);
       return { summary: 'Nginx configuration is valid and the service was reloaded.' };
     });
   }
@@ -297,7 +336,13 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
       await execute(
         client,
         privileged(
-          `test -f '${BACKUP_DIR}/${backupId}.tar.gz'\nrm -rf /etc/nginx\ntar -xzf '${BACKUP_DIR}/${backupId}.tar.gz' -C /\n${reloadScript()}`,
+          [
+            'set -e',
+            `test -f '${BACKUP_DIR}/${backupId}.tar.gz'`,
+            nginxExecPreamble(),
+            restoreScript(`'${BACKUP_DIR}/${backupId}.tar.gz'`),
+            reloadScript(),
+          ].join('\n'),
         ),
         onEvent,
       );
@@ -317,7 +362,22 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
       await execute(
         client,
         privileged(
-          `set -e\ncommand -v nginx >/dev/null 2>&1 || { echo 'Docker Nginx editing requires a standard host-mounted configuration and native nginx validation binary.' >&2; exit 1; }\nmkdir -p '${BACKUP_DIR}'\ntar -czf '${BACKUP_DIR}/${backupId}.tar.gz' /etc/nginx 2>/dev/null\n${mutation}\nif ! nginx -t; then\n  rm -rf /etc/nginx\n  tar -xzf '${BACKUP_DIR}/${backupId}.tar.gz' -C /\n  nginx -t\n  exit 1\nfi\n${reloadScript()}`,
+          [
+            'set -e',
+            nginxExecPreamble(),
+            `mkdir -p '${BACKUP_DIR}'`,
+            `tar -czf '${BACKUP_DIR}/${backupId}.tar.gz' /etc/nginx 2>/dev/null`,
+            mutation,
+            'if ! cf_nginx -t; then',
+            restoreScript(`'${BACKUP_DIR}/${backupId}.tar.gz'`),
+            // Prove the rollback landed. A restore that itself fails validation
+            // is the one case where saying nothing would be worst: the config on
+            // disk is neither what was asked for nor what was there before.
+            'cf_nginx -t',
+            'exit 1',
+            'fi',
+            reloadScript(),
+          ].join('\n'),
         ),
         onEvent,
       );
@@ -326,131 +386,13 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$workers" "\${active:-}" "\${1:-}"
   }
 }
 
-function reloadScript(): string {
-  return `mkdir -p /var/lib/cloudforge/nginx\nif ! nginx -t; then date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/cloudforge/nginx/last-reload-at; echo 0 > /var/lib/cloudforge/nginx/last-reload-ok; exit 1; fi\nif command -v systemctl >/dev/null 2>&1; then systemctl reload nginx; else nginx -s reload; fi\ndate -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/cloudforge/nginx/last-reload-at\necho 1 > /var/lib/cloudforge/nginx/last-reload-ok`;
-}
-function base64(value: string): string {
-  return Buffer.from(value, 'utf8').toString('base64');
-}
 function nullableNumber(value: string | undefined): number | null {
   return value && Number.isFinite(Number(value)) ? Number(value) : null;
 }
-function privileged(script: string): string {
-  const path = `/tmp/cloudforge-nginx-${randomUUID()}.sh`;
-  return `printf '%s' '${base64(script)}' | base64 -d > ${path} && chmod 700 ${path} && if [ "$(id -u)" -eq 0 ]; then ${path}; else sudo -n ${path}; fi; code=$?; rm -f ${path}; exit $code`;
-}
 
-function withConnection<T>(
-  target: DeploymentTarget,
-  signal: AbortSignal | undefined,
-  action: (client: Client) => Promise<T>,
-): Promise<Result<T, DeploymentError>> {
-  return new Promise((resolve) => {
-    const client = new Client();
-    let settled = false;
-    const finish = (result: Result<T, DeploymentError>): void => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener('abort', abort);
-      client.end();
-      resolve(result);
-    };
-    const abort = (): void => finish(err(new DeploymentError('Nginx operation cancelled')));
-    if (signal?.aborted) return abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    client.once('error', (cause) =>
-      finish(
-        err(new DeploymentError('Nginx SSH connection or host-key verification failed', { cause })),
-      ),
-    );
-    client.once('ready', () => {
-      void action(client)
-        .then((value) => finish(ok(value)))
-        .catch((cause) =>
-          finish(
-            err(
-              cause instanceof DeploymentError
-                ? cause
-                : new DeploymentError('Remote Nginx operation failed', { cause }),
-            ),
-          ),
-        );
-    });
-    try {
-      client.connect(connectionConfig(target));
-    } catch (cause) {
-      finish(
-        err(
-          cause instanceof DeploymentError
-            ? cause
-            : new DeploymentError('Invalid SSH target', { cause }),
-        ),
-      );
-    }
-  });
-}
-
-function connectionConfig(target: DeploymentTarget): ConnectConfig {
-  if (!target.privateKey && !target.password)
-    throw new DeploymentError('An SSH private key or password is required');
-  return {
-    host: target.host,
-    port: target.port,
-    username: target.username,
-    readyTimeout: CONNECT_TIMEOUT_MS,
-    hostVerifier: (key: Buffer) =>
-      normalizeFingerprint(fingerprint(key)) === normalizeFingerprint(target.hostKeySha256),
-    ...(target.privateKey ? { privateKey: target.privateKey } : {}),
-    ...(target.passphrase ? { passphrase: target.passphrase } : {}),
-    ...(target.password ? { password: target.password } : {}),
-  };
-}
-
-function execute(
-  client: Client,
-  command: string,
-  onEvent?: NginxEventSink,
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) =>
-    client.exec(command, (error, stream) => {
-      if (error) return reject(error);
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      const timer = setTimeout(() => {
-        stream.close();
-        reject(new DeploymentError('Remote Nginx command timed out'));
-      }, COMMAND_TIMEOUT_MS);
-      stream.on('data', (chunk: Buffer) => {
-        stdout.push(chunk);
-        onEvent?.({ stream: 'stdout', message: chunk.toString('utf8') });
-      });
-      stream.stderr.on('data', (chunk: Buffer) => {
-        stderr.push(chunk);
-        onEvent?.({ stream: 'stderr', message: chunk.toString('utf8') });
-      });
-      stream.on('close', (code: number | null) => {
-        clearTimeout(timer);
-        const errorText = Buffer.concat(stderr).toString('utf8');
-        if (code === 0)
-          resolve({ stdout: Buffer.concat(stdout).toString('utf8'), stderr: errorText });
-        else
-          reject(
-            new DeploymentError(
-              errorText.trim() || `Remote command failed with exit ${code ?? 'unknown'}`,
-            ),
-          );
-      });
-    }),
-  );
-}
-function fingerprint(key: Buffer): string {
-  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
-}
-function normalizeFingerprint(value: string): string {
-  return value
-    .trim()
-    .replace(/^SHA256:/i, '')
-    .replace(/=+$/, '');
+/** Filesystem-safe tag identifying a backup with the domain it was taken for. */
+function backupTag(domain: string): string {
+  return domain.replace(/^\*\./, 'wildcard.').replace(/[^a-z0-9.-]/gi, '-');
 }
 
 /** Shared infrastructure helper for adapters that operate on the same trusted VPS target. */
@@ -458,7 +400,7 @@ export function runPrivilegedRemote(
   target: DeploymentTarget,
   script: string,
   onEvent?: NginxEventSink,
-): Promise<Result<{ stdout: string; stderr: string }, DeploymentError>> {
+): Promise<Result<SshCommandOutput, DeploymentError>> {
   return withConnection(target, undefined, (client) =>
     execute(client, privileged(script), onEvent),
   );

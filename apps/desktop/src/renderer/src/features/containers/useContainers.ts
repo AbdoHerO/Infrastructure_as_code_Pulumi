@@ -1,14 +1,37 @@
-import { useMutation, type UseMutationResult } from '@tanstack/react-query';
-import type { ContainerAction, ContainerStats, RemoteContainer } from '@cloudforge/core';
-import type { ContainerTargetRequest } from '@shared/ipc/contract.js';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+import type { ContainerAction, ContainerStats } from '@cloudforge/core';
+import type { ContainerTargetRequest, IpcResponse } from '@shared/ipc/contract.js';
 import { invoke } from '../../lib/ipc.js';
 
-export function useListContainers(): UseMutationResult<
-  RemoteContainer[],
-  Error,
-  ContainerTargetRequest
-> {
-  return useMutation({ mutationFn: (target) => invoke('containers:list', target) });
+const runtimeKey = (targetId: string): readonly unknown[] => ['runtime', targetId];
+
+/**
+ * The live runtime of a saved VPS target.
+ *
+ * A query rather than a mutation: it is a read, so it caches, refetches and can
+ * be invalidated by anything that changes the target.
+ */
+export function useRuntime(targetId: string): UseQueryResult<IpcResponse<'runtime:inspect'>> {
+  return useQuery({
+    queryKey: [...runtimeKey(targetId), 'inspect'],
+    queryFn: () => invoke('runtime:inspect', { targetId }),
+    enabled: Boolean(targetId),
+    refetchInterval: 15_000,
+  });
+}
+
+/** Refetch a target's runtime after something changed it. */
+export function useRefreshRuntime(targetId: string): () => Promise<void> {
+  const client = useQueryClient();
+  return async () => {
+    await client.invalidateQueries({ queryKey: runtimeKey(targetId) });
+  };
 }
 
 export function useContainerAction(): UseMutationResult<

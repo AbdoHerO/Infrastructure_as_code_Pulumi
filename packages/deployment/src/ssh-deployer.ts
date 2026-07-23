@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { Client, type ConnectConfig } from 'ssh2';
+import { Client } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
   DeployEventSink,
@@ -9,6 +8,7 @@ import type {
   DeploymentTarget,
   DeploymentOptions,
 } from '@cloudforge/core';
+import { inspectHostKeyFingerprint, sshConnectionConfig } from './ssh-transport.js';
 
 const CONNECT_TIMEOUT_MS = 20_000;
 const STEP_TIMEOUT_MS = 15 * 60_000;
@@ -82,25 +82,24 @@ function connect(
       connection.end();
       finish(err(new DeploymentError('Deployment cancelled')));
     };
-    const config: ConnectConfig = {
-      host: target.host,
-      port: target.port,
-      username: target.username,
-      readyTimeout: CONNECT_TIMEOUT_MS,
-      hostVerifier: (key: Buffer) =>
-        normalizeFingerprint(fingerprintHostKey(key)) ===
-        normalizeFingerprint(target.hostKeySha256),
-      ...(target.privateKey ? { privateKey: target.privateKey } : {}),
-      ...(target.passphrase ? { passphrase: target.passphrase } : {}),
-      ...(target.password ? { password: target.password } : {}),
-    };
     if (signal?.aborted) return onAbort();
     signal?.addEventListener('abort', onAbort, { once: true });
     connection.once('ready', () => finish(ok(undefined)));
     connection.once('error', (cause) =>
       finish(err(new DeploymentError('SSH connection or host-key verification failed', { cause }))),
     );
-    connection.connect(config);
+    try {
+      connection.connect(sshConnectionConfig(target, CONNECT_TIMEOUT_MS));
+    } catch (cause) {
+      // A target with no key and no password: report it rather than reject.
+      finish(
+        err(
+          cause instanceof DeploymentError
+            ? cause
+            : new DeploymentError('Invalid SSH target', { cause }),
+        ),
+      );
+    }
   });
 }
 
@@ -162,39 +161,5 @@ function exec(
 }
 
 function inspectHostKey(host: string, port: number): Promise<Result<string, DeploymentError>> {
-  return new Promise((resolve) => {
-    const connection = new Client();
-    let settled = false;
-    const finish = (result: Result<string, DeploymentError>): void => {
-      if (settled) return;
-      settled = true;
-      connection.end();
-      resolve(result);
-    };
-    connection.once('error', (cause) => {
-      if (!settled) finish(err(new DeploymentError('Failed to inspect SSH host key', { cause })));
-    });
-    connection.connect({
-      host,
-      port,
-      username: 'cloudforge-host-key-inspection',
-      readyTimeout: CONNECT_TIMEOUT_MS,
-      hostVerifier: (key: Buffer) => {
-        finish(ok(fingerprintHostKey(key)));
-        return false;
-      },
-    });
-  });
-}
-
-function fingerprintHostKey(key: Buffer): string {
-  const digest = createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
-  return `SHA256:${digest}`;
-}
-
-function normalizeFingerprint(value: string): string {
-  return value
-    .trim()
-    .replace(/^SHA256:/i, '')
-    .replace(/=+$/, '');
+  return inspectHostKeyFingerprint(host, port, CONNECT_TIMEOUT_MS);
 }

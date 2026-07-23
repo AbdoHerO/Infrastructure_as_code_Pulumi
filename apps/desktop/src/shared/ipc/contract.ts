@@ -44,6 +44,18 @@ import type {
   ProjectDto,
   Region,
   RemoteContainer,
+  RuntimeAdoption,
+  RuntimeApplyEvent,
+  RuntimeApplyOptions,
+  RuntimeApplyReport,
+  HostFirewallState,
+  RuntimeConnectivityReport,
+  RuntimeDriftReport,
+  RuntimeMode,
+  RuntimeObservation,
+  RuntimePlanView,
+  RuntimePreview,
+  VpsRuntimePlan,
   RevealedCredentialDto,
   SettingsPatch,
   Shape,
@@ -360,6 +372,83 @@ export interface IpcContract {
     response: void;
   };
 
+  'runtime:inspect': { request: { targetId: string }; response: RuntimeObservation };
+  'runtime:getPlan': { request: { targetId: string }; response: RuntimePlanView };
+  /**
+   * Saves the desired runtime. Writes to the database only: nothing on the VPS
+   * changes until an apply, which is a separate, previewed operation.
+   */
+  'runtime:savePlan': {
+    request: { targetId: string; plan: VpsRuntimePlan };
+    response: RuntimePlanView;
+  };
+  'runtime:validatePlan': { request: { plan: VpsRuntimePlan }; response: RuntimePlanView };
+  'runtime:setMode': {
+    request: { targetId: string; mode: RuntimeMode };
+    response: RuntimePlanView;
+  };
+  'runtime:drift': { request: { targetId: string }; response: RuntimeDriftReport };
+  /**
+   * Records ownership of a resource that already exists. Writes to the database
+   * only — nothing on the VPS is labelled, restarted or disconnected.
+   */
+  'runtime:adopt': {
+    request: {
+      targetId: string;
+      resourceKind: RuntimeAdoption['resourceKind'];
+      dockerName: string;
+    };
+    response: RuntimePlanView;
+  };
+  'runtime:release': {
+    request: {
+      targetId: string;
+      resourceKind: RuntimeAdoption['resourceKind'];
+      dockerName: string;
+    };
+    response: RuntimePlanView;
+  };
+  /**
+   * Reads the VPS firewall and reports whether the plan's ports can carry
+   * traffic. Read-only.
+   */
+  'runtime:connectivity': {
+    /**
+     * `providerRules` are the cloud security-list rules the Firewall page has
+     * already loaded via `firewall:get`. They are passed in rather than fetched
+     * here because reaching them needs a cloud credential the runtime service
+     * has no business holding. Omit them and every verdict is honestly
+     * `unknown` rather than a guess.
+     */
+    request: { targetId: string; providerRules?: readonly LiveFirewallRule[] };
+    response: RuntimeConnectivityReport;
+  };
+  /**
+   * Opens the ports the plan needs on the VPS firewall. Additive and idempotent:
+   * it never closes anything, so it cannot take away access that already works.
+   */
+  'runtime:openFirewall': { request: { targetId: string }; response: HostFirewallState };
+  /** Works out what an apply would do and mints a token authorising exactly that. */
+  'runtime:preview': {
+    request: { targetId: string; options?: RuntimeApplyOptions };
+    response: RuntimePreview;
+  };
+  /**
+   * The only channel in the runtime module that changes a VPS. Requires a
+   * matching preview token and an exact-name confirmation per destructive
+   * operation.
+   */
+  'runtime:apply': {
+    request: {
+      targetId: string;
+      streamId: string;
+      previewToken: string;
+      confirmations?: readonly string[];
+      options?: RuntimeApplyOptions;
+    };
+    response: RuntimeApplyReport;
+  };
+
   'terminal:open': {
     request: { targetId: string; sessionId: string; columns: number; rows: number };
     response: void;
@@ -560,6 +649,7 @@ export interface IpcEventContract {
   'deploy:log': { streamId: string; event: DeployEvent };
   'ansible:log': { streamId: string; event: AnsibleEvent };
   'nginx:log': { streamId: string; event: NginxEvent };
+  'runtime:log': { streamId: string; event: RuntimeApplyEvent };
   'ssl:log': { streamId: string; event: CertificateEvent };
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
@@ -586,6 +676,7 @@ export const IPC_EVENT_CHANNELS = [
   'deploy:log',
   'ansible:log',
   'nginx:log',
+  'runtime:log',
   'ssl:log',
   'updates:state',
   'vpsTargets:changed',
@@ -623,7 +714,17 @@ export interface SaveVpsTargetRequest extends SshTargetRequest {
   readonly name: string;
 }
 
-export type ContainerTargetRequest = SshTargetRequest;
+/**
+ * Container operations name a saved target and nothing else.
+ *
+ * They previously carried the host and its pinned fingerprint from the
+ * renderer, which let the caller choose the identity to verify against and so
+ * defeated the pin. Every other SSH feature passes an id and lets the main
+ * process load the trusted values; Containers now does the same.
+ */
+export interface ContainerTargetRequest {
+  readonly targetId: string;
+}
 
 export type UpdateStatus =
   'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -755,6 +856,22 @@ export const IPC_CHANNELS = [
   'containers:logs',
   'containers:stats',
   'containers:deployCompose',
+  'runtime:inspect',
+  'runtime:getPlan',
+  'runtime:savePlan',
+  'runtime:validatePlan',
+  'runtime:setMode',
+  'runtime:drift',
+  'runtime:adopt',
+  'runtime:release',
+  'runtime:connectivity',
+  'runtime:openFirewall',
+  'runtime:preview',
+  'runtime:apply',
+  'terminal:open',
+  'terminal:write',
+  'terminal:resize',
+  'terminal:close',
   'ansible:profiles',
   'ansible:targets',
   'ansible:createTarget',
@@ -762,6 +879,7 @@ export const IPC_CHANNELS = [
   'ansible:deleteTarget',
   'ansible:inspectHostKey',
   'ansible:status',
+  'ansible:profileStates',
   'ansible:preflight',
   'ansible:repair',
   'ansible:bootstrap',
@@ -809,3 +927,29 @@ export const IPC_CHANNELS = [
   'logs:openFolder',
   'logs:report',
 ] as const satisfies readonly IpcChannel[];
+
+/**
+ * Compile-time exhaustiveness guards for the runtime channel lists.
+ *
+ * `satisfies readonly IpcChannel[]` proves that every *listed* name is a real
+ * channel; it does not prove that every *real* channel is listed. Nothing else
+ * enforces that, and nothing consumes `IPC_CHANNELS` at runtime, so entries can
+ * be — and were — silently omitted. These aliases fail to compile when a channel
+ * exists in a contract but is missing from its list. `IPC_EVENT_CHANNELS` is the
+ * preload's runtime `subscribe` allow-list, where an omission is not a type
+ * error but a "Unknown event channel" throw the first time the renderer
+ * subscribes; this guard turns that into a build failure.
+ */
+type AssertExhaustive<T extends true> = T;
+
+type Unlisted<Channel, Listed> = [Exclude<Channel, Listed>] extends [never]
+  ? true
+  : { readonly missingFromRuntimeList: Exclude<Channel, Listed> };
+
+export type IpcChannelsAreExhaustive = AssertExhaustive<
+  Unlisted<IpcChannel, (typeof IPC_CHANNELS)[number]>
+>;
+
+export type IpcEventChannelsAreExhaustive = AssertExhaustive<
+  Unlisted<IpcEventChannel, (typeof IPC_EVENT_CHANNELS)[number]>
+>;

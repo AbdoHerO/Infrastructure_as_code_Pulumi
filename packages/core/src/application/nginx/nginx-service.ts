@@ -4,6 +4,7 @@ import type {
   ManagedNginxSite,
   NginxBackup,
   NginxEventSink,
+  NginxHeader,
   NginxLiveStatus,
   NginxLocation,
   NginxLogQuery,
@@ -235,14 +236,187 @@ export function validateManagedNginxSite(
     ...site,
     domain: domain.value,
     upstreamHost,
+    // Derived, never trusted from the caller. `upstreamKind` answers "can a
+    // proxy that is not on a Docker network resolve this?", and the only
+    // evidence for that is the host itself. A stored value that disagreed with
+    // the host would be worse than no value: everything downstream would
+    // believe it.
+    upstreamKind: inferUpstreamKind(upstreamHost),
     clientMaxBodySize: site.clientMaxBodySize.toLowerCase(),
   });
+}
+
+/**
+ * Marker prefixing the encoded site model in every generated config file.
+ *
+ * A CloudForge-owned site file carries its own model, because there is no local
+ * table of sites — the file on the VPS is the record. Readers grep for this
+ * marker to tell an owned site from a hand-written one.
+ */
+export const NGINX_SITE_MARKER = '# cloudforge-site: ';
+
+/**
+ * Version stamped into the encoded model.
+ *
+ * The stamp sits alongside the site's own fields rather than wrapping them, so
+ * an older CloudForge reading a newer file still sees a plain site object and
+ * ignores the extra key. Files written before versioning have no stamp and are
+ * read as version 0.
+ */
+export const NGINX_SITE_SCHEMA_VERSION = 1;
+
+/** Fields the adapter derives per read; never part of the desired configuration. */
+type PersistedSite = Omit<ManagedNginxSite, 'managed' | 'configPath'>;
+
+function encodedSite(site: ManagedNginxSite): PersistedSite {
+  const { managed: _managed, configPath: _configPath, ...persisted } = site;
+  return persisted;
+}
+
+export function encodeManagedNginxSite(site: ManagedNginxSite): string {
+  const payload = { schemaVersion: NGINX_SITE_SCHEMA_VERSION, ...encodedSite(site) };
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+}
+
+function boolOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function intOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isInteger(value) ? value : fallback;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function headerList(value: unknown): NginxHeader[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const raw = item as Record<string, unknown>;
+    return typeof raw.name === 'string' && typeof raw.value === 'string'
+      ? [{ name: raw.name, value: raw.value }]
+      : [];
+  });
+}
+
+function locationList(value: unknown): NginxLocation[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.path !== 'string') return [];
+    return [
+      {
+        path: raw.path,
+        ...(typeof raw.upstreamHost === 'string' ? { upstreamHost: raw.upstreamHost } : {}),
+        ...(typeof raw.upstreamPort === 'number' ? { upstreamPort: raw.upstreamPort } : {}),
+        ...(Array.isArray(raw.extraDirectives)
+          ? { extraDirectives: stringList(raw.extraDirectives) }
+          : {}),
+      },
+    ];
+  });
+}
+
+/**
+ * Rebuild a site model from an encoded comment, defaulting every absent field.
+ *
+ * Defaulting on read — rather than trusting the parse — is what lets the model
+ * gain fields without invalidating sites already deployed on a VPS. An
+ * unreadable or domain-less payload yields null so the caller can fall back to
+ * treating the file as unmanaged rather than acting on a half-built model.
+ */
+export function decodeManagedNginxSite(encoded: string): ManagedNginxSite | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(encoded.trim(), 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const raw = parsed as Record<string, unknown>;
+  const domain = typeof raw.domain === 'string' ? raw.domain.trim().toLowerCase() : '';
+  if (!domain) return null;
+  return {
+    domain,
+    enabled: boolOr(raw.enabled, true),
+    upstreamKind: raw.upstreamKind === 'docker' ? 'docker' : 'host',
+    upstreamHost: stringOr(raw.upstreamHost, '127.0.0.1'),
+    upstreamPort: intOr(raw.upstreamPort, 80),
+    websocket: boolOr(raw.websocket, false),
+    ssl: boolOr(raw.ssl, false),
+    ...(typeof raw.certificatePath === 'string' ? { certificatePath: raw.certificatePath } : {}),
+    ...(typeof raw.acmeWebroot === 'string' ? { acmeWebroot: raw.acmeWebroot } : {}),
+    httpRedirect: boolOr(raw.httpRedirect, false),
+    headers: headerList(raw.headers),
+    extraDirectives: stringList(raw.extraDirectives),
+    locations: locationList(raw.locations),
+    proxyTimeoutSeconds: intOr(raw.proxyTimeoutSeconds, 60),
+    clientMaxBodySize: stringOr(raw.clientMaxBodySize, '10m'),
+    compression: boolOr(raw.compression, true),
+    cache: boolOr(raw.cache, false),
+    customSnippets: stringList(raw.customSnippets),
+    lastModified: typeof raw.lastModified === 'string' ? raw.lastModified : null,
+  };
+}
+
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/**
+ * Classify an upstream by its address.
+ *
+ * A Docker network alias resolves only inside a Docker network, so it is
+ * categorically different from a host address even though both are just a
+ * hostname here — nginx running on the host cannot resolve one at all, because
+ * the host's resolver does not answer Docker DNS. Loopback names, IP literals
+ * and dotted names address the host or the wider network; a bare single-label
+ * name is only meaningful as a container.
+ *
+ * The single source of this judgement, for both owned and hand-written sites.
+ * Owned sites used to carry a stored `upstreamKind` that nothing derived and
+ * nothing checked, so it could disagree with the host it described.
+ */
+export function inferUpstreamKind(upstreamHost: string): 'host' | 'docker' {
+  const host = upstreamHost.trim().toLowerCase();
+  if (!host || host === 'localhost' || host.startsWith('[')) return 'host';
+  if (IPV4.test(host) || host.includes(':')) return 'host';
+  return host.includes('.') ? 'host' : 'docker';
+}
+
+/**
+ * Everything a server block proxies: `/`, every additional route, compression
+ * and custom snippets.
+ *
+ * Shared by the HTTP and HTTPS blocks. They were previously written out
+ * separately and had drifted: the HTTPS copy omitted routes, headers, timeouts,
+ * compression and snippets, so enabling TLS silently dropped every additional
+ * route a site declared.
+ */
+function proxyBodyLines(site: ManagedNginxSite): string[] {
+  const lines: string[] = [];
+  appendMainProxyLocation(lines, site);
+  appendAdditionalLocations(lines, site);
+  if (site.compression)
+    lines.push(
+      '  gzip on;',
+      '  gzip_types text/plain text/css application/json application/javascript application/xml;',
+    );
+  for (const snippet of site.customSnippets) lines.push(`  ${terminate(snippet)}`);
+  return lines;
 }
 
 export function renderManagedNginxSite(site: ManagedNginxSite): string {
   const lines = [
     '# Managed by CloudForge. Manual changes may be replaced.',
-    `# cloudforge-site: ${Buffer.from(JSON.stringify(site), 'utf8').toString('base64')}`,
+    `${NGINX_SITE_MARKER}${encodeManagedNginxSite(site)}`,
     'server {',
     `  listen 80;`,
     `  server_name ${site.domain};`,
@@ -257,16 +431,7 @@ export function renderManagedNginxSite(site: ManagedNginxSite): string {
     );
   if (site.httpRedirect && site.ssl)
     lines.push('  location / {', '    return 301 https://$host$request_uri;', '  }');
-  else {
-    appendMainProxyLocation(lines, site);
-    appendAdditionalLocations(lines, site);
-    if (site.compression)
-      lines.push(
-        '  gzip on;',
-        '  gzip_types text/plain text/css application/json application/javascript application/xml;',
-      );
-    for (const snippet of site.customSnippets) lines.push(`  ${terminate(snippet)}`);
-  }
+  else lines.push(...proxyBodyLines(site));
   lines.push('}', '');
   if (site.ssl) {
     const certificatePath = site.certificatePath ?? `/etc/letsencrypt/live/${site.domain}`;
@@ -277,10 +442,10 @@ export function renderManagedNginxSite(site: ManagedNginxSite): string {
       `  ssl_certificate ${certificatePath}/fullchain.pem;`,
       `  ssl_certificate_key ${certificatePath}/privkey.pem;`,
       `  client_max_body_size ${site.clientMaxBodySize};`,
+      ...proxyBodyLines(site),
+      '}',
+      '',
     );
-    appendMainProxyLocation(lines, site);
-    appendAdditionalLocations(lines, site);
-    lines.push('}', '');
   }
   return lines.join('\n');
 }

@@ -5,6 +5,7 @@ Source of truth: `apps/desktop/src/shared/ipc/contract.ts` (`IpcContract` + `IPC
 1:1 against `registerHandler` calls across 20 handler modules in `apps/desktop/src/main/ipc/handlers/`.
 
 ## Mechanics
+
 - Preload exposes exactly `window.cloudforge = { invoke(channel, payload), subscribe(channel, listener) }`.
   `subscribe` rejects channels not in `IPC_EVENT_CHANNELS`; `invoke` is typed-constrained only.
 - `registerHandler` wraps every handler: success → `{ok:true, value}`; throw → `toAppError` →
@@ -18,24 +19,25 @@ Source of truth: `apps/desktop/src/shared/ipc/contract.ts` (`IpcContract` + `IPC
 
 ## Event channels (main → renderer)
 
-| Event | Payload | Emitted during |
-|---|---|---|
-| `engine:log` | `{streamId, event: EngineEvent}` | infra preview/apply/destroy/refresh |
-| `deploy:log` | `{streamId, event: DeployEvent}` | deploy:run |
-| `ansible:log` | `{streamId, event: AnsibleEvent}` | ansible repair/bootstrap/run/jenkinsAction/nginxUpsert/nginxRemove |
-| `nginx:log` | `{streamId, event: NginxEvent}` | nginx saveSite/removeSite/saveConfig/reload/restore |
-| `ssl:log` | `{streamId, event: CertificateEvent}` | ssl:issue |
-| `updates:state` | `UpdateState` | update lifecycle |
-| `vpsTargets:changed` | `{reason: created\|updated\|deleted\|synchronized}` | target CRUD, infra apply/destroy/outputs, reconcile |
-| `cloudflare:changed` | `{reason: zone-added\|zone-deleted\|dns-changed\|security-changed\|ssl-changed\|cache-changed\|synchronized}` | container auto-sync |
-| `terminal:data` | `{sessionId, data}` | PTY output |
-| `terminal:closed` | `{sessionId, reason?}` | PTY close |
+| Event                | Payload                                                                                                       | Emitted during                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `engine:log`         | `{streamId, event: EngineEvent}`                                                                              | infra preview/apply/destroy/refresh                                |
+| `deploy:log`         | `{streamId, event: DeployEvent}`                                                                              | deploy:run                                                         |
+| `ansible:log`        | `{streamId, event: AnsibleEvent}`                                                                             | ansible repair/bootstrap/run/jenkinsAction/nginxUpsert/nginxRemove |
+| `nginx:log`          | `{streamId, event: NginxEvent}`                                                                               | nginx saveSite/removeSite/saveConfig/reload/restore                |
+| `ssl:log`            | `{streamId, event: CertificateEvent}`                                                                         | ssl:issue                                                          |
+| `updates:state`      | `UpdateState`                                                                                                 | update lifecycle                                                   |
+| `vpsTargets:changed` | `{reason: created\|updated\|deleted\|synchronized}`                                                           | target CRUD, infra apply/destroy/outputs, reconcile                |
+| `cloudflare:changed` | `{reason: zone-added\|zone-deleted\|dns-changed\|security-changed\|ssl-changed\|cache-changed\|synchronized}` | container auto-sync                                                |
+| `terminal:data`      | `{sessionId, data}`                                                                                           | PTY output                                                         |
+| `terminal:closed`    | `{sessionId, reason?}`                                                                                        | PTY close                                                          |
 
 ## Invoke channels by module
 
 Format: `channel` — request → response (streams event / notes). Handler file in parentheses.
 
 ### app (app.handlers.ts)
+
 - `app:getInfo` — void → `AppInfo`
 - `app:ping` — string → string
 - `app:openExternal` — `{link: 'github'|'releases'}` → void (allowlisted)
@@ -44,6 +46,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `app:synchronize` — void → `{warnings: string[]}` (reconcile + Cloudflare sync)
 
 ### projects (projects.handlers.ts)
+
 - `projects:list` — void → `ProjectDto[]`
 - `projects:get` — `{id}` → `ProjectDto`
 - `projects:create` — `CreateProjectInput` → `ProjectDto` (audited)
@@ -52,6 +55,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `projects:count` — void → number
 
 ### credentials + security (credentials.handlers.ts)
+
 - `credentials:list` — void → `CredentialSummaryDto[]`
 - `credentials:create` — `CreateCredentialInput` → `CredentialSummaryDto`
 - `credentials:reveal` — `{id}` → `RevealedCredentialDto`
@@ -59,10 +63,12 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `security:status` — void → `{backedByOsKeychain}`
 
 ### settings (settings.handlers.ts)
+
 - `settings:get` — void → `AppSettings`
 - `settings:update` — `SettingsPatch` → `AppSettings` (side effects: pruneLogs, update-manager)
 
 ### providers + firewall (providers.handlers.ts)
+
 - `providers:test` — `{credentialId}` → `ConnectionTestResult`
 - `providers:listRegions` / `listShapes` / `listImages` / `listAvailabilityDomains` /
   `listInstances` / `listResources` — `{credentialId}` → typed lists
@@ -73,6 +79,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
   (optimistic concurrency; audited)
 
 ### infra (infra.handlers.ts) — streams `engine:log`
+
 - `infra:engineStatus` — void → `{available}`
 - `infra:getPlan` — `{projectId}` → `InfrastructurePlan | null`
 - `infra:savePlan` — `{projectId, plan}` → void
@@ -92,6 +99,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `infra:applyCustomTemplate` — `{projectId, templateId}` → `InfrastructurePlan`
 
 ### deploy (deploy.handlers.ts) — streams `deploy:log`
+
 - `deploy:templates` — void → `DeploymentTemplateSummary[]`
 - `deploy:list` — `{projectId}` → `DeploymentDto[]`
 - `deploy:count` — void → number
@@ -100,6 +108,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `deploy:cancel` — `{streamId}` → void
 
 ### containers (containers.handlers.ts) — `ContainerTargetRequest = {host, port, username, sshCredentialId, hostKeySha256}`
+
 - `containers:list` — target → `RemoteContainer[]`
 - `containers:action` — target + `{containerId, action}` → void
 - `containers:logs` — target + `{containerId, lines?}` → `{text}`
@@ -107,12 +116,14 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `containers:deployCompose` — target + `{projectName, composeYaml}` → void
 
 ### terminal (terminal.handlers.ts) — streams `terminal:data` / `terminal:closed`
+
 - `terminal:open` — `{targetId, sessionId, columns, rows}` → void
 - `terminal:write` — `{sessionId, data}` → void
 - `terminal:resize` — `{sessionId, columns, rows}` → void
 - `terminal:close` — `{sessionId}` → void
 
 ### ansible (ansible.handlers.ts) — streams `ansible:log`; `SshTargetRequest = {host, port, username, sshCredentialId, hostKeySha256}`
+
 - `ansible:profiles` — void → `AnsibleProfile[]`
 - `ansible:targets` — void → `VpsTargetDto[]`
 - `ansible:createTarget` / `updateTarget` — `SaveVpsTargetRequest(+id)` → `VpsTargetDto` (+`vpsTargets:changed`)
@@ -132,6 +143,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `ansible:nginxRemove` — target + `{domain, streamId}` → `AnsibleOutcome` ⚡ (audited)
 
 ### nginx (nginx.handlers.ts) — targetId-based; streams `nginx:log`
+
 - `nginx:inspect` — `{targetId}` → `NginxOverview`
 - `nginx:listSites` — `{targetId}` → `ManagedNginxSite[]`
 - `nginx:saveSite` — `{targetId, site, streamId}` → `NginxOperationOutcome` ⚡
@@ -146,12 +158,14 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `nginx:restore` — `{targetId, backupId, streamId}` → `NginxOperationOutcome` ⚡
 
 ### ssl (ssl.handlers.ts) — streams `ssl:log`
+
 - `ssl:verifyDns` — `{targetId, domain}` → propagation report (status/provider/proxied/sslMode/…)
 - `ssl:list` — `{targetId, certificateVolume}` → `CertificateDetails[]`
 - `ssl:issue` — `{targetId, config, streamId}` → `CertificateDetails` ⚡
 - `ssl:export` — `{targetId, certificateVolume, domain, format: pem|crt|key|zip}` → `{name, contentBase64}`
 
 ### cloudflare (cloudflare.handlers.ts)
+
 - `cloudflare:test` — `{credentialId}` → `ServiceConnection`
 - `cloudflare:dashboard` — `{credentialId, zoneId?}` → `CloudflareDashboard`
 - `cloudflare:zones` — `{credentialId}` → `CloudflareZone[]`
@@ -171,6 +185,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `cloudflare:platform` — `{credentialId, zoneId, accountId}` → `CloudflarePlatformSummary`
 
 ### jenkins (jenkins.handlers.ts)
+
 - `jenkins:list` — void → `JenkinsPipelineRecord[]`
 - `jenkins:test` — `{targetId, credentialId}` → `{version}`
 - `jenkins:save` — `SaveJenkinsPipelineInput` → `JenkinsPipelineRecord`
@@ -179,6 +194,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `jenkins:status` — `{id}` → `JenkinsJobStatus`
 
 ### sshKeys (ssh-keys.handlers.ts)
+
 - `sshKeys:list` — void → `SshKeySummary[]`
 - `sshKeys:generate` — `{name, algorithm, passphrase?}` → `SshKeySummary`
 - `sshKeys:import` — `{name, privateKey, passphrase?}` → `SshKeySummary`
@@ -188,6 +204,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `sshKeys:delete` — `{id}` → void
 
 ### activity / plugins / updates / logs / backup
+
 - `activity:list` — `{limit?}` → `ActivityDto[]` (default 200)
 - `plugins:list` / `plugins:active` / `plugins:install` / `plugins:setEnabled` / `plugins:uninstall`
 - `updates:state` / `updates:check` / `updates:download` / `updates:install`
@@ -196,6 +213,7 @@ Format: `channel` — request → response (streams event / notes). Handler file
 - `backup:create` — `{passphrase}` → `{path | null}` · `backup:restore` — `{passphrase}` → `{restored}`
 
 ## Automation Studio implications
+
 1. Every channel already has a typed request/response — node input/output schemas can be derived
    from the contract types directly.
 2. The engine should call **application services, not IPC channels** (same layer as handlers do),

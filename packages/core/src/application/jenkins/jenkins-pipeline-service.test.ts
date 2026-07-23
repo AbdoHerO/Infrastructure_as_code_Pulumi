@@ -498,6 +498,313 @@ describe('JenkinsPipelineService', () => {
     });
   });
 
+  describe('managed parameters', () => {
+    const targets = () =>
+      ({
+        get: vi
+          .fn()
+          .mockResolvedValue(ok({ id: 'target-1', name: 'Production VPS', host: '203.0.113.10' })),
+      }) as unknown as VpsTargetService;
+    const credentials = () =>
+      ({
+        getDecrypted: vi.fn().mockResolvedValue(
+          ok({
+            kind: 'jenkins',
+            data: { username: 'admin', apiToken: 'jenkins-secret', baseUrl: 'http://jenkins:8080' },
+          }),
+        ),
+      }) as unknown as CredentialService;
+    const domainAutomation = () =>
+      [
+        { ensure: vi.fn().mockResolvedValue(ok({ status: 'propagated' })) },
+        {
+          listSites: vi.fn().mockResolvedValue(ok([])),
+          saveSite: vi.fn().mockResolvedValue(ok({ summary: 'saved' })),
+        } as unknown as NginxService,
+      ] as const;
+
+    const stored = (over: Partial<JenkinsPipelineRecord> = {}): JenkinsPipelineRecord => ({
+      id: 'pipeline-1',
+      folder: 'cloudforge-production-vps-target-1',
+      ...input,
+      environmentCredentialId: null,
+      applicationRoutes: [],
+      githubCredentialId: null,
+      applicationPort: null,
+      cloudflareCredentialId: null,
+      cloudflareZoneId: null,
+      parameters: [],
+      lastStatus: 'configured',
+      createdAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:00.000Z',
+      ...over,
+    });
+
+    it('overrides a HOST_PORT the caller tried to set at trigger time', async () => {
+      // The Nginx site this service wrote proxies to 8000. A build honouring the
+      // caller's 9999 deploys the container where the proxy is not looking, and
+      // the domain answers 502 with nothing in the log to explain it.
+      const repository = new MemoryPipelines();
+      repository.records.set(
+        'pipeline-1',
+        stored({
+          configureDomain: true,
+          domain: 'app.example.com',
+          applicationPort: 8000,
+          parameters: [
+            {
+              name: 'HOST_PORT',
+              type: 'string',
+              defaultValue: '8000',
+              description: '',
+              choices: [],
+              managed: true,
+            },
+          ],
+        }),
+      );
+      const trigger = vi.fn().mockResolvedValue(ok(undefined));
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        { trigger } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+      );
+
+      await service.trigger('pipeline-1', { HOST_PORT: '9999' });
+
+      expect(trigger.mock.calls[0]?.[3]).toMatchObject({ HOST_PORT: '8000' });
+    });
+
+    it('still lets a caller set a parameter CloudForge does not own', async () => {
+      const repository = new MemoryPipelines();
+      repository.records.set(
+        'pipeline-1',
+        stored({
+          parameters: [
+            {
+              name: 'IMAGE_TAG',
+              type: 'string',
+              defaultValue: 'latest',
+              description: '',
+              choices: [],
+            },
+          ],
+        }),
+      );
+      const trigger = vi.fn().mockResolvedValue(ok(undefined));
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        { trigger } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+      );
+
+      await service.trigger('pipeline-1', { IMAGE_TAG: 'v2' });
+
+      expect(trigger.mock.calls[0]?.[3]).toMatchObject({ IMAGE_TAG: 'v2' });
+    });
+
+    it('withdraws the HOST_PORT it added once domain automation is switched off', async () => {
+      // Left behind, its default freezes at the old port and nothing maintains it.
+      const repository = new MemoryPipelines();
+      repository.records.set(
+        'pipeline-1',
+        stored({
+          configureDomain: true,
+          applicationPort: 8000,
+          parameters: [
+            {
+              name: 'HOST_PORT',
+              type: 'string',
+              defaultValue: '8000',
+              description: '',
+              choices: [],
+              managed: true,
+            },
+          ],
+        }),
+      );
+      const upsertJob = vi.fn().mockResolvedValue(ok(undefined));
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        {
+          ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+          upsertJob,
+        } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+      );
+
+      const result = await service.save({
+        ...input,
+        id: 'pipeline-1',
+        githubCredentialId: null,
+        parameters: [
+          {
+            name: 'HOST_PORT',
+            type: 'string',
+            defaultValue: '8000',
+            description: '',
+            choices: [],
+            managed: true,
+          },
+        ],
+        configureDomain: false,
+        applicationPort: null,
+      });
+
+      expect(result.ok && result.value.parameters).toEqual([]);
+    });
+
+    it('leaves a HOST_PORT it never added alone', async () => {
+      // Requirement 20: a resource CloudForge did not create is not its to
+      // withdraw. A pipeline that never had domain automation on may carry a
+      // HOST_PORT the user wrote by hand.
+      const repository = new MemoryPipelines();
+      repository.records.set('pipeline-1', stored({ configureDomain: false }));
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        {
+          ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+          upsertJob: vi.fn().mockResolvedValue(ok(undefined)),
+        } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+      );
+
+      const result = await service.save({
+        ...input,
+        id: 'pipeline-1',
+        githubCredentialId: null,
+        parameters: [
+          { name: 'HOST_PORT', type: 'string', defaultValue: '3000', description: '', choices: [] },
+        ],
+        configureDomain: false,
+        applicationPort: null,
+      });
+
+      expect(result.ok && result.value.parameters).toEqual([
+        expect.objectContaining({ name: 'HOST_PORT', defaultValue: '3000' }),
+      ]);
+    });
+
+    it('marks what it owns so the UI can refuse to edit it', async () => {
+      const repository = new MemoryPipelines();
+      const [managedDns, nginx] = domainAutomation();
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        {
+          ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+          upsertJob: vi.fn().mockResolvedValue(ok(undefined)),
+        } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+        managedDns,
+        nginx,
+      );
+
+      const result = await service.save({
+        ...input,
+        githubCredentialId: null,
+        parameters: [],
+        configureDomain: true,
+        domain: 'app.example.com',
+        applicationPort: 8000,
+      });
+
+      expect(result.ok && result.value.parameters[0]).toMatchObject({
+        name: 'HOST_PORT',
+        managed: true,
+      });
+    });
+
+    it('describes a parameter it owns in its own words', async () => {
+      // Keeping whatever text arrived lets a parameter this service owns
+      // describe itself as something else.
+      const repository = new MemoryPipelines();
+      const [managedDns, nginx] = domainAutomation();
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        {
+          ensureFolder: vi.fn().mockResolvedValue(ok(undefined)),
+          upsertJob: vi.fn().mockResolvedValue(ok(undefined)),
+        } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+        managedDns,
+        nginx,
+      );
+
+      const result = await service.save({
+        ...input,
+        githubCredentialId: null,
+        parameters: [
+          {
+            name: 'HOST_PORT',
+            type: 'string',
+            defaultValue: '1',
+            description: 'Anything you like',
+            choices: [],
+          },
+        ],
+        configureDomain: true,
+        domain: 'app.example.com',
+        applicationPort: 8000,
+      });
+
+      expect(result.ok && result.value.parameters[0]?.description).toContain(
+        'Managed by CloudForge',
+      );
+      expect(result.ok && result.value.parameters[0]?.defaultValue).toBe('8000');
+    });
+
+    it('restates the port over whatever Jenkins reports', async () => {
+      // Jenkins is not the record of intent. Reading a hand-edited value back as
+      // the plan is how the edit silently becomes the configuration, while the
+      // Nginx site keeps proxying to the original port.
+      const repository = new MemoryPipelines();
+      repository.records.set(
+        'pipeline-1',
+        stored({ configureDomain: true, domain: 'app.example.com', applicationPort: 8000 }),
+      );
+      const service = new JenkinsPipelineService(
+        repository,
+        targets(),
+        credentials(),
+        {
+          status: vi.fn().mockResolvedValue(
+            ok({
+              parameters: [
+                {
+                  name: 'HOST_PORT',
+                  type: 'string',
+                  defaultValue: '9999',
+                  description: 'edited in Jenkins',
+                  choices: [],
+                },
+              ],
+              builds: [],
+            }),
+          ),
+        } as unknown as JenkinsManager,
+        { recordSafe: vi.fn() } as unknown as ActivityService,
+      );
+
+      const result = await service.status('pipeline-1');
+
+      expect(result.ok && result.value.parameters).toEqual([
+        expect.objectContaining({ name: 'HOST_PORT', defaultValue: '8000', managed: true }),
+      ]);
+    });
+  });
+
   it('blocks a Jenkins build before queueing when the selected environment still has placeholders', async () => {
     const repository = new MemoryPipelines();
     const record: JenkinsPipelineRecord = {

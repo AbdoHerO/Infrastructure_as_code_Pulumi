@@ -14,11 +14,51 @@ export interface AnsibleVariableSpec {
   readonly description?: string;
 }
 
+/**
+ * A host port a profile's service listens on once it is installed.
+ *
+ * Declared rather than inferred. Before this, the fact that Jenkins listens on
+ * `service_port` lived only inside a playbook's shell and a probe's `docker
+ * inspect` line, so nothing outside the Ansible page could reason about it — the
+ * connectivity check could not tell a user why a Jenkins they had just installed
+ * was unreachable, because it did not know Jenkins existed.
+ */
+export interface AnsibleProfilePort {
+  readonly protocol: 'tcp' | 'udp';
+  /** The profile variable carrying the port, when the user chooses it. */
+  readonly variableKey?: string;
+  /** The port when it is fixed, and the fallback when the variable is absent. */
+  readonly defaultPort: number;
+  /** Why the port is needed, in words a person can act on. */
+  readonly reason: string;
+  /**
+   * `public` — the service is useless unless the internet can reach it.
+   * `host` — it listens, but nothing outside the VPS needs to reach it, so no
+   * firewall rule is wanted and its absence is not a fault.
+   */
+  readonly reach: 'public' | 'host';
+}
+
+/**
+ * What a profile adds to a VPS's runtime once it is installed.
+ *
+ * Optional, so a profile that has not declared this behaves exactly as it did
+ * before: it contributes nothing and nothing about it is assumed.
+ */
+export interface AnsibleProfileRuntimeRequirements {
+  readonly ports: readonly AnsibleProfilePort[];
+  /** This profile installs the container runtime a plan's services need. */
+  readonly providesContainerRuntime?: boolean;
+  /** This profile installs a reverse proxy that runs on the host, not in a container. */
+  readonly providesReverseProxy?: boolean;
+}
+
 export interface AnsibleProfile {
   readonly id: AnsibleProfileId;
   readonly name: string;
   readonly description: string;
   readonly variables: readonly AnsibleVariableSpec[];
+  readonly runtime?: AnsibleProfileRuntimeRequirements;
 }
 
 export interface AnsibleStatus {

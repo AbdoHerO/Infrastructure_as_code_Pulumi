@@ -14,6 +14,16 @@ export interface JenkinsParameter {
   readonly defaultValue: string;
   readonly description: string;
   readonly choices: readonly string[];
+  /**
+   * CloudForge owns this parameter's value; a person may read it but not set it.
+   *
+   * Derived on every read from the pipeline record, never persisted and never
+   * believed when it arrives from outside. Jenkins itself has no concept of a
+   * managed parameter, so a value read back from a job is only a report of what
+   * is currently there — treating it as authoritative is how an edit made in the
+   * Jenkins UI silently becomes CloudForge's intent.
+   */
+  readonly managed?: boolean;
 }
 
 export interface JenkinsJobDefinition {

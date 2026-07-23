@@ -17,6 +17,7 @@ import { ContainersPage } from '../features/containers/ContainersPage.js';
 import { AnsiblePage } from '../features/ansible/AnsiblePage.js';
 import { NginxPage } from '../features/nginx/NginxPage.js';
 import { FirewallPage } from '../features/firewall/FirewallPage.js';
+import { VpsRuntimePage } from '../features/vps-runtime/VpsRuntimePage.js';
 import { SslPage } from '../features/ssl/SslPage.js';
 import { DocumentationPage } from '../features/documentation/DocumentationPage.js';
 import { TerminalPage } from '../features/terminal/TerminalPage.js';
@@ -39,6 +40,7 @@ export const router = createHashRouter([
       { path: 'infrastructure', element: <InfrastructurePage /> },
       { path: 'deployments', element: <DeploymentsPage /> },
       { path: 'containers', element: <ContainersPage /> },
+      { path: 'vps-runtime', element: <VpsRuntimePage /> },
       { path: 'ansible', element: <AnsiblePage /> },
       { path: 'nginx', element: <NginxPage /> },
       { path: 'firewall', element: <FirewallPage /> },

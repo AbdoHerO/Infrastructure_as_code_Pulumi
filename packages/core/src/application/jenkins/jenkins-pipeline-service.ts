@@ -89,11 +89,6 @@ export class JenkinsPipelineService {
     if (!target.ok) return target;
     const connection = await this.connection(valid.value.targetId, valid.value.jenkinsCredentialId);
     if (!connection.ok) return connection;
-    let jobParameters = synchronizeApplicationPortParameter(
-      valid.value.parameters,
-      valid.value.configureDomain,
-      valid.value.applicationPort,
-    );
     const folder = `cloudforge-${slug(target.value.name)}-${target.value.id.slice(0, 8)}`;
     const existing = input.id
       ? await this.pipelines.get(input.id)
@@ -102,6 +97,14 @@ export class JenkinsPipelineService {
     if (input.id && !existing.value)
       return err(new NotFoundError('The Jenkins pipeline no longer exists'));
     const id = existing.value?.id ?? input.id ?? newUuid();
+    // After the existing record loads, because withdrawing HOST_PORT is only
+    // safe when CloudForge's own history says it put it there.
+    let jobParameters = synchronizeApplicationPortParameter(
+      valid.value.parameters,
+      valid.value.configureDomain,
+      valid.value.applicationPort,
+      existing.value?.configureDomain ?? false,
+    );
     const folderResult = await this.jenkins.ensureFolder(connection.value, folder);
     if (!folderResult.ok) return folderResult;
     let githubCredentialId: string | null = null;
@@ -290,11 +293,11 @@ export class JenkinsPipelineService {
       loaded.value.parameters.map((parameter) => [parameter.name, parameter.defaultValue]),
     );
     Object.assign(effectiveParameters, parameters);
-    if (loaded.value.environmentCredentialId) {
-      effectiveParameters.CLOUDFORGE_ENV_CREDENTIAL_ID = environmentJenkinsCredentialId(
-        loaded.value.id,
-      );
-    }
+    // Last, so a caller cannot win. HOST_PORT is the one that bites: the Nginx
+    // site this service wrote proxies to exactly that port, so a build run with
+    // a different one deploys the container where the proxy is not looking and
+    // the domain answers 502 with nothing in the log to explain it.
+    Object.assign(effectiveParameters, managedBuildParameters(loaded.value));
     const result = await this.jenkins.trigger(
       connection.value,
       loaded.value.folder,
@@ -450,24 +453,52 @@ export class JenkinsPipelineService {
   }
 }
 
+/**
+ * The parameters CloudForge sets rather than the person running the build.
+ *
+ * `HOST_PORT` is here because the Nginx site this service writes proxies to
+ * exactly that port. A build run with a different one deploys the container
+ * somewhere the reverse proxy is not looking, and the domain answers 502 — with
+ * nothing in the pipeline log to explain why.
+ */
+const MANAGED_PARAMETER_NAMES: ReadonlySet<string> = new Set([
+  'HOST_PORT',
+  'CLOUDFORGE_ENV_CREDENTIAL_ID',
+]);
+
+export function isManagedJenkinsParameter(name: string): boolean {
+  return MANAGED_PARAMETER_NAMES.has(name);
+}
+
+/**
+ * Keep `HOST_PORT` equal to the port the domain is actually proxied to.
+ *
+ * The description is CloudForge's, not the caller's. Keeping whatever text
+ * arrived would let a parameter this service owns describe itself as something
+ * else.
+ *
+ * When domain automation is switched off, the parameter is removed — but only if
+ * CloudForge put it there. `previouslyConfigured` is the evidence: this service
+ * adds `HOST_PORT` only while `configureDomain` is on, so a pipeline that had it
+ * on and now does not is one whose `HOST_PORT` is ours to withdraw. A pipeline
+ * that never had it on may still have a `HOST_PORT` the user wrote by hand, and
+ * that one is not ours to touch.
+ */
 function synchronizeApplicationPortParameter(
   parameters: readonly JenkinsParameter[],
   configureDomain: boolean,
   applicationPort: number | null,
+  previouslyConfigured: boolean,
 ): readonly JenkinsParameter[] {
-  if (!configureDomain || applicationPort === null) return parameters;
-  const defaultValue = String(applicationPort);
-  const existing = parameters.findIndex((parameter) => parameter.name === 'HOST_PORT');
-  const portParameter: JenkinsParameter = {
-    name: 'HOST_PORT',
-    type: 'string',
-    defaultValue,
-    description: 'Host port synchronized with the CloudForge application domain',
-    choices: [],
-  };
-  if (existing < 0) return [...parameters, portParameter];
-  return parameters.map((parameter, index) =>
-    index === existing ? { ...portParameter, description: parameter.description } : parameter,
+  if (!configureDomain || applicationPort === null)
+    return previouslyConfigured
+      ? parameters.filter((parameter) => parameter.name !== 'HOST_PORT')
+      : parameters;
+  return synchronizeStringParameter(
+    parameters,
+    'HOST_PORT',
+    String(applicationPort),
+    'Managed by CloudForge. Set the application port on the pipeline, not in Jenkins.',
   );
 }
 
@@ -610,23 +641,63 @@ function synchronizeStringParameter(
     defaultValue,
     description,
     choices: [],
+    managed: true,
   };
   return parameters.some((parameter) => parameter.name === name)
     ? parameters.map((parameter) => (parameter.name === name ? next : parameter))
     : [...parameters, next];
 }
 
+/**
+ * Restate what CloudForge owns over whatever Jenkins just reported.
+ *
+ * Jenkins is not the record of intent — the pipeline is. Someone with access to
+ * the Jenkins UI can edit any parameter on a job, and reading those values back
+ * as though they were the plan is how a hand-edit silently becomes the
+ * configuration. This runs on every status read so the answer describes what the
+ * pipeline means, and marks the drift as ours rather than hiding it.
+ *
+ * `HOST_PORT` is restated here as well as on save. It was not before, so a
+ * pipeline whose port had been changed in Jenkins reported the changed value
+ * indefinitely, while the Nginx site kept proxying to the original.
+ */
 function synchronizeManagedParameters(
   parameters: readonly JenkinsParameter[],
   pipeline: JenkinsPipelineRecord,
 ): readonly JenkinsParameter[] {
-  if (!pipeline.environmentCredentialId) return parameters;
-  return synchronizeStringParameter(
+  let next = synchronizeApplicationPortParameter(
     parameters,
-    'CLOUDFORGE_ENV_CREDENTIAL_ID',
-    environmentJenkinsCredentialId(pipeline.id),
-    'Managed by CloudForge. Select the encrypted deployment environment in CloudForge, not Jenkins.',
+    pipeline.configureDomain,
+    pipeline.applicationPort ?? null,
+    // A stored pipeline is the record of intent, so its own `configureDomain`
+    // is the authority on whether a HOST_PORT here would be CloudForge's.
+    pipeline.configureDomain,
   );
+  if (pipeline.environmentCredentialId) {
+    next = synchronizeStringParameter(
+      next,
+      'CLOUDFORGE_ENV_CREDENTIAL_ID',
+      environmentJenkinsCredentialId(pipeline.id),
+      'Managed by CloudForge. Select the encrypted deployment environment in CloudForge, not Jenkins.',
+    );
+  }
+  return next;
+}
+
+/**
+ * The values CloudForge insists on for a build, whatever the caller sent.
+ *
+ * Not a validation step — a correction. Rejecting instead would turn a caller
+ * that sends back the value it was shown into an error, and the run form does
+ * exactly that. What must never happen is the *other* case: a caller sending a
+ * different value and having it honoured.
+ */
+function managedBuildParameters(pipeline: JenkinsPipelineRecord): Record<string, string> {
+  const managed: Record<string, string> = {};
+  for (const parameter of synchronizeManagedParameters(pipeline.parameters, pipeline)) {
+    if (parameter.managed === true) managed[parameter.name] = parameter.defaultValue;
+  }
+  return managed;
 }
 
 function environmentJenkinsCredentialId(pipelineId: string): string {

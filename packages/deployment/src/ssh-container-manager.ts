@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { Client, type ConnectConfig } from 'ssh2';
+import type { Client } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
   ContainerAction,
@@ -8,10 +7,12 @@ import type {
   DeploymentTarget,
   RemoteContainer,
 } from '@cloudforge/core';
+import { base64, execCommand, withSshConnection } from './ssh-transport.js';
 
 const TIMEOUT_MS = 30_000;
 const ID_PATTERN = /^(?:[a-f0-9]{12,64}|[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127})$/;
 const PROJECT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+const LABEL = 'Docker';
 
 export class SshContainerManager implements ContainerManager {
   async list(target: DeploymentTarget): Promise<Result<RemoteContainer[], DeploymentError>> {
@@ -97,7 +98,7 @@ export class SshContainerManager implements ContainerManager {
       return err(new DeploymentError('Invalid Compose project name'));
     if (!composeYaml.trim() || composeYaml.length > 512_000)
       return err(new DeploymentError('Compose YAML must be 1–512000 characters'));
-    const encoded = Buffer.from(composeYaml, 'utf8').toString('base64');
+    const encoded = base64(composeYaml);
     const directory = `/opt/cloudforge/compose/${projectName}`;
     const command =
       `sudo mkdir -p ${directory} && ` +
@@ -108,78 +109,35 @@ export class SshContainerManager implements ContainerManager {
   }
 }
 
+/** Run one command on its own connection. */
 function run(
   target: DeploymentTarget,
   command: string,
   timeoutMs = TIMEOUT_MS,
 ): Promise<Result<string, DeploymentError>> {
-  return new Promise((resolve) => {
-    const client = new Client();
-    let settled = false;
-    const finish = (result: Result<string, DeploymentError>): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      client.end();
-      resolve(result);
-    };
-    const timer = setTimeout(
-      () => finish(err(new DeploymentError('Remote Docker command timed out'))),
-      timeoutMs,
-    );
-    const config: ConnectConfig = {
-      host: target.host,
-      port: target.port,
-      username: target.username,
-      readyTimeout: TIMEOUT_MS,
-      hostVerifier: (key: Buffer) =>
-        normalizeFingerprint(fingerprintHostKey(key)) ===
-        normalizeFingerprint(target.hostKeySha256),
-      ...(target.privateKey ? { privateKey: target.privateKey } : {}),
-      ...(target.passphrase ? { passphrase: target.passphrase } : {}),
-      ...(target.password ? { password: target.password } : {}),
-    };
-    client.once('error', (cause) =>
-      finish(err(new DeploymentError('Remote Docker SSH connection failed', { cause }))),
-    );
-    client.once('ready', () => {
-      client.exec(command, (error, stream) => {
-        if (error)
-          return finish(
-            err(new DeploymentError('Failed to execute remote Docker command', { cause: error })),
-          );
-        const stdout: Buffer[] = [];
-        const stderr: Buffer[] = [];
-        stream.on('data', (chunk: Buffer) => stdout.push(chunk));
-        stream.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-        stream.on('close', (code: number | null) => {
-          const errorText = Buffer.concat(stderr).toString('utf8').trim();
-          if (code !== 0) {
-            finish(
-              err(
-                new DeploymentError(
-                  errorText || `Remote Docker command failed with exit ${code ?? 'unknown'}`,
-                ),
-              ),
-            );
-          } else {
-            finish(ok(Buffer.concat(stdout).toString('utf8').trim()));
-          }
-        });
-      });
-    });
-    client.connect(config);
+  return runAll(target, [command], timeoutMs).then((result) =>
+    result.ok ? ok(result.value[0] ?? '') : result,
+  );
+}
+
+/**
+ * Run several commands over a single verified connection.
+ *
+ * Inventorying a runtime takes a handful of `docker` reads; one command per
+ * connection would pay a full SSH handshake for each. Commands run in order and
+ * stop at the first failure.
+ */
+export function runAll(
+  target: DeploymentTarget,
+  commands: readonly string[],
+  timeoutMs = TIMEOUT_MS,
+): Promise<Result<string[], DeploymentError>> {
+  return withSshConnection(target, { label: LABEL }, async (client: Client) => {
+    const output: string[] = [];
+    for (const command of commands) {
+      const result = await execCommand(client, command, { label: LABEL, timeoutMs });
+      output.push(result.stdout.trim());
+    }
+    return output;
   });
-}
-
-function fingerprintHostKey(key: Buffer): string {
-  const digest = createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
-  return `SHA256:${digest}`;
-}
-
-function normalizeFingerprint(value: string): string {
-  return value
-    .trim()
-    .replace(/^SHA256:/i, '')
-    .replace(/=+$/, '');
 }

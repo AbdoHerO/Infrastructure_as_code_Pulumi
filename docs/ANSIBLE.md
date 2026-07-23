@@ -23,6 +23,37 @@ renderer.
 - Open required cloud and host firewall ports separately. Installing a service
   does not silently change OCI security lists, UFW, firewalld, or DNS.
 
+## Profiles declare what they need
+
+Each profile declares the host ports its service listens on once installed —
+Jenkins on `service_port`, Nginx on 80, Docker on nothing at all because it
+listens on a Unix socket and is reached over SSH.
+
+That declaration is what lets the rest of the application see a natively
+installed service. Without it, the connectivity check knew every port a Compose
+service published and nothing about the Jenkins the same page had just
+installed, so it would report a target as fully reachable while its Jenkins was
+firewalled off. **VPS Runtime → Connectivity** now merges both.
+
+Nginx declares 80 but deliberately not 443: 443 is needed only when a route
+actually terminates TLS, which the runtime plan derives from its own routes.
+Declaring it in both places would be a second competing source of truth.
+
+A declaration states that a port _must_ be open for the service to work. Whether
+CloudForge opens it is the separate `manage_host_firewall` choice — which is why
+a port you firewalled by hand still shows up, correctly, as blocked.
+
+### One firewall implementation
+
+The playbook's firewall task and the profile probe share the shell in
+`host-firewall-script.ts` with the certificate manager and the runtime layer. The
+task understands ufw, firewalld, nftables and iptables, checks before it changes,
+and persists iptables rules that would otherwise vanish on reboot.
+
+nftables is detected before iptables: on a modern distro `iptables` is usually a
+compatibility shim over nftables, and driving the shim while reading the real
+table is how rules appear to vanish.
+
 ## Add a credential and connect
 
 Instances provisioned by CloudForge with a validated SSH key are synchronized
