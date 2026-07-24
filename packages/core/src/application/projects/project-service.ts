@@ -4,7 +4,7 @@ import {
   NotFoundError,
   ok,
   parseUuid,
-  type PersistenceError,
+  PersistenceError,
   type Result,
   type Uuid,
   ValidationError,
@@ -16,6 +16,7 @@ import {
   type UpdateProjectInput,
 } from '../../domain/project/project.js';
 import type { ProjectRepository } from '../ports/project-repository.js';
+import type { ProjectPasskeyHasher } from '../ports/project-passkey-hasher.js';
 import { type ProjectDto, toProjectDto } from '../dto/project-dto.js';
 
 /** Union of every failure the project use-cases can surface. */
@@ -27,11 +28,29 @@ export type ProjectServiceError = ValidationError | NotFoundError | PersistenceE
  * transport DTOs and typed errors — never leaking domain objects or throwing.
  */
 export class ProjectService {
-  constructor(private readonly projects: ProjectRepository) {}
+  constructor(
+    private readonly projects: ProjectRepository,
+    private readonly passkeys?: ProjectPasskeyHasher,
+  ) {}
 
   async create(input: CreateProjectInput): Promise<Result<ProjectDto, ProjectServiceError>> {
     const created = Project.create(input);
     if (!created.ok) return created;
+    if (input.passkey !== undefined && input.passkey.length > 0) {
+      if (input.passkey.length < 8) {
+        return err(new ValidationError('Project passkey must contain at least 8 characters'));
+      }
+      if (!this.passkeys) {
+        return err(new ValidationError('Project passkey support is unavailable'));
+      }
+      const digest = await this.passkeys.hash(input.passkey);
+      if (!digest.ok) {
+        return err(
+          new PersistenceError('Failed to protect project passkey', { cause: digest.error }),
+        );
+      }
+      created.value.setPasskey(digest.value);
+    }
 
     const saved = await this.projects.save(created.value);
     if (!saved.ok) return saved;

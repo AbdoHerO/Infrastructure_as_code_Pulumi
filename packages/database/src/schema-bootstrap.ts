@@ -68,6 +68,21 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
     "SELECT name FROM sqlite_master WHERE type='table' AND name='VpsTarget'",
   );
   let migrated = false;
+  const projectColumns = await db.$queryRawUnsafe<ColumnRow[]>('PRAGMA table_info("Project")');
+  const projectAdditions: readonly [string, string][] = [
+    ['icon', `TEXT NOT NULL DEFAULT ''`],
+    ['color', `TEXT NOT NULL DEFAULT ''`],
+    ['passkeyHash', 'TEXT'],
+    ['passkeySalt', 'TEXT'],
+    ['passkeyVersion', 'INTEGER NOT NULL DEFAULT 1'],
+    ['lastOpenedAt', 'DATETIME'],
+  ];
+  for (const [name, definition] of projectAdditions) {
+    if (!projectColumns.some((column) => column.name === name)) {
+      await db.$executeRawUnsafe(`ALTER TABLE "Project" ADD COLUMN "${name}" ${definition}`);
+      migrated = true;
+    }
+  }
   const jenkinsTables = await db.$queryRawUnsafe<TableRow[]>(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='JenkinsPipeline'",
   );
@@ -191,6 +206,12 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
         "tags" TEXT NOT NULL DEFAULT '[]',
         "variables" TEXT NOT NULL DEFAULT '{}',
         "notes" TEXT NOT NULL DEFAULT '',
+        "icon" TEXT NOT NULL DEFAULT '',
+        "color" TEXT NOT NULL DEFAULT '',
+        "passkeyHash" TEXT,
+        "passkeySalt" TEXT,
+        "passkeyVersion" INTEGER NOT NULL DEFAULT 1,
+        "lastOpenedAt" DATETIME,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL,
         CONSTRAINT "Project_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE
@@ -201,11 +222,13 @@ export async function migrateSchema(db: Db, hooks: MigrateSchemaHooks = {}): Pro
     await db.$executeRawUnsafe(
       `INSERT INTO "Project_new" (
         "id","name","description","environment","region","providerId",
-        "templateId","status","tags","variables","notes","createdAt","updatedAt"
+        "templateId","status","tags","variables","notes","icon","color",
+        "passkeyHash","passkeySalt","passkeyVersion","lastOpenedAt","createdAt","updatedAt"
       ) SELECT
         "id","name","description","environment","region",
         CASE WHEN "providerId" IN (SELECT "id" FROM "Credential") THEN "providerId" ELSE NULL END,
-        "templateId","status","tags","variables","notes","createdAt","updatedAt"
+        "templateId","status","tags","variables","notes","icon","color",
+        "passkeyHash","passkeySalt","passkeyVersion","lastOpenedAt","createdAt","updatedAt"
       FROM "Project"`,
     );
     await db.$executeRawUnsafe('DROP TABLE "Project"');

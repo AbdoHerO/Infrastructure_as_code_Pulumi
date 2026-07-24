@@ -21,7 +21,10 @@ import {
   ManagedVpsTargetSyncService,
   PluginService,
   ProjectConfigurationService,
+  InMemoryProjectContext,
   ProjectService,
+  ProjectSessionService,
+  type ProjectContext,
   type ProviderCredentialResolver,
   ProviderConnectionService,
   SettingsService,
@@ -65,6 +68,7 @@ import {
   PrismaJenkinsPipelineRepository,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
+import { NodeProjectPasskeyHasher } from './security/project-passkey-hasher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs } from './logging/logger.js';
 import { projectStackReference } from './infra/stack-reference.js';
@@ -81,6 +85,8 @@ import {
  */
 export interface AppContainer {
   readonly projectService: ProjectService;
+  readonly projectContext: ProjectContext;
+  readonly projectSessionService: ProjectSessionService;
   readonly projectConfigurationService: ProjectConfigurationService;
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
@@ -143,7 +149,10 @@ export async function initContainer(): Promise<AppContainer> {
     `Secret encryption ready (${cipher.backedByOsKeychain ? 'OS keychain' : 'local key'})`,
   );
 
-  const projectService = new ProjectService(new PrismaProjectRepository(db));
+  const projectRepository = new PrismaProjectRepository(db);
+  const projectContext = new InMemoryProjectContext();
+  const projectPasskeys = new NodeProjectPasskeyHasher();
+  const projectService = new ProjectService(projectRepository, projectPasskeys);
   const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
   const settingsService = new SettingsService(new PrismaSettingsRepository(db));
   const appSettings = unwrap(await settingsService.get());
@@ -289,6 +298,18 @@ export async function initContainer(): Promise<AppContainer> {
     remoteTargetResolver,
     new NodeSshTerminalManager(),
     activityService,
+  );
+  const projectSessionService = new ProjectSessionService(
+    projectRepository,
+    projectPasskeys,
+    projectContext,
+    {
+      beforeDeactivate: () => {
+        sshTerminalService.closeAll();
+        return Promise.resolve();
+      },
+      afterActivate: () => Promise.resolve(),
+    },
   );
   const domainResolver: DomainResolver = {
     async resolve(domain) {
@@ -438,6 +459,8 @@ export async function initContainer(): Promise<AppContainer> {
 
   container = {
     projectService,
+    projectContext,
+    projectSessionService,
     projectConfigurationService,
     credentialService,
     settingsService,

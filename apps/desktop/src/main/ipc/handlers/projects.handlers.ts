@@ -13,6 +13,22 @@ export function registerProjectHandlers(): void {
     orThrow(await getContainer().projectService.count()),
   );
 
+  registerHandler('projects:session', async () =>
+    orThrow(await getContainer().projectSessionService.current()),
+  );
+
+  registerHandler('projects:unlock', async ({ id, passkey }) =>
+    orThrow(await getContainer().projectSessionService.unlock(id, passkey)),
+  );
+
+  registerHandler('projects:lock', async () =>
+    orThrow(await getContainer().projectSessionService.lock()),
+  );
+
+  registerHandler('projects:changePasskey', async ({ currentPasskey, newPasskey }) =>
+    orThrow(await getContainer().projectSessionService.changePasskey(currentPasskey, newPasskey)),
+  );
+
   registerHandler('projects:get', async ({ id }) =>
     orThrow(await getContainer().projectService.get(id)),
   );

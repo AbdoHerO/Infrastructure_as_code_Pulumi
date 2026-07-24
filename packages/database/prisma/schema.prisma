@@ -25,6 +25,12 @@ model Project {
   tags        String   @default("[]")
   variables   String   @default("{}")
   notes       String   @default("")
+  icon        String   @default("")
+  color       String   @default("")
+  passkeyHash String?
+  passkeySalt String?
+  passkeyVersion Int   @default(1)
+  lastOpenedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

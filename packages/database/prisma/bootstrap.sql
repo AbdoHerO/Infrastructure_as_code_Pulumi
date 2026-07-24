@@ -11,6 +11,12 @@ CREATE TABLE "Project" (
     "tags" TEXT NOT NULL DEFAULT '[]',
     "variables" TEXT NOT NULL DEFAULT '{}',
     "notes" TEXT NOT NULL DEFAULT '',
+    "icon" TEXT NOT NULL DEFAULT '',
+    "color" TEXT NOT NULL DEFAULT '',
+    "passkeyHash" TEXT,
+    "passkeySalt" TEXT,
+    "passkeyVersion" INTEGER NOT NULL DEFAULT 1,
+    "lastOpenedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Project_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "Credential" ("id") ON DELETE SET NULL ON UPDATE CASCADE

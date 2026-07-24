@@ -42,6 +42,7 @@ import type {
   PluginManifest,
   PreviewResult,
   ProjectDto,
+  ProjectSessionDto,
   Region,
   RemoteContainer,
   RuntimeAdoption,
@@ -112,6 +113,16 @@ export interface IpcContract {
   };
   'projects:delete': { request: { id: string }; response: void };
   'projects:count': { request: void; response: number };
+  'projects:session': { request: void; response: ProjectSessionDto | null };
+  'projects:unlock': {
+    request: { id: string; passkey: string };
+    response: ProjectSessionDto;
+  };
+  'projects:lock': { request: void; response: void };
+  'projects:changePasskey': {
+    request: { currentPasskey: string; newPasskey: string };
+    response: void;
+  };
 
   'credentials:list': { request: void; response: CredentialSummaryDto[] };
   'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
@@ -775,6 +786,10 @@ export const IPC_CHANNELS = [
   'projects:update',
   'projects:delete',
   'projects:count',
+  'projects:session',
+  'projects:unlock',
+  'projects:lock',
+  'projects:changePasskey',
   'credentials:list',
   'credentials:create',
   'credentials:update',

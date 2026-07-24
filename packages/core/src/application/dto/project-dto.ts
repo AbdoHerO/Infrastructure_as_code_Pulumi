@@ -18,6 +18,10 @@ export interface ProjectDto {
   readonly tags: readonly string[];
   readonly variables: Readonly<Record<string, string>>;
   readonly notes: string;
+  readonly icon: string;
+  readonly color: string;
+  readonly hasPasskey: boolean;
+  readonly lastOpenedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -37,6 +41,10 @@ export function toProjectDto(project: Project): ProjectDto {
     tags: snapshot.tags,
     variables: snapshot.variables,
     notes: snapshot.notes,
+    icon: snapshot.icon,
+    color: snapshot.color,
+    hasPasskey: snapshot.passkeyHash !== null,
+    lastOpenedAt: snapshot.lastOpenedAt,
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
   };

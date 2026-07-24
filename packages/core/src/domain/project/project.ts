@@ -29,6 +29,12 @@ export interface ProjectProps {
   readonly tags: readonly string[];
   readonly variables: Readonly<Record<string, string>>;
   readonly notes: string;
+  readonly icon: string;
+  readonly color: string;
+  readonly passkeyHash: string | null;
+  readonly passkeySalt: string | null;
+  readonly passkeyVersion: number;
+  readonly lastOpenedAt: IsoDateString | null;
   readonly createdAt: IsoDateString;
   readonly updatedAt: IsoDateString;
 }
@@ -44,6 +50,10 @@ export interface CreateProjectInput {
   readonly tags?: readonly string[];
   readonly variables?: Readonly<Record<string, string>>;
   readonly notes?: string;
+  readonly icon?: string;
+  readonly color?: string;
+  /** Local unlock passkey. Consumed by the application service, never persisted raw. */
+  readonly passkey?: string;
 }
 
 /** Mutable attributes of an existing project. */
@@ -58,6 +68,14 @@ export interface UpdateProjectInput {
   readonly tags?: readonly string[];
   readonly variables?: Readonly<Record<string, string>>;
   readonly notes?: string;
+  readonly icon?: string;
+  readonly color?: string;
+}
+
+export interface ProjectPasskey {
+  readonly hash: string;
+  readonly salt: string;
+  readonly version: number;
 }
 
 const NAME_MAX = 100;
@@ -101,6 +119,12 @@ export class Project extends Entity<ProjectId> {
         tags: normalizeTags(input.tags ?? []),
         variables: { ...(input.variables ?? {}) },
         notes: input.notes?.trim() ?? '',
+        icon: normalizeIcon(input.icon),
+        color: normalizeColor(input.color),
+        passkeyHash: null,
+        passkeySalt: null,
+        passkeyVersion: 1,
+        lastOpenedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       }),
@@ -138,10 +162,29 @@ export class Project extends Entity<ProjectId> {
     if (input.tags !== undefined) next.tags = normalizeTags(input.tags);
     if (input.variables !== undefined) next.variables = { ...input.variables };
     if (input.notes !== undefined) next.notes = input.notes.trim();
+    if (input.icon !== undefined) next.icon = normalizeIcon(input.icon);
+    if (input.color !== undefined) next.color = normalizeColor(input.color);
 
     next.updatedAt = toIsoDateString(now);
     this.props = next;
     return ok(this);
+  }
+
+  /** Replace the local unlock credential. The raw passkey never enters the aggregate. */
+  setPasskey(passkey: ProjectPasskey, now: Date = new Date()): void {
+    this.props = {
+      ...this.props,
+      passkeyHash: passkey.hash,
+      passkeySalt: passkey.salt,
+      passkeyVersion: passkey.version,
+      updatedAt: toIsoDateString(now),
+    };
+  }
+
+  /** Record a successful workspace unlock. */
+  markOpened(now: Date = new Date()): void {
+    const timestamp = toIsoDateString(now);
+    this.props = { ...this.props, lastOpenedAt: timestamp, updatedAt: timestamp };
   }
 
   /** An immutable snapshot of the project's properties. */
@@ -186,4 +229,14 @@ function normalizeTags(tags: readonly string[]): readonly string[] {
     }
   }
   return result;
+}
+
+function normalizeIcon(icon: string | undefined): string {
+  return icon?.trim().slice(0, 64) ?? '';
+}
+
+function normalizeColor(color: string | undefined): string {
+  const value = color?.trim() ?? '';
+  if (value.length === 0) return '';
+  return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
 }

@@ -19,22 +19,22 @@ deployments already carry a required `projectId`.
 
 That is not a security or isolation boundary. Most other data is global:
 
-| Area | State before the migration | Isolation problem |
-| --- | --- | --- |
-| Credentials and secrets | `Credential` has no project owner. `Secret` uses an old string `scope`. | Any feature can resolve any credential id. |
-| Providers | Provider records and provider clients are process-global. | A project can accidentally use another project's account. |
-| SSH keys | `projectId` is nullable and deletion sets it to null. | Keys can become global orphan records. |
-| VPS targets | Only provisioned targets have `managedProjectId`; manually added targets are global. | Ansible, Nginx, SSL, runtime, containers, terminal, and Jenkins can select targets from other projects. |
-| Runtime plans | Persisted by target id in the global settings table. | The target id is the only effective boundary. |
-| Jenkins | Pipelines have no project owner and folder/name is globally unique. | Jobs, Git credentials, environment credentials, and domains can cross projects. |
-| Nginx, SSL, containers, firewall | Remote state is reached through a globally resolvable VPS target. | A caller-provided target id crosses the intended boundary. |
-| Cloudflare | Credentials, cached snapshots, defaults, and background sync are global. | Zones and DNS from different workspaces are mixed. |
-| Templates | All templates are global. | Custom templates cannot be private to one workspace. |
-| Settings and plugins | One global key/value namespace. | Provider defaults, SSL renewal, Cloudflare, deployment, and security preferences leak between projects. |
-| Activity and logs | Project ownership is nullable or absent. | History can mix projects and survive as unowned data. |
-| IPC | Handlers trust request payload ids; there is no active project session. | A compromised or stale renderer can request another project's record directly. |
-| Process lifecycle | Managers, timers, caches, terminal sessions, and background sync live for the full app process. | Switching a UI selection does not unload the previous project. |
-| Renderer | Each page independently selects or passes a project. | Pages can disagree about the current project. |
+| Area                             | State before the migration                                                                      | Isolation problem                                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Credentials and secrets          | `Credential` has no project owner. `Secret` uses an old string `scope`.                         | Any feature can resolve any credential id.                                                              |
+| Providers                        | Provider records and provider clients are process-global.                                       | A project can accidentally use another project's account.                                               |
+| SSH keys                         | `projectId` is nullable and deletion sets it to null.                                           | Keys can become global orphan records.                                                                  |
+| VPS targets                      | Only provisioned targets have `managedProjectId`; manually added targets are global.            | Ansible, Nginx, SSL, runtime, containers, terminal, and Jenkins can select targets from other projects. |
+| Runtime plans                    | Persisted by target id in the global settings table.                                            | The target id is the only effective boundary.                                                           |
+| Jenkins                          | Pipelines have no project owner and folder/name is globally unique.                             | Jobs, Git credentials, environment credentials, and domains can cross projects.                         |
+| Nginx, SSL, containers, firewall | Remote state is reached through a globally resolvable VPS target.                               | A caller-provided target id crosses the intended boundary.                                              |
+| Cloudflare                       | Credentials, cached snapshots, defaults, and background sync are global.                        | Zones and DNS from different workspaces are mixed.                                                      |
+| Templates                        | All templates are global.                                                                       | Custom templates cannot be private to one workspace.                                                    |
+| Settings and plugins             | One global key/value namespace.                                                                 | Provider defaults, SSL renewal, Cloudflare, deployment, and security preferences leak between projects. |
+| Activity and logs                | Project ownership is nullable or absent.                                                        | History can mix projects and survive as unowned data.                                                   |
+| IPC                              | Handlers trust request payload ids; there is no active project session.                         | A compromised or stale renderer can request another project's record directly.                          |
+| Process lifecycle                | Managers, timers, caches, terminal sessions, and background sync live for the full app process. | Switching a UI selection does not unload the previous project.                                          |
+| Renderer                         | Each page independently selects or passes a project.                                            | Pages can disagree about the current project.                                                           |
 
 The composition root creates one long-lived service graph. Credential
 resolution often starts from an explicitly supplied project id, while most
