@@ -49,11 +49,7 @@ export function registerHandler<C extends IpcChannel>(channel: C, handler: IpcHa
     try {
       const projectId = enforceProjectBoundary(channel, payload);
       if (projectId && !PROJECT_SESSION_TRANSITIONS.has(channel)) {
-        requestLease = projectOperations.begin(
-          `ipc:${channel}:${randomUUID()}`,
-          projectId,
-          false,
-        );
+        requestLease = projectOperations.begin(`ipc:${channel}:${randomUUID()}`, projectId, false);
       }
       const value = await handler(payload, event);
       log().debug({ event: 'ipc.ok', channel, ms: Date.now() - startedAt }, `IPC ${channel}`);

@@ -524,7 +524,8 @@ export async function initContainer(): Promise<AppContainer> {
   const synchronizeCloudflare = async (): Promise<{ warnings: readonly string[] }> => {
     const lease = projectContext.current();
     if (!lease) return { warnings: [] };
-    if (cloudflareSyncRunning) return { warnings: ['Cloudflare synchronization is already active'] };
+    if (cloudflareSyncRunning)
+      return { warnings: ['Cloudflare synchronization is already active'] };
     cloudflareSyncRunning = true;
     const operation = projectOperations.begin(
       `cloudflare-sync:${lease.sessionId}`,
@@ -551,7 +552,11 @@ export async function initContainer(): Promise<AppContainer> {
       const result = await synchronizeCloudflare();
       if (result.warnings.length > 0) {
         log().warn(
-          { event: 'cloudflare.sync.warning', projectId: lease.projectId, warnings: result.warnings },
+          {
+            event: 'cloudflare.sync.warning',
+            projectId: lease.projectId,
+            warnings: result.warnings,
+          },
           'Scheduled Cloudflare synchronization completed with warnings',
         );
       }

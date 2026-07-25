@@ -56,11 +56,9 @@ describe('ProjectDuplicationService', () => {
     );
     const recordSafe = vi.fn();
     const cloner: ProjectConfigurationCloner = { clone };
-    const service = new ProjectDuplicationService(
-      projects,
-      cloner,
-      { recordSafe } as unknown as ActivityService,
-    );
+    const service = new ProjectDuplicationService(projects, cloner, {
+      recordSafe,
+    } as unknown as ActivityService);
 
     const result = await service.duplicate(source.value.id, {
       name: 'Production Copy',

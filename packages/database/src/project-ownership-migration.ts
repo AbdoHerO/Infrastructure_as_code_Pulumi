@@ -253,20 +253,17 @@ async function createReferenceOwnershipGuards(db: Db): Promise<void> {
     {
       table: 'Project',
       operations: ['UPDATE'] as const,
-      when:
-        'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."providerId" AND "projectId" = NEW."id")',
+      when: 'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."providerId" AND "projectId" = NEW."id")',
     },
     {
       table: 'Credential',
       operations: ['INSERT', 'UPDATE'] as const,
-      when:
-        'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Provider" WHERE "id" = NEW."providerId" AND "projectId" = NEW."projectId")',
+      when: 'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Provider" WHERE "id" = NEW."providerId" AND "projectId" = NEW."projectId")',
     },
     {
       table: 'VpsTarget',
       operations: ['INSERT', 'UPDATE'] as const,
-      when:
-        'NEW."sshCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."sshCredentialId" AND "projectId" = NEW."projectId")',
+      when: 'NEW."sshCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."sshCredentialId" AND "projectId" = NEW."projectId")',
     },
     {
       table: 'JenkinsPipeline',
@@ -280,8 +277,7 @@ async function createReferenceOwnershipGuards(db: Db): Promise<void> {
     {
       table: 'LogEntry',
       operations: ['INSERT', 'UPDATE'] as const,
-      when:
-        'NEW."deploymentId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Deployment" WHERE "id" = NEW."deploymentId" AND "projectId" = NEW."projectId")',
+      when: 'NEW."deploymentId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Deployment" WHERE "id" = NEW."deploymentId" AND "projectId" = NEW."projectId")',
     },
   ] as const;
 

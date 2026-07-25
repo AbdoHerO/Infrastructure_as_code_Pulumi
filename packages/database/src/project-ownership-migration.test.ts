@@ -147,7 +147,7 @@ describe('project ownership database guards', () => {
             hostKeySha256: 'SHA256:test',
           },
         }),
-      // Prisma normalizes SQLite trigger aborts to its foreign-key error.
+        // Prisma normalizes SQLite trigger aborts to its foreign-key error.
       ).rejects.toThrow(/Foreign key constraint violated/);
     } finally {
       await db.$disconnect();

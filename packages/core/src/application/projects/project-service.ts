@@ -77,10 +77,9 @@ export class ProjectService {
   async listForPicker(): Promise<Result<ProjectPickerDto[], PersistenceError>> {
     const found = await this.projects.findAll();
     if (!found.ok) return found;
-    let summaries: Result<
-      ReadonlyMap<string, ProjectInfrastructureSummary>,
-      PersistenceError
-    > = ok(new Map<string, ProjectInfrastructureSummary>());
+    let summaries: Result<ReadonlyMap<string, ProjectInfrastructureSummary>, PersistenceError> = ok(
+      new Map<string, ProjectInfrastructureSummary>(),
+    );
     if (this.summaries) summaries = await this.summaries.readAll();
     if (!summaries.ok) return summaries;
     return ok(

@@ -80,7 +80,11 @@ export function registerBackupHandlers(): void {
         createdAt: new Date().toISOString(),
         version: app.getVersion(),
       };
-      await writeFile(join(destination, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+      await writeFile(
+        join(destination, 'manifest.json'),
+        JSON.stringify(manifest, null, 2),
+        'utf8',
+      );
       return { path: destination };
     } catch (cause) {
       if (destination) await rm(destination, { recursive: true, force: true });
@@ -122,7 +126,8 @@ export function registerBackupHandlers(): void {
         'The project name or environment changed after this backup. Restore is blocked to avoid writing a checkpoint under the wrong Pulumi stack identity.',
       );
     }
-    if (!existsSync(join(source, 'project.db'))) throw new Error('Project backup database is missing');
+    if (!existsSync(join(source, 'project.db')))
+      throw new Error('Project backup database is missing');
     const portableSecrets = await readPortableSecrets(source, passphrase);
 
     const operation = projectOperations.begin(
@@ -163,7 +168,11 @@ export function registerBackupHandlers(): void {
 
 async function readManifest(source: string): Promise<BackupManifest> {
   const parsed: unknown = JSON.parse(await readFile(join(source, 'manifest.json'), 'utf8'));
-  if (!parsed || typeof parsed !== 'object' || (parsed as { product?: unknown }).product !== 'CloudForge')
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    (parsed as { product?: unknown }).product !== 'CloudForge'
+  )
     throw new Error('The selected folder is not a CloudForge backup');
   const manifest = parsed as BackupManifest;
   if (![1, 2, 3].includes(manifest.format))
@@ -203,7 +212,15 @@ async function restoreProjectPulumiState(
 function projectStackPath(userData: string, stack: StackReference): string {
   assertSafeSegment(stack.project);
   assertSafeSegment(stack.stack);
-  return join(userData, 'pulumi', 'state', '.pulumi', 'stacks', stack.project, `${stack.stack}.json`);
+  return join(
+    userData,
+    'pulumi',
+    'state',
+    '.pulumi',
+    'stacks',
+    stack.project,
+    `${stack.stack}.json`,
+  );
 }
 
 async function copyProjectLog(
