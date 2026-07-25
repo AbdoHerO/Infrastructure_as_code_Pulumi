@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { toAppError, UnauthorizedError } from '@cloudforge/shared';
 import type { IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc/contract.js';
 import { getContainer } from '../container.js';
 import { log } from '../logging/logger.js';
+import { projectOperations, type ProjectOperationLease } from '../project-operation-registry.js';
 
 const WITHOUT_PROJECT_SESSION = new Set<IpcChannel>([
   'app:getInfo',
@@ -22,6 +24,10 @@ const WITHOUT_PROJECT_SESSION = new Set<IpcChannel>([
   'updates:install',
 ]);
 
+// These handlers deliberately close the active session and therefore cannot
+// hold the ordinary per-request lease that teardown waits on.
+const PROJECT_SESSION_TRANSITIONS = new Set<IpcChannel>(['projects:lock', 'projects:delete']);
+
 /** A strongly-typed handler for a single IPC channel. */
 export type IpcHandler<C extends IpcChannel> = (
   payload: IpcRequest<C>,
@@ -39,8 +45,16 @@ export type IpcHandler<C extends IpcChannel> = (
 export function registerHandler<C extends IpcChannel>(channel: C, handler: IpcHandler<C>): void {
   ipcMain.handle(channel, async (event, payload: IpcRequest<C>): Promise<IpcResult<unknown>> => {
     const startedAt = Date.now();
+    let requestLease: ProjectOperationLease | undefined;
     try {
-      enforceProjectBoundary(channel, payload);
+      const projectId = enforceProjectBoundary(channel, payload);
+      if (projectId && !PROJECT_SESSION_TRANSITIONS.has(channel)) {
+        requestLease = projectOperations.begin(
+          `ipc:${channel}:${randomUUID()}`,
+          projectId,
+          false,
+        );
+      }
       const value = await handler(payload, event);
       log().debug({ event: 'ipc.ok', channel, ms: Date.now() - startedAt }, `IPC ${channel}`);
       return { ok: true, value };
@@ -58,12 +72,14 @@ export function registerHandler<C extends IpcChannel>(channel: C, handler: IpcHa
         `IPC ${channel} failed`,
       );
       return { ok: false, error: appError.toJSON() };
+    } finally {
+      requestLease?.complete();
     }
   });
 }
 
-function enforceProjectBoundary(channel: IpcChannel, payload: unknown): void {
-  if (WITHOUT_PROJECT_SESSION.has(channel)) return;
+function enforceProjectBoundary(channel: IpcChannel, payload: unknown): string | null {
+  if (WITHOUT_PROJECT_SESSION.has(channel)) return null;
   const lease = getContainer().projectContext.requireActive();
   if (
     payload &&
@@ -74,4 +90,5 @@ function enforceProjectBoundary(channel: IpcChannel, payload: unknown): void {
   ) {
     throw new UnauthorizedError('The request belongs to another project');
   }
+  return lease.projectId;
 }

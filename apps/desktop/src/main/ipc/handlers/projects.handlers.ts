@@ -69,23 +69,34 @@ export function registerProjectHandlers(): void {
 
   registerHandler('projects:delete', async ({ id }) => {
     requireCurrentProject(id);
-    const project = orThrow(await getContainer().projectService.get(id));
-    const ref = projectStackReference(project);
-    const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
-    if (
-      stacks.some(
-        (managed) => managed.ref.project === ref.project && managed.ref.stack === ref.stack,
-      )
-    ) {
-      throw new ConflictError(
-        'This project still has managed cloud resources. Destroy its infrastructure first, then delete the project.',
-        { context: { project: ref.project, stack: ref.stack } },
-      );
-    }
-    orThrow(await getContainer().vpsTargetService.removeManagedProject(id));
-    orThrow(await getContainer().projectSessionService.lock());
-    orThrow(await getContainer().projectService.remove(id));
-    await removeProjectFiles(id, ref.project);
+    orThrow(
+      await getContainer().projectSessionService.deactivateAndRun(
+        async (lease) => {
+          if (lease.projectId !== id) throw new UnauthorizedError('Project session changed');
+          const project = orThrow(await getContainer().projectService.get(id));
+          const ref = projectStackReference(project);
+          const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
+          if (
+            stacks.some(
+              (managed) => managed.ref.project === ref.project && managed.ref.stack === ref.stack,
+            )
+          ) {
+            throw new ConflictError(
+              'This project still has managed cloud resources. Destroy its infrastructure first, then delete the project.',
+              { context: { project: ref.project, stack: ref.stack } },
+            );
+          }
+          return ref;
+        },
+        async (lease, ref) => {
+          if (lease.projectId !== id) throw new UnauthorizedError('Project session changed');
+          // Project-owned targets and runtime-plan settings cascade with the
+          // project row. Do not reactivate the context during deletion.
+          orThrow(await getContainer().projectService.remove(id));
+          await removeProjectFiles(id, ref.project);
+        },
+      ),
+    );
     emitEvent('vpsTargets:changed', { reason: 'deleted' });
   });
 }

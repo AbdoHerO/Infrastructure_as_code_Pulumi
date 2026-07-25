@@ -194,4 +194,57 @@ describe('ProjectSessionService', () => {
     expect(result.ok).toBe(false);
     expect(context.current()).toBeNull();
   });
+
+  it('serializes deletion cleanup with project switches and leaves the session locked', async () => {
+    const projects = new MemoryProjects();
+    const first = makeProject('First');
+    const second = makeProject('Second');
+    projects.values.set(first.id, first);
+    projects.values.set(second.id, second);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(first.id, '');
+    let releaseCleanup = (): void => undefined;
+    const cleanupBlocked = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+
+    const deleting = service.deactivateAndRun(
+      (lease) => {
+        expect(lease.projectId).toBe(first.id);
+        return Promise.resolve('prepared');
+      },
+      async (lease, prepared) => {
+        expect(lease.projectId).toBe(first.id);
+        expect(prepared).toBe('prepared');
+        await cleanupBlocked;
+        return 'deleted';
+      },
+    );
+    const switching = service.unlock(second.id, '');
+    await vi.waitFor(() => expect(context.current()).toBeNull());
+    expect(context.current()).toBeNull();
+    releaseCleanup();
+
+    expect(await deleting).toEqual({ ok: true, value: 'deleted' });
+    expect((await switching).ok).toBe(true);
+    expect(context.current()?.projectId).toBe(second.id);
+  });
+
+  it('keeps the project unlocked when deletion validation fails', async () => {
+    const projects = new MemoryProjects();
+    const project = makeProject('Protected');
+    projects.values.set(project.id, project);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(project.id, '');
+
+    const result = await service.deactivateAndRun(
+      () => Promise.reject(new Error('managed resources remain')),
+      () => Promise.resolve('never'),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(context.current()?.projectId).toBe(project.id);
+  });
 });

@@ -109,6 +109,33 @@ export class ProjectSessionService {
     });
   }
 
+  /**
+   * Close the active workspace and perform one deletion/cleanup transaction
+   * while all other session transitions remain serialized.
+   *
+   * The workspace stays locked if the callback fails. This is intentional:
+   * reopening is safer than exposing a half-deleted project.
+   */
+  async deactivateAndRun<TPrepared, TResult>(
+    prepare: (lease: ProjectSessionLease) => Promise<TPrepared>,
+    operation: (lease: ProjectSessionLease, prepared: TPrepared) => Promise<TResult>,
+  ): Promise<Result<TResult, PersistenceError | UnauthorizedError>> {
+    return this.exclusive(async () => {
+      const prior = this.context.current();
+      if (!prior) return err(new UnauthorizedError('Unlock a project to continue'));
+      try {
+        // Safety checks that require scoped repositories run while the
+        // workspace is still active. A failed check leaves the session open.
+        const prepared = await prepare(prior);
+        await this.lifecycle.beforeDeactivate(prior);
+        this.context.clear();
+        return ok(await operation(prior, prepared));
+      } catch (cause) {
+        return err(new PersistenceError('Failed to close and clean up project workspace', { cause }));
+      }
+    });
+  }
+
   async changePasskey(
     currentPasskey: string,
     newPasskey: string,
