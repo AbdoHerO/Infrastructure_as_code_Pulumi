@@ -160,11 +160,18 @@ corepack pnpm format:check
 corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
+corepack pnpm build
+corepack pnpm --filter @cloudforge/desktop package:dir
 ```
 
 Targeted suites cover passkey verification, session serialization, repository
 isolation, cross-project database triggers, legacy SQLite migration, backup
 boundaries, background task teardown and transient key cleanup.
+
+The release-candidate run completed with 766 tests passing. The production
+build succeeded, and the Windows unpacked-package verifier confirmed a closed
+449-package runtime dependency graph plus the packaged Prisma Windows query
+engine. No cloud, VPS or other remote resource was changed by these checks.
 
 Manual packaged-app smoke checks remain appropriate before publishing:
 

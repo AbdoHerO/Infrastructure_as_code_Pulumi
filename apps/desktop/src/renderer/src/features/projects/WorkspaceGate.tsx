@@ -268,7 +268,7 @@ function CreateWorkspace({
           <Field label="Project name">
             <Input
               value={form.name}
-              placeholder="HanoutPlus Production"
+              placeholder="Production Infrastructure"
               autoFocus
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
