@@ -134,12 +134,31 @@ describe('ProjectSessionService', () => {
 
     const switching = service.unlock(second.id, '');
     const locking = service.lock();
-    await vi.waitFor(() => expect(context.current()).toBeNull());
+    await vi.waitFor(() => expect(context.current()?.projectId).toBe(first.id));
     releaseClose?.();
 
     await switching;
     await locking;
     expect(context.current()).toBeNull();
+  });
+
+  it('keeps the current workspace active when teardown refuses a switch', async () => {
+    const projects = new MemoryProjects();
+    const first = makeProject('First');
+    const second = makeProject('Second');
+    projects.values.set(first.id, first);
+    projects.values.set(second.id, second);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context, {
+      beforeDeactivate: () => Promise.reject(new Error('operation still active')),
+      afterActivate: () => Promise.resolve(),
+    });
+    await service.unlock(first.id, '');
+
+    const switched = await service.unlock(second.id, '');
+
+    expect(switched.ok).toBe(false);
+    expect(context.current()?.projectId).toBe(first.id);
   });
 
   it('changes a passkey only after verifying the current one', async () => {

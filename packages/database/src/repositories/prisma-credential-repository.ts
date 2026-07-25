@@ -4,24 +4,33 @@ import type {
   CredentialKind,
   CredentialRecord,
   CredentialRepository,
+  ProjectContext,
 } from '@cloudforge/core';
 import type { Credential as PrismaCredential } from '@prisma/client';
 import type { Db } from '../client.js';
 
 /** Prisma/SQLite implementation of the {@link CredentialRepository} port. */
 export class PrismaCredentialRepository implements CredentialRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async findAll(): Promise<Result<CredentialRecord[], PersistenceError>> {
     return guard('list credentials', async () => {
-      const rows = await this.db.credential.findMany({ orderBy: { updatedAt: 'desc' } });
+      const rows = await this.db.credential.findMany({
+        where: { projectId: this.projectId() },
+        orderBy: { updatedAt: 'desc' },
+      });
       return rows.map(toRecord);
     });
   }
 
   async findById(id: CredentialId): Promise<Result<CredentialRecord | null, PersistenceError>> {
     return guard('load credential', async () => {
-      const row = await this.db.credential.findUnique({ where: { id } });
+      const row = await this.db.credential.findFirst({
+        where: { id, projectId: this.projectId() },
+      });
       return row ? toRecord(row) : null;
     });
   }
@@ -30,6 +39,7 @@ export class PrismaCredentialRepository implements CredentialRepository {
     return guard('save credential', async () => {
       const data = {
         id: record.id,
+        projectId: this.projectId(),
         kind: record.kind,
         name: record.name,
         providerId: record.providerId,
@@ -37,14 +47,22 @@ export class PrismaCredentialRepository implements CredentialRepository {
         createdAt: new Date(record.createdAt),
         updatedAt: new Date(record.updatedAt),
       };
-      await this.db.credential.upsert({ where: { id: record.id }, create: data, update: data });
+      const updated = await this.db.credential.updateMany({
+        where: { id: record.id, projectId: data.projectId },
+        data,
+      });
+      if (updated.count === 0) await this.db.credential.create({ data });
     });
   }
 
   async delete(id: CredentialId): Promise<Result<void, PersistenceError>> {
     return guard('delete credential', async () => {
-      await this.db.credential.deleteMany({ where: { id } });
+      await this.db.credential.deleteMany({ where: { id, projectId: this.projectId() } });
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

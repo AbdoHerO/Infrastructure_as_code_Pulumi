@@ -1,5 +1,5 @@
 import { ConflictError, err, ok, PersistenceError, type Result } from '@cloudforge/shared';
-import { type RuntimePlanStore, type VpsRuntimePlan } from '@cloudforge/core';
+import { type ProjectContext, type RuntimePlanStore, type VpsRuntimePlan } from '@cloudforge/core';
 import type { Db } from '../client.js';
 
 /**
@@ -16,7 +16,10 @@ import type { Db } from '../client.js';
  * silently turning a managed production target into an empty legacy plan.
  */
 export class PrismaRuntimePlanStore implements RuntimePlanStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   private key(targetId: string): string {
     return `runtime-plan:${targetId}`;
@@ -24,7 +27,10 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
 
   async load(targetId: string): Promise<Result<VpsRuntimePlan | null, PersistenceError>> {
     try {
-      const row = await this.db.setting.findUnique({ where: { key: this.key(targetId) } });
+      const projectId = this.projectId();
+      const row = await this.db.setting.findUnique({
+        where: { projectId_key: { projectId, key: this.key(targetId) } },
+      });
       if (!row) return ok(null);
       const parsed: unknown = JSON.parse(row.value);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -45,13 +51,16 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
   ): Promise<Result<void, PersistenceError | ConflictError>> {
     try {
       const key = this.key(targetId);
+      const projectId = this.projectId();
       const value = JSON.stringify(plan);
-      const current = await this.db.setting.findUnique({ where: { key } });
+      const current = await this.db.setting.findUnique({
+        where: { projectId_key: { projectId, key } },
+      });
       if (!current) {
         if (expectedVersion !== 0)
           return err(new ConflictError('Runtime plan changed before it could be saved'));
         try {
-          await this.db.setting.create({ data: { key, value } });
+          await this.db.setting.create({ data: { projectId, key, value } });
         } catch (cause) {
           if (isUniqueConstraint(cause))
             return err(new ConflictError('Runtime plan changed before it could be saved'));
@@ -69,7 +78,7 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
       // longer matches and this writer receives a conflict instead of erasing
       // the newer topology.
       const updated = await this.db.setting.updateMany({
-        where: { key, value: current.value },
+        where: { projectId, key, value: current.value },
         data: { value },
       });
       if (updated.count !== 1)
@@ -84,11 +93,17 @@ export class PrismaRuntimePlanStore implements RuntimePlanStore {
     try {
       // `deleteMany` rather than `delete`: removing a plan that was never saved
       // is a no-op, not an error.
-      await this.db.setting.deleteMany({ where: { key: this.key(targetId) } });
+      await this.db.setting.deleteMany({
+        where: { projectId: this.projectId(), key: this.key(targetId) },
+      });
       return ok(undefined);
     } catch (cause) {
       return err(new PersistenceError('Failed to delete runtime plan', { cause }));
     }
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

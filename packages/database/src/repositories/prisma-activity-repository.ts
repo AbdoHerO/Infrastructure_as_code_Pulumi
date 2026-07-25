@@ -1,18 +1,21 @@
 import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
-import type { ActivityRecord, ActivityRepository } from '@cloudforge/core';
+import type { ActivityRecord, ActivityRepository, ProjectContext } from '@cloudforge/core';
 import type { Activity as PrismaActivity } from '@prisma/client';
 import type { Db } from '../client.js';
 
 /** Prisma/SQLite implementation of the {@link ActivityRepository} port. */
 export class PrismaActivityRepository implements ActivityRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async create(record: ActivityRecord): Promise<Result<void, PersistenceError>> {
     return guard('record activity', async () => {
       await this.db.activity.create({
         data: {
           id: record.id,
-          projectId: record.projectId,
+          projectId: this.projectId(),
           type: record.type,
           message: record.message,
           metadata: record.metadata,
@@ -25,11 +28,16 @@ export class PrismaActivityRepository implements ActivityRepository {
   async list(limit: number): Promise<Result<ActivityRecord[], PersistenceError>> {
     return guard('list activity', async () => {
       const rows = await this.db.activity.findMany({
+        where: { projectId: this.projectId() },
         orderBy: { createdAt: 'desc' },
         take: Math.max(1, Math.min(limit, 1000)),
       });
       return rows.map(toRecord);
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

@@ -4,8 +4,7 @@ import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 import { resolveSshTarget } from './ssh-target.js';
-
-const activeDeployments = new Map<string, AbortController>();
+import { projectOperations } from '../../project-operation-registry.js';
 
 /** Register the Deployments module IPC handlers. */
 export function registerDeployHandlers(): void {
@@ -24,13 +23,12 @@ export function registerDeployHandlers(): void {
   }));
 
   registerHandler('deploy:cancel', ({ streamId }) => {
-    activeDeployments.get(streamId)?.abort();
+    projectOperations.cancel(`deploy:${streamId}`);
   });
 
   registerHandler('deploy:run', async (req) => {
-    if (activeDeployments.has(req.streamId)) throw new Error('Deployment stream is already active');
-    const controller = new AbortController();
-    activeDeployments.set(req.streamId, controller);
+    const projectId = getContainer().projectContext.requireActive().projectId;
+    const lease = projectOperations.begin(`deploy:${req.streamId}`, projectId, true);
     // Resolve the SSH private key from the encrypted credential (never over IPC).
     const target = await resolveSshTarget(req);
     const context: DeploymentContext = {
@@ -43,7 +41,7 @@ export function registerDeployHandlers(): void {
         await getContainer().deploymentService.run(
           { projectId: req.projectId, templateId: req.templateId, target, context },
           (event) => emitEvent('deploy:log', { streamId: req.streamId, event }),
-          { signal: controller.signal },
+          { signal: lease.signal as AbortSignal },
         ),
       );
       getContainer().activityService.recordSafe({
@@ -53,7 +51,7 @@ export function registerDeployHandlers(): void {
       });
       return dto;
     } finally {
-      activeDeployments.delete(req.streamId);
+      lease.complete();
     }
   });
 }

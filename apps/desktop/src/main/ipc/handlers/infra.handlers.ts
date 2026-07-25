@@ -1,9 +1,11 @@
 import type { EngineEvent, StackReference } from '@cloudforge/core';
+import { UnauthorizedError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
+import { projectOperations } from '../../project-operation-registry.js';
 
 /** Derive a stable Pulumi stack reference from a project. */
 async function stackRef(projectId: string): Promise<StackReference> {
@@ -37,19 +39,21 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:preview', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    return orThrow(
-      await getContainer().infrastructureService.preview(ref, projectId, sink(streamId)),
+    return providerOperation('preview', projectId, streamId, async () =>
+      orThrow(await getContainer().infrastructureService.preview(ref, projectId, sink(streamId))),
     );
   });
 
   registerHandler('infra:apply', async ({ projectId, streamId, previewToken }) => {
     const ref = await stackRef(projectId);
-    const result = orThrow(
-      await getContainer().infrastructureService.apply(
-        ref,
-        projectId,
-        previewToken,
-        sink(streamId),
+    const result = await providerOperation('apply', projectId, streamId, async () =>
+      orThrow(
+        await getContainer().infrastructureService.apply(
+          ref,
+          projectId,
+          previewToken,
+          sink(streamId),
+        ),
       ),
     );
     getContainer().activityService.recordSafe({
@@ -63,7 +67,9 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:destroy', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    orThrow(await getContainer().infrastructureService.destroy(ref, projectId, sink(streamId)));
+    await providerOperation('destroy', projectId, streamId, async () =>
+      orThrow(await getContainer().infrastructureService.destroy(ref, projectId, sink(streamId))),
+    );
     getContainer().activityService.recordSafe({
       type: 'infrastructure.destroyed',
       message: 'Destroyed infrastructure and removed its saved plan',
@@ -74,7 +80,9 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:refresh', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    orThrow(await getContainer().infrastructureService.refresh(ref, sink(streamId)));
+    await providerOperation('refresh', projectId, streamId, async () =>
+      orThrow(await getContainer().infrastructureService.refresh(ref, sink(streamId))),
+    );
     getContainer().activityService.recordSafe({
       type: 'infrastructure.refreshed',
       message: 'Refreshed infrastructure state and detected drift',
@@ -89,21 +97,28 @@ export function registerInfraHandlers(): void {
     return outputs;
   });
 
-  registerHandler('infra:managedStacks', async () =>
-    orThrow(await getContainer().infrastructureService.listManagedStacks()),
-  );
+  registerHandler('infra:managedStacks', async () => {
+    const active = getContainer().projectContext.requireActive();
+    const project = orThrow(await getContainer().projectService.get(active.projectId));
+    const expected = projectStackReference(project);
+    const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
+    return stacks.filter(
+      ({ ref }) => ref.project === expected.project && ref.stack === expected.stack,
+    );
+  });
 
   registerHandler('infra:destroyStack', async ({ ref, streamId }) => {
-    const projects = orThrow(await getContainer().projectService.list());
-    const owner = projects.find((project) => {
-      const projectRef = projectStackReference(project);
-      return projectRef.project === ref.project && projectRef.stack === ref.stack;
-    });
-    orThrow(await getContainer().infrastructureService.destroyManagedStack(ref, sink(streamId)));
-    if (owner) {
-      orThrow(await getContainer().vpsTargetService.removeManagedProject(owner.id));
-      emitEvent('vpsTargets:changed', { reason: 'deleted' });
+    const active = getContainer().projectContext.requireActive();
+    const owner = orThrow(await getContainer().projectService.get(active.projectId));
+    const expected = projectStackReference(owner);
+    if (expected.project !== ref.project || expected.stack !== ref.stack) {
+      throw new UnauthorizedError('The managed stack belongs to another project');
     }
+    await providerOperation('destroy-stack', owner.id, streamId, async () =>
+      orThrow(await getContainer().infrastructureService.destroyManagedStack(ref, sink(streamId))),
+    );
+    orThrow(await getContainer().vpsTargetService.removeManagedProject(owner.id));
+    emitEvent('vpsTargets:changed', { reason: 'deleted' });
     getContainer().activityService.recordSafe({
       type: 'infrastructure.destroyed',
       message: `Destroyed managed stack ${ref.project}/${ref.stack}`,
@@ -145,4 +160,18 @@ export function registerInfraHandlers(): void {
   registerHandler('infra:applyCustomTemplate', async ({ projectId, templateId }) =>
     orThrow(await getContainer().infrastructureService.applyCustomTemplate(projectId, templateId)),
   );
+}
+
+async function providerOperation<T>(
+  name: string,
+  projectId: string,
+  streamId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const lease = projectOperations.begin(`infra:${name}:${streamId}`, projectId, false);
+  try {
+    return await operation();
+  } finally {
+    lease.complete();
+  }
 }

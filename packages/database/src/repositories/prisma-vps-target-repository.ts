@@ -1,21 +1,34 @@
 import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
-import type { VpsTargetRecord, VpsTargetRepository, VpsTargetUpdate } from '@cloudforge/core';
+import type {
+  ProjectContext,
+  VpsTargetRecord,
+  VpsTargetRepository,
+  VpsTargetUpdate,
+} from '@cloudforge/core';
 import type { VpsTarget as PrismaVpsTarget } from '@prisma/client';
 import type { Db } from '../client.js';
 
 export class PrismaVpsTargetRepository implements VpsTargetRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async list(): Promise<Result<VpsTargetRecord[], PersistenceError>> {
     return guard('list VPS targets', async () => {
-      const rows = await this.db.vpsTarget.findMany({ orderBy: { updatedAt: 'desc' } });
+      const rows = await this.db.vpsTarget.findMany({
+        where: { projectId: this.projectId() },
+        orderBy: { updatedAt: 'desc' },
+      });
       return rows.map(toRecord);
     });
   }
 
   async get(id: string): Promise<Result<VpsTargetRecord | null, PersistenceError>> {
     return guard('load VPS target', async () => {
-      const row = await this.db.vpsTarget.findUnique({ where: { id } });
+      const row = await this.db.vpsTarget.findFirst({
+        where: { id, projectId: this.projectId() },
+      });
       return row ? toRecord(row) : null;
     });
   }
@@ -26,7 +39,11 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
   ): Promise<Result<VpsTargetRecord | null, PersistenceError>> {
     return guard('load managed VPS target', async () => {
       const row = await this.db.vpsTarget.findFirst({
-        where: { managedProjectId: projectId, managedResourceName: resourceName },
+        where: {
+          projectId: this.projectId(),
+          managedProjectId: projectId,
+          managedResourceName: resourceName,
+        },
       });
       return row ? toRecord(row) : null;
     });
@@ -37,6 +54,7 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
       await this.db.vpsTarget.create({
         data: {
           ...record,
+          projectId: this.projectId(),
           lastPreflightAt: record.lastPreflightAt ? new Date(record.lastPreflightAt) : null,
           createdAt: new Date(record.createdAt),
           updatedAt: new Date(record.updatedAt),
@@ -47,8 +65,8 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
 
   async update(id: string, patch: VpsTargetUpdate): Promise<Result<void, PersistenceError>> {
     return guard('update VPS target', async () => {
-      await this.db.vpsTarget.update({
-        where: { id },
+      await this.db.vpsTarget.updateMany({
+        where: { id, projectId: this.projectId() },
         data: {
           ...patch,
           ...(patch.lastPreflightAt !== undefined
@@ -61,7 +79,7 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
 
   async remove(id: string): Promise<Result<void, PersistenceError>> {
     return guard('delete VPS target', async () => {
-      await this.db.vpsTarget.delete({ where: { id } });
+      await this.db.vpsTarget.deleteMany({ where: { id, projectId: this.projectId() } });
     });
   }
 
@@ -71,14 +89,20 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
   ): Promise<Result<void, PersistenceError>> {
     return guard('delete managed VPS target', async () => {
       await this.db.vpsTarget.deleteMany({
-        where: { managedProjectId: projectId, managedResourceName: resourceName },
+        where: {
+          projectId: this.projectId(),
+          managedProjectId: projectId,
+          managedResourceName: resourceName,
+        },
       });
     });
   }
 
   async removeManagedByProject(projectId: string): Promise<Result<void, PersistenceError>> {
     return guard('delete managed VPS targets', async () => {
-      await this.db.vpsTarget.deleteMany({ where: { managedProjectId: projectId } });
+      await this.db.vpsTarget.deleteMany({
+        where: { projectId: this.projectId(), managedProjectId: projectId },
+      });
     });
   }
 
@@ -89,6 +113,7 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
     return guard('delete stale managed VPS targets', async () => {
       await this.db.vpsTarget.deleteMany({
         where: {
+          projectId: this.projectId(),
           managedProjectId: projectId,
           ...(resourceNames.length > 0
             ? { managedResourceName: { notIn: [...resourceNames] } }
@@ -104,11 +129,16 @@ export class PrismaVpsTargetRepository implements VpsTargetRepository {
     return guard('delete orphaned managed VPS targets', async () => {
       await this.db.vpsTarget.deleteMany({
         where: {
+          projectId: this.projectId(),
           managedProjectId:
             projectIds.length > 0 ? { not: null, notIn: [...projectIds] } : { not: null },
         },
       });
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

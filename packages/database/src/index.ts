@@ -7,9 +7,16 @@
  */
 export { createPrismaClient, PrismaClient, type Db } from './client.js';
 export { ensureSchema, migrateSchema, type MigrateSchemaHooks } from './schema-bootstrap.js';
+export {
+  migrateProjectOwnership,
+  type ProjectOwnershipMigrationHooks,
+} from './project-ownership-migration.js';
 export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
 export { PrismaCredentialRepository } from './repositories/prisma-credential-repository.js';
-export { PrismaSettingsRepository } from './repositories/prisma-settings-repository.js';
+export {
+  PrismaSettingsRepository,
+  PrismaSystemSettingsRepository,
+} from './repositories/prisma-settings-repository.js';
 export { PrismaPlanStore } from './repositories/prisma-plan-store.js';
 export { PrismaRuntimePlanStore } from './repositories/prisma-runtime-plan-store.js';
 export { PrismaTemplateStore } from './repositories/prisma-template-store.js';

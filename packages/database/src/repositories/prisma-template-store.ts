@@ -3,6 +3,7 @@ import type {
   CustomTemplate,
   CustomTemplateSummary,
   InfrastructurePlan,
+  ProjectContext,
   TemplateStore,
 } from '@cloudforge/core';
 import type { Db } from '../client.js';
@@ -15,12 +16,15 @@ const KIND = 'infrastructure';
  * JSON, mirroring the plan-store convention.
  */
 export class PrismaTemplateStore implements TemplateStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async list(): Promise<Result<CustomTemplateSummary[], PersistenceError>> {
     try {
       const rows = await this.db.template.findMany({
-        where: { kind: KIND, builtIn: false },
+        where: { projectId: this.projectId(), kind: KIND, builtIn: false },
         orderBy: { updatedAt: 'desc' },
       });
       return ok(rows.map((row) => ({ id: row.id, name: row.name, description: row.description })));
@@ -31,7 +35,9 @@ export class PrismaTemplateStore implements TemplateStore {
 
   async get(id: string): Promise<Result<CustomTemplate | null, PersistenceError>> {
     try {
-      const row = await this.db.template.findUnique({ where: { id } });
+      const row = await this.db.template.findFirst({
+        where: { id, projectId: this.projectId() },
+      });
       if (row?.kind !== KIND) return ok(null);
       return ok({
         id: row.id,
@@ -48,16 +54,19 @@ export class PrismaTemplateStore implements TemplateStore {
     try {
       const data = {
         kind: KIND,
+        projectId: this.projectId(),
         name: template.name,
         description: template.description,
         definition: JSON.stringify(template.plan),
         builtIn: false,
       };
-      await this.db.template.upsert({
-        where: { id: template.id },
-        create: { id: template.id, ...data },
-        update: data,
+      const updated = await this.db.template.updateMany({
+        where: { id: template.id, projectId: data.projectId },
+        data,
       });
+      if (updated.count === 0) {
+        await this.db.template.create({ data: { id: template.id, ...data } });
+      }
       return ok(undefined);
     } catch (cause) {
       return err(new PersistenceError('Failed to save custom template', { cause }));
@@ -66,10 +75,16 @@ export class PrismaTemplateStore implements TemplateStore {
 
   async delete(id: string): Promise<Result<void, PersistenceError>> {
     try {
-      await this.db.template.deleteMany({ where: { id, kind: KIND } });
+      await this.db.template.deleteMany({
+        where: { id, projectId: this.projectId(), kind: KIND },
+      });
       return ok(undefined);
     } catch (cause) {
       return err(new PersistenceError('Failed to delete custom template', { cause }));
     }
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }

@@ -72,12 +72,12 @@ export class ProjectSessionService {
 
       const prior = this.context.current();
       if (prior) {
-        this.context.clear();
         try {
           await this.lifecycle.beforeDeactivate(prior);
         } catch (cause) {
           return err(new PersistenceError('Failed to close current project workspace', { cause }));
         }
+        this.context.clear();
       }
 
       project.value.markOpened();
@@ -99,9 +99,9 @@ export class ProjectSessionService {
     return this.exclusive(async () => {
       const prior = this.context.current();
       if (!prior) return ok(undefined);
-      this.context.clear();
       try {
         await this.lifecycle.beforeDeactivate(prior);
+        this.context.clear();
         return ok(undefined);
       } catch (cause) {
         return err(new PersistenceError('Failed to close project workspace', { cause }));

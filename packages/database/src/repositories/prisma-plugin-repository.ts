@@ -1,14 +1,17 @@
 import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
-import type { InstalledPluginRecord, PluginRepository } from '@cloudforge/core';
+import type { InstalledPluginRecord, PluginRepository, ProjectContext } from '@cloudforge/core';
 import type { Db } from '../client.js';
 
 /** Prisma/SQLite implementation of the {@link PluginRepository} port. */
 export class PrismaPluginRepository implements PluginRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async listInstalled(): Promise<Result<InstalledPluginRecord[], PersistenceError>> {
     return guard('list plugins', async () => {
-      const rows = await this.db.plugin.findMany();
+      const rows = await this.db.plugin.findMany({ where: { projectId: this.projectId() } });
       return rows.map((row) => ({ id: row.id, enabled: row.enabled }));
     });
   }
@@ -32,8 +35,8 @@ export class PrismaPluginRepository implements PluginRepository {
         manifest: manifestJson,
       };
       await this.db.plugin.upsert({
-        where: { id },
-        create: { id, ...data },
+        where: { projectId_id: { projectId: this.projectId(), id } },
+        create: { projectId: this.projectId(), id, ...data },
         update: { enabled, manifest: manifestJson },
       });
     });
@@ -41,8 +44,12 @@ export class PrismaPluginRepository implements PluginRepository {
 
   async remove(id: string): Promise<Result<void, PersistenceError>> {
     return guard('uninstall plugin', async () => {
-      await this.db.plugin.deleteMany({ where: { id } });
+      await this.db.plugin.deleteMany({ where: { projectId: this.projectId(), id } });
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

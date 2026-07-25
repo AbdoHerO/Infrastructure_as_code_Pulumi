@@ -1,4 +1,4 @@
-import { ConflictError } from '@cloudforge/shared';
+import { ConflictError, UnauthorizedError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { registerHandler } from '../registry.js';
@@ -43,11 +43,13 @@ export function registerProjectHandlers(): void {
     return project;
   });
 
-  registerHandler('projects:update', async ({ id, changes }) =>
-    orThrow(await getContainer().projectConfigurationService.update(id, changes)),
-  );
+  registerHandler('projects:update', async ({ id, changes }) => {
+    requireCurrentProject(id);
+    return orThrow(await getContainer().projectConfigurationService.update(id, changes));
+  });
 
   registerHandler('projects:delete', async ({ id }) => {
+    requireCurrentProject(id);
     const project = orThrow(await getContainer().projectService.get(id));
     const ref = projectStackReference(project);
     const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
@@ -62,12 +64,15 @@ export function registerProjectHandlers(): void {
       );
     }
     orThrow(await getContainer().vpsTargetService.removeManagedProject(id));
+    orThrow(await getContainer().projectSessionService.lock());
     orThrow(await getContainer().projectService.remove(id));
-    getContainer().activityService.recordSafe({
-      type: 'project.deleted',
-      message: 'Deleted a project',
-      projectId: id,
-    });
     emitEvent('vpsTargets:changed', { reason: 'deleted' });
   });
+}
+
+function requireCurrentProject(projectId: string): void {
+  const active = getContainer().projectContext.requireActive();
+  if (active.projectId !== projectId) {
+    throw new UnauthorizedError('The request belongs to another project');
+  }
 }

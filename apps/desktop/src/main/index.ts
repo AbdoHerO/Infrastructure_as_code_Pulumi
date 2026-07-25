@@ -75,7 +75,7 @@ async function bootstrap(): Promise<void> {
   // Initialise persistence and services before any IPC handler can be invoked.
   try {
     const container = await initContainer();
-    const settings = await container.settingsService.get();
+    const settings = await container.systemSettingsService.get();
     if (settings.ok) {
       configureUpdateManager(settings.value.updates.autoDownload);
       if (settings.value.updates.checkOnStartup && app.isPackaged) {

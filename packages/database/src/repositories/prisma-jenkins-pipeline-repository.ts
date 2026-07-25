@@ -3,6 +3,7 @@ import type {
   JenkinsParameter,
   JenkinsPipelineRecord,
   JenkinsPipelineRepository,
+  ProjectContext,
 } from '@cloudforge/core';
 import type { Db } from '../client.js';
 
@@ -34,12 +35,16 @@ interface Row {
 }
 
 export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async list(): Promise<Result<JenkinsPipelineRecord[], PersistenceError>> {
     return guard('list Jenkins pipelines', async () => {
       const rows = await this.db.$queryRawUnsafe<Row[]>(
-        'SELECT * FROM "JenkinsPipeline" ORDER BY "updatedAt" DESC',
+        'SELECT * FROM "JenkinsPipeline" WHERE "projectId" = ? ORDER BY "updatedAt" DESC',
+        this.projectId(),
       );
       return rows.map(toRecord);
     });
@@ -48,8 +53,9 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
   async get(id: string): Promise<Result<JenkinsPipelineRecord | null, PersistenceError>> {
     return guard('load Jenkins pipeline', async () => {
       const rows = await this.db.$queryRawUnsafe<Row[]>(
-        'SELECT * FROM "JenkinsPipeline" WHERE "id" = ? LIMIT 1',
+        'SELECT * FROM "JenkinsPipeline" WHERE "id" = ? AND "projectId" = ? LIMIT 1',
         id,
+        this.projectId(),
       );
       return rows[0] ? toRecord(rows[0]) : null;
     });
@@ -61,9 +67,10 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
   ): Promise<Result<JenkinsPipelineRecord | null, PersistenceError>> {
     return guard('load Jenkins pipeline by remote identity', async () => {
       const rows = await this.db.$queryRawUnsafe<Row[]>(
-        'SELECT * FROM "JenkinsPipeline" WHERE "folder" = ? AND "name" = ? LIMIT 1',
+        'SELECT * FROM "JenkinsPipeline" WHERE "folder" = ? AND "name" = ? AND "projectId" = ? LIMIT 1',
         folder,
         name,
+        this.projectId(),
       );
       return rows[0] ? toRecord(rows[0]) : null;
     });
@@ -71,33 +78,8 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
 
   async save(record: JenkinsPipelineRecord): Promise<Result<void, PersistenceError>> {
     return guard('save Jenkins pipeline', async () => {
-      await this.db.$executeRawUnsafe(
-        `INSERT INTO "JenkinsPipeline" (
-          "id","name","folder","description","targetId","jenkinsCredentialId",
-          "githubCredentialId","repositoryUrl","branch","jenkinsfilePath","pipelineScript",
-          "definitionMode","parameters","environment","environmentCredentialId","domain","applicationPort",
-          "cloudflareCredentialId","cloudflareZoneId","configureDomain","lastStatus",
-          "applicationRoutes","createdAt","updatedAt"
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT("id") DO UPDATE SET
-          "name"=excluded."name", "folder"=excluded."folder",
-          "description"=excluded."description", "targetId"=excluded."targetId",
-          "jenkinsCredentialId"=excluded."jenkinsCredentialId",
-          "githubCredentialId"=excluded."githubCredentialId",
-          "repositoryUrl"=excluded."repositoryUrl", "branch"=excluded."branch",
-          "jenkinsfilePath"=excluded."jenkinsfilePath",
-          "pipelineScript"=excluded."pipelineScript",
-          "definitionMode"=excluded."definitionMode", "parameters"=excluded."parameters",
-          "environment"=excluded."environment",
-          "environmentCredentialId"=excluded."environmentCredentialId",
-          "domain"=excluded."domain",
-          "applicationPort"=excluded."applicationPort",
-          "cloudflareCredentialId"=excluded."cloudflareCredentialId",
-          "cloudflareZoneId"=excluded."cloudflareZoneId",
-          "configureDomain"=excluded."configureDomain",
-          "applicationRoutes"=excluded."applicationRoutes",
-          "lastStatus"=excluded."lastStatus", "updatedAt"=excluded."updatedAt"`,
-        record.id,
+      const projectId = this.projectId();
+      const values = [
         record.name,
         record.folder,
         record.description,
@@ -119,6 +101,34 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
         record.configureDomain ? 1 : 0,
         record.lastStatus,
         JSON.stringify(record.applicationRoutes),
+        record.updatedAt,
+      ] as const;
+      const updated = await this.db.$executeRawUnsafe(
+        `UPDATE "JenkinsPipeline" SET
+          "name"=?, "folder"=?, "description"=?, "targetId"=?,
+          "jenkinsCredentialId"=?, "githubCredentialId"=?, "repositoryUrl"=?,
+          "branch"=?, "jenkinsfilePath"=?, "pipelineScript"=?,
+          "definitionMode"=?, "parameters"=?, "environment"=?,
+          "environmentCredentialId"=?, "domain"=?, "applicationPort"=?,
+          "cloudflareCredentialId"=?, "cloudflareZoneId"=?, "configureDomain"=?,
+          "lastStatus"=?, "applicationRoutes"=?, "updatedAt"=?
+        WHERE "id"=? AND "projectId"=?`,
+        ...values,
+        record.id,
+        projectId,
+      );
+      if (updated > 0) return;
+      await this.db.$executeRawUnsafe(
+        `INSERT INTO "JenkinsPipeline" (
+          "id","projectId","name","folder","description","targetId","jenkinsCredentialId",
+          "githubCredentialId","repositoryUrl","branch","jenkinsfilePath","pipelineScript",
+          "definitionMode","parameters","environment","environmentCredentialId","domain","applicationPort",
+          "cloudflareCredentialId","cloudflareZoneId","configureDomain","lastStatus",
+          "applicationRoutes","createdAt","updatedAt"
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        record.id,
+        projectId,
+        ...values.slice(0, 21),
         record.createdAt,
         record.updatedAt,
       );
@@ -127,8 +137,16 @@ export class PrismaJenkinsPipelineRepository implements JenkinsPipelineRepositor
 
   async remove(id: string): Promise<Result<void, PersistenceError>> {
     return guard('delete Jenkins pipeline', async () => {
-      await this.db.$executeRawUnsafe('DELETE FROM "JenkinsPipeline" WHERE "id" = ?', id);
+      await this.db.$executeRawUnsafe(
+        'DELETE FROM "JenkinsPipeline" WHERE "id" = ? AND "projectId" = ?',
+        id,
+        this.projectId(),
+      );
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 

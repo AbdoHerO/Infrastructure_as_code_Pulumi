@@ -55,6 +55,7 @@ import {
   type Db,
   ensureSchema,
   migrateSchema,
+  migrateProjectOwnership,
   PrismaActivityRepository,
   PrismaCredentialRepository,
   PrismaDeploymentRepository,
@@ -63,6 +64,7 @@ import {
   PrismaPluginRepository,
   PrismaProjectRepository,
   PrismaSettingsRepository,
+  PrismaSystemSettingsRepository,
   PrismaTemplateStore,
   PrismaVpsTargetRepository,
   PrismaJenkinsPipelineRepository,
@@ -73,6 +75,7 @@ import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs } from './logging/logger.js';
 import { projectStackReference } from './infra/stack-reference.js';
 import { emitEvent } from './ipc/emit.js';
+import { projectOperations } from './project-operation-registry.js';
 import {
   LiveRuntimeProviderFirewall,
   VpsRuntimeTargetCatalog,
@@ -90,6 +93,7 @@ export interface AppContainer {
   readonly projectConfigurationService: ProjectConfigurationService;
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
+  readonly systemSettingsService: SettingsService;
   readonly providerService: ProviderConnectionService;
   readonly infrastructureService: InfrastructureService;
   readonly deploymentService: DeploymentService;
@@ -140,6 +144,22 @@ export async function initContainer(): Promise<AppContainer> {
   if (migrated) {
     log().info({ event: 'schema.migrated' }, 'Applied database schema migrations');
   }
+  const ownershipMigrated = await migrateProjectOwnership(db, {
+    onBeforeMigration: async () => {
+      const backup = `${dbPath}.workspace-bak-${Date.now()}`;
+      await copyFile(dbPath, backup);
+      log().warn(
+        { event: 'schema.workspaceBackup', backup },
+        'Backed up database before project ownership migration',
+      );
+    },
+  });
+  if (ownershipMigrated) {
+    log().info(
+      { event: 'schema.projectOwnershipMigrated' },
+      'Assigned legacy workspace data to projects',
+    );
+  }
   log().info({ event: 'db.ready', dbPath }, 'Database connected and schema ensured');
 
   // `unwrap` is safe here: a missing cipher is an unrecoverable startup fault.
@@ -153,9 +173,13 @@ export async function initContainer(): Promise<AppContainer> {
   const projectContext = new InMemoryProjectContext();
   const projectPasskeys = new NodeProjectPasskeyHasher();
   const projectService = new ProjectService(projectRepository, projectPasskeys);
-  const credentialService = new CredentialService(new PrismaCredentialRepository(db), cipher);
-  const settingsService = new SettingsService(new PrismaSettingsRepository(db));
-  const appSettings = unwrap(await settingsService.get());
+  const credentialService = new CredentialService(
+    new PrismaCredentialRepository(db, projectContext),
+    cipher,
+  );
+  const systemSettingsService = new SettingsService(new PrismaSystemSettingsRepository(db));
+  const settingsService = new SettingsService(new PrismaSettingsRepository(db, projectContext));
+  const appSettings = unwrap(await systemSettingsService.get());
   const prunedLogs = pruneLogs(appSettings.logs.retentionDays);
   if (prunedLogs > 0) log().info({ event: 'logs.pruned', count: prunedLogs }, 'Pruned old logs');
   const providerService = new ProviderConnectionService(
@@ -166,6 +190,14 @@ export async function initContainer(): Promise<AppContainer> {
   // infrastructure engine needs to authenticate against the provider account.
   const credentialResolver: ProviderCredentialResolver = {
     async forProject(projectId) {
+      const activeProjectId = projectContext.requireActive().projectId;
+      if (projectId !== activeProjectId) {
+        return err(
+          new InfrastructureError('Cannot use credentials from another project', {
+            context: { projectId, activeProjectId },
+          }),
+        );
+      }
       const project = await projectService.get(projectId);
       if (!project.ok) {
         return err(new InfrastructureError('Could not load project', { cause: project.error }));
@@ -201,23 +233,16 @@ export async function initContainer(): Promise<AppContainer> {
 
   const deploymentService = new DeploymentService(
     new SshDeployer(),
-    new PrismaDeploymentRepository(db),
+    new PrismaDeploymentRepository(db, projectContext),
   );
-  const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
-  if (recoveredDeployments > 0) {
-    log().warn(
-      { event: 'deploy.recovered', count: recoveredDeployments },
-      'Marked interrupted deployments as failed',
-    );
-  }
-  const activityService = new ActivityService(new PrismaActivityRepository(db));
-  const pluginService = new PluginService(new PrismaPluginRepository(db));
+  const activityService = new ActivityService(new PrismaActivityRepository(db, projectContext));
+  const pluginService = new PluginService(new PrismaPluginRepository(db, projectContext));
   const sshKeyService = new SshKeyService(credentialService, new NodeSshKeyGenerator());
   const containerManager = new SshContainerManager();
   const ansibleManager = new SshAnsibleManager();
-  const runtimePlanStore = new PrismaRuntimePlanStore(db);
+  const runtimePlanStore = new PrismaRuntimePlanStore(db, projectContext);
   const vpsTargetService = new VpsTargetService(
-    new PrismaVpsTargetRepository(db),
+    new PrismaVpsTargetRepository(db, projectContext),
     runtimePlanStore,
   );
   const targetSyncService = new ManagedVpsTargetSyncService(
@@ -227,9 +252,9 @@ export async function initContainer(): Promise<AppContainer> {
   );
   const infrastructureService = new InfrastructureService(
     createInfrastructureEngine(),
-    new PrismaPlanStore(db),
+    new PrismaPlanStore(db, projectContext),
     credentialResolver,
-    new PrismaTemplateStore(db),
+    new PrismaTemplateStore(db, projectContext),
     targetSyncService,
   );
   const projectConfigurationService = new ProjectConfigurationService(
@@ -299,18 +324,6 @@ export async function initContainer(): Promise<AppContainer> {
     new NodeSshTerminalManager(),
     activityService,
   );
-  const projectSessionService = new ProjectSessionService(
-    projectRepository,
-    projectPasskeys,
-    projectContext,
-    {
-      beforeDeactivate: () => {
-        sshTerminalService.closeAll();
-        return Promise.resolve();
-      },
-      afterActivate: () => Promise.resolve(),
-    },
-  );
   const domainResolver: DomainResolver = {
     async resolve(domain) {
       try {
@@ -338,7 +351,7 @@ export async function initContainer(): Promise<AppContainer> {
     activityService,
   );
   const jenkinsPipelineService = new JenkinsPipelineService(
-    new PrismaJenkinsPipelineRepository(db),
+    new PrismaJenkinsPipelineRepository(db, projectContext),
     vpsTargetService,
     credentialService,
     new JenkinsHttpManager(),
@@ -359,14 +372,20 @@ export async function initContainer(): Promise<AppContainer> {
     runtimePlanService,
   );
   const sslRenewalTimer = setInterval(
-    () => void sslService.renewDue(),
+    () => {
+      if (projectContext.current()) void sslService.renewDue();
+    },
     appSettings.ssl.checkIntervalHours * 60 * 60_000,
   );
   sslRenewalTimer.unref();
-  setTimeout(() => void sslService.renewDue(), 30_000).unref();
+  setTimeout(() => {
+    if (projectContext.current()) void sslService.renewDue();
+  }, 30_000).unref();
 
   let cloudflareSnapshot = '';
   const synchronizeCloudflare = async (): Promise<{ warnings: readonly string[] }> => {
+    const lease = projectContext.current();
+    if (!lease) return { warnings: [] };
     const settings = await settingsService.get();
     if (!settings.ok) return { warnings: [settings.error.message] };
     const config = settings.value.cloudflare;
@@ -448,7 +467,7 @@ export async function initContainer(): Promise<AppContainer> {
     } else {
       emitEvent('cloudflare:changed', { reason: 'synchronized' });
     }
-    cloudflareSnapshot = next;
+    if (projectContext.isCurrent(lease)) cloudflareSnapshot = next;
     return { warnings: [] };
   };
   const cloudflareSyncTimer = setInterval(
@@ -457,6 +476,58 @@ export async function initContainer(): Promise<AppContainer> {
   );
   cloudflareSyncTimer.unref();
 
+  const synchronizeActiveProject = async (): Promise<{ warnings: readonly string[] }> => {
+    const lease = projectContext.requireActive();
+    const [targets, cloudflare] = await Promise.all([
+      reconcileManagedTargets(
+        lease.projectId,
+        projectService,
+        infrastructureService,
+        vpsTargetService,
+      ),
+      synchronizeCloudflare(),
+    ]);
+    return projectContext.isCurrent(lease)
+      ? { warnings: [...targets.warnings, ...cloudflare.warnings] }
+      : { warnings: ['Project changed before synchronization completed'] };
+  };
+  const projectSessionService = new ProjectSessionService(
+    projectRepository,
+    projectPasskeys,
+    projectContext,
+    {
+      beforeDeactivate: async (lease) => {
+        await projectOperations.deactivate(lease.projectId);
+        sshTerminalService.closeAll();
+        cloudflareSnapshot = '';
+      },
+      afterActivate: async (lease) => {
+        const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
+        if (recoveredDeployments > 0) {
+          log().warn(
+            {
+              event: 'deploy.recovered',
+              count: recoveredDeployments,
+              projectId: lease.projectId,
+            },
+            'Marked interrupted project deployments as failed',
+          );
+        }
+        const synchronized = await synchronizeActiveProject();
+        if (synchronized.warnings.length > 0) {
+          log().warn(
+            {
+              event: 'project.synchronize.warnings',
+              projectId: lease.projectId,
+              warnings: synchronized.warnings,
+            },
+            'Project activated with synchronization warnings',
+          );
+        }
+      },
+    },
+  );
+
   container = {
     projectService,
     projectContext,
@@ -464,6 +535,7 @@ export async function initContainer(): Promise<AppContainer> {
     projectConfigurationService,
     credentialService,
     settingsService,
+    systemSettingsService,
     providerService,
     infrastructureService,
     deploymentService,
@@ -482,13 +554,7 @@ export async function initContainer(): Promise<AppContainer> {
     cloudflareDnsAutomationService,
     jenkinsPipelineService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
-    synchronizeData: async () => {
-      const [targets, cloudflare] = await Promise.all([
-        reconcileManagedTargets(projectService, infrastructureService, vpsTargetService),
-        synchronizeCloudflare(),
-      ]);
-      return { warnings: [...targets.warnings, ...cloudflare.warnings] };
-    },
+    synchronizeData: synchronizeActiveProject,
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
     },
@@ -501,26 +567,23 @@ export async function initContainer(): Promise<AppContainer> {
     },
   };
   log().info({ event: 'container.ready' }, 'Application services initialised');
-  setTimeout(() => {
-    void reconcileManagedTargets(projectService, infrastructureService, vpsTargetService);
-  }, 2_000).unref();
-  setTimeout(() => void synchronizeCloudflare(), 5_000).unref();
   return container;
 }
 
 async function reconcileManagedTargets(
+  activeProjectId: string,
   projects: ProjectService,
   infrastructure: InfrastructureService,
   targets: VpsTargetService,
 ): Promise<{ warnings: readonly string[] }> {
   const warnings: string[] = [];
-  const [projectList, stacks] = await Promise.all([
-    projects.list(),
+  const [project, stacks] = await Promise.all([
+    projects.get(activeProjectId),
     infrastructure.listManagedStacks(),
   ]);
-  if (!projectList.ok) {
+  if (!project.ok) {
     log().warn({ event: 'vps-target.reconcile.skipped' }, 'Could not discover managed stacks');
-    warnings.push(projectList.error.message);
+    warnings.push(project.error.message);
     return { warnings };
   }
   if (!stacks.ok) {
@@ -528,29 +591,22 @@ async function reconcileManagedTargets(
     warnings.push(stacks.error.message);
     return { warnings };
   }
-  const projectIds = projectList.value.map((project) => project.id);
-  const orphanCleanup = await targets.removeManagedOutsideProjects(projectIds);
-  if (!orphanCleanup.ok) warnings.push(orphanCleanup.error.message);
-
-  for (const project of projectList.value) {
-    const ref = projectStackReference(project);
-    const exists = stacks.value.some(
-      (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
+  const ref = projectStackReference(project.value);
+  const exists = stacks.value.some(
+    (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
+  );
+  if (!exists) {
+    const removed = await targets.removeManagedProject(project.value.id);
+    if (!removed.ok) warnings.push(removed.error.message);
+    return { warnings };
+  }
+  const outputs = await infrastructure.outputs(ref, project.value.id);
+  if (!outputs.ok) {
+    log().warn(
+      { event: 'vps-target.reconcile.failed', projectId: project.value.id, err: outputs.error },
+      'Could not synchronize managed VPS targets',
     );
-    if (!exists) {
-      const removed = await targets.removeManagedProject(project.id);
-      if (!removed.ok) warnings.push(removed.error.message);
-      continue;
-    }
-    const outputs = await infrastructure.outputs(ref, project.id);
-    if (!outputs.ok) {
-      log().warn(
-        { event: 'vps-target.reconcile.failed', projectId: project.id, err: outputs.error },
-        'Could not synchronize managed VPS targets',
-      );
-      warnings.push(outputs.error.message);
-      continue;
-    }
+    warnings.push(outputs.error.message);
   }
   emitEvent('vpsTargets:changed', { reason: 'synchronized' });
   return { warnings };

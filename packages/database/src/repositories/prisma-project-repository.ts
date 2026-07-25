@@ -30,7 +30,26 @@ export class PrismaProjectRepository implements ProjectRepository {
 
   async delete(id: ProjectId): Promise<Result<void, PersistenceError>> {
     return guard('delete project', async () => {
-      await this.db.project.deleteMany({ where: { id } });
+      // Legacy databases received projectId through ALTER TABLE and therefore
+      // do not have physical ON DELETE CASCADE constraints on every table.
+      // Delete the entire workspace atomically so no orphaned secret or runtime
+      // row can survive a project deletion.
+      await this.db.$transaction(async (tx) => {
+        await tx.project.updateMany({ where: { id }, data: { providerId: null } });
+        await tx.logEntry.deleteMany({ where: { projectId: id } });
+        await tx.deployment.deleteMany({ where: { projectId: id } });
+        await tx.jenkinsPipeline.deleteMany({ where: { projectId: id } });
+        await tx.vpsTarget.deleteMany({ where: { projectId: id } });
+        await tx.activity.deleteMany({ where: { projectId: id } });
+        await tx.setting.deleteMany({ where: { projectId: id } });
+        await tx.plugin.deleteMany({ where: { projectId: id } });
+        await tx.template.deleteMany({ where: { projectId: id } });
+        await tx.secret.deleteMany({ where: { projectId: id } });
+        await tx.sshKey.deleteMany({ where: { projectId: id } });
+        await tx.provider.deleteMany({ where: { projectId: id } });
+        await tx.credential.deleteMany({ where: { projectId: id } });
+        await tx.project.deleteMany({ where: { id } });
+      });
     });
   }
 

@@ -3,8 +3,7 @@ import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 import { resolveSshTarget } from './ssh-target.js';
-
-const activeOperations = new Map<string, AbortController>();
+import { projectOperations } from '../../project-operation-registry.js';
 
 export function registerAnsibleHandlers(): void {
   registerHandler('ansible:profiles', () => [...getContainer().ansibleManager.profiles()]);
@@ -121,7 +120,9 @@ export function registerAnsibleHandlers(): void {
       ),
     ),
   );
-  registerHandler('ansible:cancel', ({ streamId }) => activeOperations.get(streamId)?.abort());
+  registerHandler('ansible:cancel', ({ streamId }) =>
+    projectOperations.cancel(`ansible:${streamId}`),
+  );
   registerHandler('ansible:nginxSites', async (request) =>
     orThrow(await getContainer().ansibleManager.listNginxSites(await resolveSshTarget(request))),
   );
@@ -169,12 +170,11 @@ async function operation<T>(
   streamId: string,
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  if (activeOperations.has(streamId)) throw new Error('Ansible stream is already active');
-  const controller = new AbortController();
-  activeOperations.set(streamId, controller);
+  const projectId = getContainer().projectContext.requireActive().projectId;
+  const lease = projectOperations.begin(`ansible:${streamId}`, projectId, true);
   try {
-    return await run(controller.signal);
+    return await run(lease.signal as AbortSignal);
   } finally {
-    activeOperations.delete(streamId);
+    lease.complete();
   }
 }

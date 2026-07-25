@@ -4,20 +4,28 @@ import type {
   DeploymentRepository,
   DeploymentStatus,
   DeploymentUpdate,
+  ProjectContext,
 } from '@cloudforge/core';
 import type { Deployment as PrismaDeployment } from '@prisma/client';
 import type { Db } from '../client.js';
 
 /** Prisma/SQLite implementation of the {@link DeploymentRepository} port. */
 export class PrismaDeploymentRepository implements DeploymentRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly context: ProjectContext,
+  ) {}
 
   async create(record: DeploymentRecord): Promise<Result<void, PersistenceError>> {
     return guard('create deployment', async () => {
+      const projectId = this.projectId();
+      if (record.projectId !== projectId) {
+        throw new PersistenceError('Deployment belongs to another project');
+      }
       await this.db.deployment.create({
         data: {
           id: record.id,
-          projectId: record.projectId,
+          projectId,
           status: record.status,
           strategy: record.strategy,
           outputs: record.outputs,
@@ -32,8 +40,8 @@ export class PrismaDeploymentRepository implements DeploymentRepository {
 
   async update(id: string, patch: DeploymentUpdate): Promise<Result<void, PersistenceError>> {
     return guard('update deployment', async () => {
-      await this.db.deployment.update({
-        where: { id },
+      await this.db.deployment.updateMany({
+        where: { id, projectId: this.projectId() },
         data: {
           ...(patch.status !== undefined ? { status: patch.status } : {}),
           ...(patch.outputs !== undefined ? { outputs: patch.outputs } : {}),
@@ -50,6 +58,9 @@ export class PrismaDeploymentRepository implements DeploymentRepository {
 
   async listByProject(projectId: string): Promise<Result<DeploymentRecord[], PersistenceError>> {
     return guard('list deployments', async () => {
+      if (projectId !== this.projectId()) {
+        throw new PersistenceError('Cannot list deployments from another project');
+      }
       const rows = await this.db.deployment.findMany({
         where: { projectId },
         orderBy: { createdAt: 'desc' },
@@ -59,13 +70,15 @@ export class PrismaDeploymentRepository implements DeploymentRepository {
   }
 
   async countAll(): Promise<Result<number, PersistenceError>> {
-    return guard('count deployments', () => this.db.deployment.count());
+    return guard('count deployments', () =>
+      this.db.deployment.count({ where: { projectId: this.projectId() } }),
+    );
   }
 
   async failRunning(reason: string, finishedAt: string): Promise<Result<number, PersistenceError>> {
     return guard('recover interrupted deployments', async () => {
       const result = await this.db.deployment.updateMany({
-        where: { status: 'running' },
+        where: { projectId: this.projectId(), status: 'running' },
         data: {
           status: 'failed',
           outputs: JSON.stringify({ error: reason, interrupted: true }),
@@ -74,6 +87,10 @@ export class PrismaDeploymentRepository implements DeploymentRepository {
       });
       return result.count;
     });
+  }
+
+  private projectId(): string {
+    return this.context.requireActive().projectId;
   }
 }
 
