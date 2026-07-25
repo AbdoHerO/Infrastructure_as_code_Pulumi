@@ -2,13 +2,29 @@
 
 ## Status
 
-This document is the implementation contract for migrating CloudForge from an
-application with a list of infrastructure records to a workspace-oriented,
-multi-project platform.
+Implemented on `main`. This document records both the original audit and the
+resulting workspace architecture. The release-candidate verification and known
+security boundaries are recorded in
+[MULTI-PROJECT-PRODUCTION-AUDIT.md](MULTI-PROJECT-PRODUCTION-AUDIT.md).
 
-The migration is deliberately incremental. Existing installations must open
-without changing a VPS, cloud resource, DNS record, Jenkins job, Nginx
-configuration, certificate, firewall, or runtime plan.
+The migration is local and deliberately non-mutating: upgrading does not change
+a VPS, cloud resource, DNS record, Jenkins job, Nginx configuration,
+certificate, firewall, or runtime plan.
+
+Implemented outcomes:
+
+- startup is gated by onboarding or the locked project picker;
+- a main-process `ProjectContext` owns the active session and generation;
+- normal IPC is denied while locked and serialized against lock/switch/delete;
+- repositories and stores derive ownership from the context and filter every
+  query automatically;
+- credentials, targets, pipelines, plans, templates, settings, plugins,
+  activities, logs, SSH keys and secrets are project-owned;
+- background automation, streams, terminal sessions and transient SSH material
+  are stopped or removed during teardown;
+- backups are project-bound and cannot be restored into another project;
+- legacy databases are migrated transactionally and idempotently without
+  touching remote systems.
 
 ## Audit: how CloudForge works before this migration
 
@@ -137,9 +153,11 @@ security or full-disk encryption.
 
 Every persistent workspace record receives required project ownership and a
 foreign key with `ON DELETE CASCADE`, unless a record is truly application-wide.
-The only application-wide persistent data is release/update metadata and
-non-sensitive appearance needed before a project is opened. Workspace settings,
-plugins, caches, logs, and history remain project-owned.
+The only application-wide persistent data is device-level UI and lifecycle
+configuration needed before a project is opened: updater preferences,
+appearance, diagnostics and log-retention controls. It is stored in
+`SystemSetting`. Runtime and feature settings use project-owned `Setting`.
+Workspace plugins, caches, logs, and history remain project-owned.
 
 Required ownership is added to:
 
@@ -312,16 +330,19 @@ The UI must state which remote resources remain. Project deletion requires the
 project name and passkey, cancels active work, removes local project data in one
 transaction, and does not silently destroy cloud or VPS resources.
 
-Duplication copies local configuration into a new project with new ids:
+Duplication creates a configuration-only project with new ids. It copies:
 
-- project metadata and settings;
-- infrastructure/runtime plans in safe legacy/read-only mode;
-- templates and automation definitions;
-- encrypted credentials only after passkey confirmation.
+- project metadata;
+- project settings, except runtime plans;
+- the declarative infrastructure plan;
+- providers, encrypted credentials, SSH keys and secrets;
+- templates and plugin configuration.
 
-It does not duplicate remote infrastructure, active terminal sessions, cached
-remote state, logs, deployment runs, or ownership markers claiming existing
-remote resources.
+It intentionally does not copy VPS targets, runtime plans, Jenkins pipelines,
+deployments, activities, logs, remote infrastructure, terminal sessions,
+cached remote state, or ownership markers claiming remote resources. The
+source must already be unlocked and the duplicate receives its own required
+passkey.
 
 ## Implementation phases and release gates
 

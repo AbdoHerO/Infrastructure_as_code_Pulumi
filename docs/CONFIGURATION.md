@@ -258,7 +258,10 @@ Brief pointers for the remaining credential kinds:
 
 ## In-app settings
 
-Configured under **Settings** (persisted in the local database, not files):
+Configured under **Settings** (persisted in the local database, not files).
+Feature and runtime values belong to the unlocked project. Only device-level
+appearance, updater, diagnostics and log-retention preferences are available
+outside a project session:
 
 | Setting                     | Section    | Meaning                                        | Default  |
 | --------------------------- | ---------- | ---------------------------------------------- | -------- |

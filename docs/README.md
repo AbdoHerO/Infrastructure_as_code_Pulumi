@@ -36,6 +36,8 @@ backup/restore and the packaged update workflow are implemented.
 | [Packages](PACKAGES.md)                                                     | Every workspace package: purpose, public exports, key files                                                       |
 | [Modules](MODULES.md)                                                       | Every UI module: behaviour and data flow                                                                          |
 | [IPC Reference](IPC.md)                                                     | The complete typed IPC contract — all channels, streaming events, the `Result` envelope, and how to add a channel |
+| [Multi-project workspaces](MULTI-PROJECT-WORKSPACES.md)                     | Project context, session lifecycle, ownership migration, isolation and compatibility                              |
+| [Workspace production audit](MULTI-PROJECT-PRODUCTION-AUDIT.md)             | Implemented boundaries, security scope, migration evidence and release smoke checklist                            |
 | [Data Model](DATA-MODEL.md)                                                 | The Prisma/SQLite schema — all 12 tables and conventions                                                          |
 | [Security](SECURITY.md)                                                     | The security model: encryption, keychain, hardening, threat notes                                                 |
 | [Privacy](PRIVACY.md)                                                       | Local data, network activity, diagnostic boundaries, and retention                                                |

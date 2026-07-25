@@ -59,14 +59,27 @@ All request/response channels, grouped by feature. `void` means no payload.
 
 ### Projects
 
-| Channel           | Request                               | Response       |
-| ----------------- | ------------------------------------- | -------------- |
-| `projects:list`   | `void`                                | `ProjectDto[]` |
-| `projects:get`    | `{ id }`                              | `ProjectDto`   |
-| `projects:create` | `CreateProjectInput`                  | `ProjectDto`   |
-| `projects:update` | `{ id, changes: UpdateProjectInput }` | `ProjectDto`   |
-| `projects:delete` | `{ id }`                              | `void`         |
-| `projects:count`  | `void`                                | `number`       |
+| Channel                  | Request                               | Response                    |
+| ------------------------ | ------------------------------------- | --------------------------- |
+| `projects:picker`        | `void`                                | `ProjectPickerDto[]`        |
+| `projects:list`          | `void`                                | active `ProjectDto[]`       |
+| `projects:get`           | `{ id }`                              | `ProjectDto`                |
+| `projects:create`        | `CreateProjectInput`                  | `ProjectDto`                |
+| `projects:duplicate`     | `DuplicateProjectInput`               | `ProjectDto`                |
+| `projects:update`        | `{ id, changes: UpdateProjectInput }` | `ProjectDto`                |
+| `projects:delete`        | `{ id, confirmationName, passkey }`   | `void`                      |
+| `projects:count`         | `void`                                | `number`                    |
+| `projects:session`       | `void`                                | `ProjectSessionDto \| null` |
+| `projects:unlock`        | `{ id, passkey }`                     | `ProjectSessionDto`         |
+| `projects:lock`          | `void`                                | `void`                      |
+| `projects:changePasskey` | `{ currentPasskey, newPasskey }`      | `void`                      |
+
+The picker and session lifecycle channels are explicitly session-neutral.
+Normal feature channels require an active main-process Project Context. A
+payload carrying an obsolete `projectId` must match the active project, but it
+never establishes authorization. Scoped requests hold an operation lease until
+their handler completes, so lock/switch cannot expose half-finished work in the
+next workspace.
 
 ### Credentials & security
 

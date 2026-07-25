@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { ConflictError, UnauthorizedError } from '@cloudforge/shared';
+import { ConflictError, UnauthorizedError, ValidationError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { registerHandler } from '../registry.js';
@@ -46,6 +46,9 @@ export function registerProjectHandlers(): void {
   });
 
   registerHandler('projects:create', async (input) => {
+    if (!input.passkey || input.passkey.length < 8) {
+      throw new ValidationError('A project passkey of at least 8 characters is required');
+    }
     const project = orThrow(await getContainer().projectService.create(input));
     getContainer().activityService.recordSafe({
       type: 'project.created',

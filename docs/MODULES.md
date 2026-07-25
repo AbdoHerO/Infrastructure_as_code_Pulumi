@@ -7,7 +7,9 @@ Each module follows the same pattern: a `use*.ts` hook (TanStack Query over the
 IPC client) + presentational components composed from `@cloudforge/ui`. **No
 business logic lives in components.**
 
-The sidebar groups modules by concern:
+The application first opens a session-neutral Project Picker. Feature routes
+mount only after a project is unlocked, and the active project is always shown
+in the top bar. The sidebar then groups modules by concern:
 
 - **Overview** — Dashboard, Documentation
 - **Manage** — Projects, Infrastructure, Deployments, Containers, Ansible,
@@ -20,17 +22,25 @@ The sidebar groups modules by concern:
 
 ## Dashboard (`/`)
 
-Landing page. Summary stat cards (projects, deployments, providers,
+Workspace landing page. Summary stat cards (current project, deployments, providers,
 infrastructure), the **Activity timeline** (live), a **Projects-by-environment**
 bar chart, and a **System** card showing runtime versions and IaC-engine
 availability. Channels: `projects:list`, `activity:list`, `infra:engineStatus`,
 `app:getInfo`.
 
-## Projects (`/projects`)
+## Projects (`/projects` and locked picker)
 
-Create, list and delete projects. Creation uses React Hook Form + Zod; the form
-validates client-side and the domain re-validates server-side. Deletion is
-confirmed via toast feedback. Channels: `projects:*`.
+The locked picker is the startup boundary. A fresh profile shows onboarding and
+requires creation of the first protected project. Existing profiles show safe
+project cards with description, icon/color, last-opened time, locked state and
+aggregate infrastructure counts.
+
+Inside an unlocked workspace, Project Settings supports metadata edits,
+passkey changes, safe configuration-only duplication, lock/switch and deletion.
+Deletion requires the exact project name and, for protected projects, the
+passkey; the main process refuses it while managed infrastructure remains.
+Channels: `projects:*`. See
+[Multi-project workspaces](MULTI-PROJECT-WORKSPACES.md).
 
 ## Cloud Providers (`/providers`)
 
@@ -54,8 +64,8 @@ and delete. Channels: `infra:templates`, `infra:applyTemplate`,
 
 ## Infrastructure (`/infrastructure`)
 
-The core provisioning surface. Pick a project, then **compose a declarative
-plan**: add/remove/edit networks, subnets, firewalls (with a rules editor),
+The core provisioning surface for the currently unlocked project. **Compose a
+declarative plan**: add/remove/edit networks, subnets, firewalls (with a rules editor),
 compute instances and volumes — use **Add resource → Compute instance** to add
 as many instances as you like. Each resource has an **OCI-aware editor**: compute
 shapes and availability domains are populated **live from the linked account**
@@ -178,7 +188,9 @@ record is the single source of truth. Channels: `sshKeys:*`.
 
 ## Settings (`/settings`)
 
-Tabbed, live-persisted configuration: **General** (log retention),
+Tabbed configuration. Runtime/feature preferences are persisted in the active
+project. Device preferences required before unlock remain application-wide:
+**General** (log retention),
 **Appearance** (theme mode via the Zustand store, reduced motion),
 **Deployment** (confirm destructive actions, default region), **Updates**
 (automatic checks/downloads), **Security** (encryption status plus

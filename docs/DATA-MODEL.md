@@ -1,256 +1,155 @@
-# Data Model
+# Data model
 
-CloudForge persists to a local **SQLite** database via **Prisma**. The database
-lives in the Electron `userData` directory as `cloudforge.db`. The schema is
-defined in
+CloudForge persists local state in SQLite through Prisma. The database is
+`cloudforge.db` under Electron `userData`; the authoritative schema is
 [`packages/database/prisma/schema.prisma`](../packages/database/prisma/schema.prisma).
+
+## Workspace invariant
+
+Project is the aggregate root and local isolation boundary. Every feature row
+belongs to exactly one Project. Repository adapters obtain the active project
+from the main-process Project Context and automatically apply `projectId` to
+reads and writes.
+
+An id from another project is treated as not found. Database triggers also
+reject cross-project foreign references as defense in depth.
+
+The single exception is `SystemSetting`, which contains only device preferences
+needed before unlock: update behavior, appearance, diagnostics and log
+retention. Runtime topology and feature settings never use it.
 
 ## Conventions
 
-- **IDs** are application-generated UUID v4 strings (`String @id`), not
-  autoincrement — identities are created in the Domain layer.
-- **JSON-in-TEXT**: SQLite has no native JSON/array column, so list/object
-  values (`tags`, `variables`, `outputs`, `metadata`, plan/manifest blobs) are
-  stored as `String` containing serialized JSON and (de)serialized in the
-  repository/mapper layer.
-- **Secrets are never stored in plaintext** — only `ciphertext` (see
-  [Security](SECURITY.md)).
-- **Timestamps** are `DateTime` (`createdAt @default(now())`,
-  `updatedAt @updatedAt`) and surfaced as ISO-8601 strings in DTOs.
+- IDs are application-generated UUID v4 strings.
+- SQLite JSON/array values are serialized into TEXT by repository mappers.
+- secrets and private keys are encrypted; plaintext is never persisted.
+- timestamps are stored as `DateTime` and exposed as ISO-8601 DTO strings.
+- project deletion uses cascade semantics plus explicit transactional cleanup
+  for databases upgraded from historical schemas.
 
-## Schema bootstrap (single source of truth)
-
-`schema.prisma` is authoritative. The runtime DDL used to create the schema in a
-fresh database is **derived** from it via `prisma migrate diff` and inlined at
-build time; `ensureSchema(db)` runs it once (guarded by a check for the
-`Project` table). To regenerate after a schema change:
-
-```bash
-pnpm --filter @cloudforge/database prisma:generate       # regenerate the client
-pnpm --filter @cloudforge/database db:bootstrap-sql       # regenerate bootstrap.sql
-```
-
-## Tables (13)
+## Tables
 
 ### Project
 
-The aggregate root — one managed infrastructure.
+Workspace metadata and access material:
 
-| Column                    | Type       | Notes                                                                           |
-| ------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| `id`                      | String @id | UUID                                                                            |
-| `name`                    | String     | 1–100 chars                                                                     |
-| `description`             | String     | default `""`                                                                    |
-| `environment`             | String     | `development` \| `staging` \| `production`                                      |
-| `region`                  | String     | provider region                                                                 |
-| `providerId`              | String?    | FK → **Credential** (SetNull) — the linked cloud-provider credential            |
-| `templateId`              | String?    | originating template, if any                                                    |
-| `status`                  | String     | `draft` \| `provisioning` \| `active` \| `error` \| `destroying` \| `destroyed` |
-| `tags`                    | String     | JSON array                                                                      |
-| `variables`               | String     | JSON object                                                                     |
-| `notes`                   | String     | free text                                                                       |
-| `createdAt` / `updatedAt` | DateTime   | indexed on `updatedAt`                                                          |
+- name, optional description, icon and color;
+- environment, region, provider credential and originating template;
+- status, tags, variables and notes;
+- versioned passkey hash/salt (never the passkey);
+- created, updated and last-opened timestamps.
 
-Relations: has many `Deployment`, `SshKey`, `Activity`; belongs to `Credential`
-(the cloud-provider account used to provision it — this is what `providerId`
-references).
+The passkey is an application-level local gate. It is hashed with scrypt and is
+not returned by IPC. Legacy projects may temporarily have no passkey so an
+upgrade never manufactures an inaccessible password.
 
-> **`providerId` links a project to a `Credential`**, not to the `Provider`
-> table. A project's provider account _is_ its stored credential (the credential
-> resolver decrypts `providerId` to authenticate the engine). Databases created
-> before this was corrected are migrated in place on startup by
-> `migrateSchema(db)`, which rebuilds the `Project` table with the fixed foreign
-> key after backing up the `.db` file.
+### Provider and Credential
 
-### Provider
+Both are project-owned. `Credential.ciphertext` stores an encrypted provider or
+service payload; metadata is non-secret. A Credential may refer to a Provider
+in the same project. `Project.providerId` refers to the project-owned cloud
+credential selected for provisioning.
 
-A connected cloud provider account (metadata; credentials are separate).
-**Currently unused** — the app models a provider account as a `Credential`, so no
-`Provider` rows are created. The table is retained for a future first-class
-provider-connection concept.
+### VPS target
 
-| Column     | Type       | Notes                  |
-| ---------- | ---------- | ---------------------- |
-| `id`       | String @id |                        |
-| `kind`     | String     | `oracle` \| `aws` \| … |
-| `name`     | String     |                        |
-| `status`   | String     | default `disconnected` |
-| `metadata` | String     | JSON                   |
+A project-owned, host-key-pinned SSH destination:
 
-### Credential
+- host, port and username;
+- optional project-owned SSH credential;
+- pinned SHA-256 server identity;
+- last readiness/preflight snapshot;
+- optional infrastructure resource identity for managed-target reconciliation.
 
-Encrypted secret material for one external service.
+Ansible, Nginx, SSL, runtime, containers, terminal and Jenkins all resolve the
+same scoped target rather than maintaining global target lists.
 
-| Column       | Type       | Notes                                                 |
-| ------------ | ---------- | ----------------------------------------------------- |
-| `id`         | String @id |                                                       |
-| `providerId` | String?    | FK → Provider (SetNull)                               |
-| `kind`       | String     | credential kind (`oracle`, `aws`, `github`, `ssh`, …) |
-| `name`       | String     |                                                       |
-| `ciphertext` | String     | **encrypted** base64 blob of the secret JSON          |
-| `metadata`   | String     | JSON                                                  |
+### Jenkins pipeline
+
+A project-owned Jenkins folder/job definition with:
+
+- target and Jenkins/Git/environment/Cloudflare credential references;
+- repository, branch, Jenkinsfile or inline script;
+- typed parameters and non-secret environment;
+- optional domain, application port and Nginx routes;
+- last synchronized Jenkins status.
+
+Uniqueness is `(projectId, folder, name)`.
 
 ### Template
 
-Persisted templates. Built-in templates live in code; this table stores
-**user-saved custom infrastructure templates** ("Save as template"), where
-`definition` holds the serialized `InfrastructurePlan` and `builtIn` is `false`
-(see [`PrismaTemplateStore`](../packages/database/src/repositories/prisma-template-store.ts)).
+Project-owned infrastructure or deployment definitions. Custom templates are
+private to the workspace. Built-in definitions are materialized per project
+where persistence is needed.
 
-| Column                | Type       | Notes                                 |
-| --------------------- | ---------- | ------------------------------------- |
-| `id`                  | String @id |                                       |
-| `kind`                | String     | `infrastructure` \| `deployment`      |
-| `name`, `description` | String     |                                       |
-| `definition`          | String     | JSON — the saved `InfrastructurePlan` |
-| `builtIn`             | Boolean    | `false` for user-saved templates      |
+### Deployment and LogEntry
 
-### Deployment
+Deployment records are project-owned and store strategy, status, outputs and
+timing. Log entries require the same project and may refer only to a deployment
+inside that project. The database trigger rejects a cross-project relation.
 
-One run of a deployment template on a host.
+### SSH key and Secret
 
-| Column                     | Type       | Notes                                           |
-| -------------------------- | ---------- | ----------------------------------------------- |
-| `id`                       | String @id |                                                 |
-| `projectId`                | String     | FK → Project (Cascade), indexed                 |
-| `status`                   | String     | `pending` \| `running` \| `success` \| `failed` |
-| `strategy`                 | String     | the deployment template id                      |
-| `outputs`                  | String     | JSON (outcome / error)                          |
-| `startedAt` / `finishedAt` | DateTime?  |                                                 |
+Both require project ownership. SSH private material and generic secret values
+are ciphertext. Secret names are unique inside a project, not globally.
 
-Relations: has many `LogEntry`.
+### Setting and SystemSetting
 
-### LogEntry
+`Setting` uses composite key `(projectId, key)`. It stores project settings,
+infrastructure plans (`plan:<projectId>`), runtime plans
+(`runtime-plan:<targetId>`) and scoped cached configuration.
 
-Structured log lines (per deployment / project).
-
-| Column         | Type       | Notes                              |
-| -------------- | ---------- | ---------------------------------- |
-| `id`           | String @id |                                    |
-| `deploymentId` | String?    | FK → Deployment (Cascade), indexed |
-| `projectId`    | String?    |                                    |
-| `level`        | String     | default `info`                     |
-| `source`       | String     | default `app`                      |
-| `message`      | String     |                                    |
-| `metadata`     | String     | JSON                               |
-| `createdAt`    | DateTime   | indexed                            |
-
-### SshKey
-
-SSH key pairs associated with a project (private key encrypted).
-
-| Column              | Type       | Notes                     |
-| ------------------- | ---------- | ------------------------- |
-| `id`                | String @id |                           |
-| `projectId`         | String?    | FK → Project (SetNull)    |
-| `name`, `publicKey` | String     |                           |
-| `ciphertext`        | String?    | **encrypted** private key |
-| `fingerprint`       | String     |                           |
-
-> In the current UI, SSH keys are managed as an `ssh` **credential kind** in the
-> Credential Manager (stored in `Credential`); this table is available for a
-> dedicated SSH-key store.
-
-### Secret
-
-Generic encrypted key/value secrets, scoped globally or per project.
-
-| Column       | Type       | Notes                      |
-| ------------ | ---------- | -------------------------- |
-| `id`         | String @id |                            |
-| `scope`      | String     | `global` \| `project:<id>` |
-| `name`       | String     | unique per scope           |
-| `ciphertext` | String     | **encrypted**              |
-
-Unique: `(scope, name)`.
-
-### VpsTarget
-
-A reusable verified SSH destination for Ansible. Authentication material stays
-in the related encrypted `Credential`.
-
-| Column                     | Type       | Notes                          |
-| -------------------------- | ---------- | ------------------------------ |
-| `id`                       | String @id | UUID                           |
-| `name`, `host`, `username` | String     | Identity and connection fields |
-| `port`                     | Int        | SSH port                       |
-| `sshCredentialId`          | String?    | FK → Credential (SetNull)      |
-| `hostKeySha256`            | String     | Pinned server identity         |
-| `lastPreflight`            | String     | JSON readiness snapshot        |
-| `lastPreflightAt`          | DateTime?  | Last real remote check         |
-| `createdAt` / `updatedAt`  | DateTime   | indexed on `updatedAt`         |
-
-### JenkinsPipeline
-
-A CloudForge-managed Jenkins Pipeline job. Jobs are grouped into a deterministic
-folder for their existing `VpsTarget`; the target and credentials are referenced,
-not duplicated. Repository and deployment configuration is persisted, while API
-tokens remain only in encrypted `Credential` records and Jenkins' credential store.
-
-| Column                                       | Type            | Notes                                                |
-| -------------------------------------------- | --------------- | ---------------------------------------------------- |
-| `id`                                         | String @id      | Application UUID                                     |
-| `folder`, `name`                             | String          | Unique Jenkins folder/job identity                   |
-| `targetId`                                   | String          | Existing `VpsTarget` id, indexed                     |
-| `jenkinsCredentialId`                        | String          | Encrypted Jenkins credential reference               |
-| `githubCredentialId`                         | String?         | Encrypted GitHub credential reference                |
-| `repositoryUrl`, `branch`, `jenkinsfilePath` | String          | SCM pipeline configuration                           |
-| `pipelineScript`, `definitionMode`           | String          | Inline script or `scm` definition                    |
-| `parameters`, `environment`                  | String          | Validated JSON; secret environment keys are rejected |
-| `environmentCredentialId`                    | String?         | Encrypted deployment environment file reference      |
-| `domain`, `applicationPort`                  | String/Int      | Optional Nginx/Cloudflare integration                |
-| `cloudflareCredentialId`, `cloudflareZoneId` | String?         | Optional service-provider references                 |
-| `configureDomain`                            | Boolean         | Enables DNS and Nginx orchestration                  |
-| `applicationRoutes`                          | String          | JSON path/loopback-port routes for Nginx             |
-| `lastStatus`, timestamps                     | String/DateTime | Jenkins state and audit timestamps                   |
-
-### Setting
-
-Simple key/value store. Backs `AppSettings` (`key = app.settings`) and per-project
-infrastructure plans (`key = plan:<projectId>`).
-
-| Column  | Type       | Notes          |
-| ------- | ---------- | -------------- |
-| `key`   | String @id |                |
-| `value` | String     | JSON or scalar |
+`SystemSetting` uses a global key and is restricted to pre-unlock device
+preferences. It must not contain credentials, topology or provider defaults.
 
 ### Plugin
 
-Locally-installed plugin state (marketplace catalog lives in code).
-
-| Column                    | Type       | Notes             |
-| ------------------------- | ---------- | ----------------- |
-| `id`                      | String @id | catalog plugin id |
-| `name`, `version`, `kind` | String     |                   |
-| `enabled`                 | Boolean    |                   |
-| `manifest`                | String     | JSON              |
+Installed declarative plugin state is keyed by `(projectId, id)`. Activating a
+plugin in one project does not activate it in another.
 
 ### Activity
 
-The audit / activity feed powering the Logs module and dashboard timeline.
+Project-required audit events with type, message, JSON metadata and timestamp.
+Activity queries never combine workspaces.
 
-| Column      | Type       | Notes                                                                  |
-| ----------- | ---------- | ---------------------------------------------------------------------- |
-| `id`        | String @id |                                                                        |
-| `projectId` | String?    | FK → Project (SetNull)                                                 |
-| `type`      | String     | e.g. `project.created`, `infrastructure.applied`, `deployment.success` |
-| `message`   | String     |                                                                        |
-| `metadata`  | String     | JSON                                                                   |
-| `createdAt` | DateTime   | indexed                                                                |
+## Referential integrity beyond Prisma
 
-## Where things are stored (summary)
+The ownership migration installs SQLite insert/update triggers for:
 
-| Data                              | Table / key                                                                |
-| --------------------------------- | -------------------------------------------------------------------------- |
-| Projects                          | `Project`                                                                  |
-| Credentials (encrypted)           | `Credential`                                                               |
-| App settings                      | `Setting` (`app.settings`)                                                 |
-| Infrastructure plan (per project) | `Setting` (`plan:<projectId>`)                                             |
-| Custom infrastructure templates   | `Template` (`kind = infrastructure`, `builtIn = false`)                    |
-| Pulumi state                      | local file backend under `userData/pulumi/state` (not in SQLite)           |
-| Deployment history                | `Deployment`                                                               |
-| Activity/audit                    | `Activity`                                                                 |
-| Saved Ansible VPS targets         | `VpsTarget`                                                                |
-| Jenkins pipeline definitions      | `JenkinsPipeline`                                                          |
-| Installed plugins                 | `Plugin`                                                                   |
-| Application log file              | `userData/logs/cloudforge.log` (not in SQLite — see [Modules](MODULES.md)) |
+- Project → Credential (`providerId`);
+- Credential → Provider;
+- VPS target → SSH Credential;
+- Jenkins pipeline → target and all credentials;
+- LogEntry → Deployment.
+
+Each referenced row must have the same `projectId`. This protects legacy
+databases even where an old physical foreign key cannot be changed with
+`ALTER TABLE`.
+
+## Legacy ownership migration
+
+`migrateProjectOwnership` runs transactionally before application services:
+
+1. keeps a fresh database at zero projects;
+2. preserves existing project ids and records;
+3. creates a deterministic Default Project only when unowned legacy data
+   exists;
+4. infers ownership from projects, deployments, managed targets and references;
+5. clones formerly shared rows where separate project ownership is necessary;
+6. fills and validates every required owner;
+7. installs project-local uniqueness and integrity triggers;
+8. records a migration version so subsequent startup is idempotent.
+
+A database backup is made before destructive table rebuilds. No remote adapter
+is involved, so migration cannot modify a VPS or cloud account.
+
+## Storage outside SQLite
+
+| Data                 | Location and boundary                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Pulumi state         | local backend below `userData`; stack references include the project identity             |
+| Application log file | `userData/logs/cloudforge.log`; log records shown in-app are project scoped               |
+| Portable backups     | project-bound format with embedded project id; cross-project restore is rejected          |
+| Temporary SSH keys   | `userData/runtime-keys/<projectId>`; removed on lock, switch, shutdown and crash recovery |
+
+See [Multi-project workspaces](MULTI-PROJECT-WORKSPACES.md) and the
+[production audit](MULTI-PROJECT-PRODUCTION-AUDIT.md) for lifecycle guarantees.

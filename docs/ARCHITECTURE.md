@@ -18,6 +18,9 @@ provider independence.
   exceptions. Errors are typed (`AppError` hierarchy) and serializable.
 - **Secure by default** — context isolation on, Node integration off, a strict CSP,
   and a single typed IPC surface.
+- **Project isolation by default** — one unlocked Project is the active workspace;
+  repositories and privileged IPC derive authorization from its main-process
+  context rather than renderer-supplied ids.
 
 ## 2. Layers
 
@@ -92,6 +95,12 @@ export interface IpcContract {
 Adding a feature is: add channel(s) to the contract → add a handler module →
 register it in `main/ipc/index.ts`. Types keep all three processes in lock-step.
 
+All new feature channels are project-scoped automatically. Only channels
+explicitly allow-listed for onboarding, project unlock, application lifecycle
+or updates may run without a session. Scoped calls hold an operation lease so a
+project switch cannot race a request already in progress. See
+[Multi-project workspaces](MULTI-PROJECT-WORKSPACES.md).
+
 ## 5. Security model
 
 - `contextIsolation: true`, `nodeIntegration: false`, `webSecurity: true`.
@@ -101,6 +110,11 @@ register it in `main/ipc/index.ts`. Types keep all three processes in lock-step.
   inside the app; `<webview>` attachment is blocked.
 - Secrets (Phase 4) are never stored in plaintext: OS keychain first, Electron
   `safeStorage` as a fallback.
+- Project passkeys use versioned scrypt digests with per-project salts. The
+  digest remains in the main process/database and never enters the renderer.
+- Unlocking one project grants no access to any other project. Project-scoped
+  repositories, cross-project database triggers and teardown of SSH/background
+  resources enforce the boundary in depth.
 
 ## 6. Error handling
 
