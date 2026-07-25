@@ -1,3 +1,6 @@
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { app } from 'electron';
 import { ConflictError, UnauthorizedError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
@@ -82,6 +85,7 @@ export function registerProjectHandlers(): void {
     orThrow(await getContainer().vpsTargetService.removeManagedProject(id));
     orThrow(await getContainer().projectSessionService.lock());
     orThrow(await getContainer().projectService.remove(id));
+    await removeProjectFiles(id, ref.project);
     emitEvent('vpsTargets:changed', { reason: 'deleted' });
   });
 }
@@ -91,4 +95,23 @@ function requireCurrentProject(projectId: string): void {
   if (active.projectId !== projectId) {
     throw new UnauthorizedError('The request belongs to another project');
   }
+}
+
+async function removeProjectFiles(projectId: string, pulumiProject: string): Promise<void> {
+  const userData = app.getPath('userData');
+  await Promise.all([
+    rm(join(userData, 'logs', 'projects', projectId), { recursive: true, force: true }),
+    rm(join(userData, 'pulumi', 'state', '.pulumi', 'stacks', pulumiProject), {
+      recursive: true,
+      force: true,
+    }),
+    rm(join(userData, 'pulumi', 'state', '.pulumi', 'history', pulumiProject), {
+      recursive: true,
+      force: true,
+    }),
+    rm(join(userData, 'pulumi', 'state', '.pulumi', 'backups', pulumiProject), {
+      recursive: true,
+      force: true,
+    }),
+  ]);
 }

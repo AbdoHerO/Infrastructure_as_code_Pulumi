@@ -1,7 +1,10 @@
-import { chmod, mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { app, dialog } from 'electron';
+import { chmod, writeFile } from 'node:fs/promises';
+import { dialog } from 'electron';
 import { getContainer } from '../../container.js';
+import {
+  materializeProjectSshKey,
+  removeMaterializedCredential,
+} from '../../security/project-key-files.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 
@@ -34,18 +37,21 @@ export function registerSshKeyHandlers(): void {
   });
 
   registerHandler('sshKeys:materializePrivate', async ({ id, suggestedName }) => {
-    const directory = join(app.getPath('home'), '.ssh');
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await chmod(directory, 0o700).catch(() => undefined);
-    const safeName = suggestedName.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
-    const filePath = join(directory, `cloudforge-${safeName || 'key'}-${id.slice(0, 8)}`);
+    const projectId = getContainer().projectContext.requireActive().projectId;
     const privateKey = orThrow(await getContainer().sshKeyService.revealPrivate(id));
-    await writeFile(filePath, privateKey, { encoding: 'utf8', mode: 0o600 });
-    await chmod(filePath, 0o600).catch(() => undefined);
-    return { path: filePath };
+    return {
+      path: await materializeProjectSshKey({
+        projectId,
+        credentialId: id,
+        suggestedName,
+        privateKey,
+      }),
+    };
   });
 
-  registerHandler('sshKeys:delete', async ({ id }) =>
-    orThrow(await getContainer().sshKeyService.remove(id)),
-  );
+  registerHandler('sshKeys:delete', async ({ id }) => {
+    const projectId = getContainer().projectContext.requireActive().projectId;
+    orThrow(await getContainer().sshKeyService.remove(id));
+    await removeMaterializedCredential(projectId, id);
+  });
 }

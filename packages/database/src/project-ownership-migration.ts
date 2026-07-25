@@ -73,6 +73,7 @@ export async function migrateProjectOwnership(
   if (await hasColumn(db, 'Credential', 'projectId')) {
     await ensureSystemSettingsTable(db);
     await createOwnershipGuards(db);
+    await createReferenceOwnershipGuards(db);
     return false;
   }
   await hooks.onBeforeMigration?.();
@@ -120,6 +121,7 @@ export async function migrateProjectOwnership(
         await rebuildSettings(tx as Db, [], new Map());
         await rebuildPlugins(tx as Db, []);
         await createOwnershipGuards(tx as Db);
+        await createReferenceOwnershipGuards(tx as Db);
         return true;
       }
 
@@ -203,6 +205,7 @@ export async function migrateProjectOwnership(
         );
       }
       await createOwnershipGuards(tx as Db);
+      await createReferenceOwnershipGuards(tx as Db);
       return true;
     });
   } finally {
@@ -234,6 +237,63 @@ async function createOwnershipGuards(db: Db): Promise<void> {
           OR NOT EXISTS (SELECT 1 FROM "Project" WHERE "id" = NEW."projectId")
         BEGIN
           SELECT RAISE(ABORT, 'project ownership is required');
+        END`);
+    }
+  }
+}
+
+/**
+ * SQLite foreign keys prove that a referenced row exists, but not that both
+ * rows belong to the same workspace. These triggers make cross-project
+ * references impossible even if a future adapter accidentally omits a
+ * repository scope.
+ */
+async function createReferenceOwnershipGuards(db: Db): Promise<void> {
+  const guards = [
+    {
+      table: 'Project',
+      operations: ['UPDATE'] as const,
+      when:
+        'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."providerId" AND "projectId" = NEW."id")',
+    },
+    {
+      table: 'Credential',
+      operations: ['INSERT', 'UPDATE'] as const,
+      when:
+        'NEW."providerId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Provider" WHERE "id" = NEW."providerId" AND "projectId" = NEW."projectId")',
+    },
+    {
+      table: 'VpsTarget',
+      operations: ['INSERT', 'UPDATE'] as const,
+      when:
+        'NEW."sshCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."sshCredentialId" AND "projectId" = NEW."projectId")',
+    },
+    {
+      table: 'JenkinsPipeline',
+      operations: ['INSERT', 'UPDATE'] as const,
+      when: `NOT EXISTS (SELECT 1 FROM "VpsTarget" WHERE "id" = NEW."targetId" AND "projectId" = NEW."projectId")
+        OR NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."jenkinsCredentialId" AND "projectId" = NEW."projectId")
+        OR (NEW."githubCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."githubCredentialId" AND "projectId" = NEW."projectId"))
+        OR (NEW."environmentCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."environmentCredentialId" AND "projectId" = NEW."projectId"))
+        OR (NEW."cloudflareCredentialId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Credential" WHERE "id" = NEW."cloudflareCredentialId" AND "projectId" = NEW."projectId"))`,
+    },
+    {
+      table: 'LogEntry',
+      operations: ['INSERT', 'UPDATE'] as const,
+      when:
+        'NEW."deploymentId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "Deployment" WHERE "id" = NEW."deploymentId" AND "projectId" = NEW."projectId")',
+    },
+  ] as const;
+
+  for (const guard of guards) {
+    for (const operation of guard.operations) {
+      const trigger = `${guard.table}_same_project_references_${operation.toLowerCase()}`;
+      await db.$executeRawUnsafe(`CREATE TRIGGER IF NOT EXISTS "${trigger}"
+        BEFORE ${operation} ON "${guard.table}"
+        FOR EACH ROW
+        WHEN ${guard.when}
+        BEGIN
+          SELECT RAISE(ABORT, 'cross-project reference is forbidden');
         END`);
     }
   }

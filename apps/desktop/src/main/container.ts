@@ -71,8 +71,11 @@ import {
   PrismaTemplateStore,
   PrismaVpsTargetRepository,
   PrismaJenkinsPipelineRepository,
+  isolateProjectSnapshot,
+  restoreProjectSnapshot,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
+import { removeMaterializedProjectKeys } from './security/project-key-files.js';
 import { NodeProjectPasskeyHasher } from './security/project-passkey-hasher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs, setActiveLogProject } from './logging/logger.js';
@@ -118,6 +121,8 @@ export interface AppContainer {
   readonly secretsBackedByOsKeychain: boolean;
   synchronizeData(): Promise<{ warnings: readonly string[] }>;
   snapshotDatabase(destination: string): Promise<void>;
+  snapshotProjectDatabase(destination: string, projectId: string): Promise<void>;
+  restoreProjectDatabase(source: string, projectId: string): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -576,6 +581,7 @@ export async function initContainer(): Promise<AppContainer> {
       beforeDeactivate: async (lease) => {
         await projectOperations.deactivate(lease.projectId);
         sshTerminalService.closeAll();
+        await removeMaterializedProjectKeys(lease.projectId);
         cloudflareSnapshot = '';
         setActiveLogProject(null);
       },
@@ -640,6 +646,25 @@ export async function initContainer(): Promise<AppContainer> {
     synchronizeData: synchronizeActiveProject,
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
+    },
+    snapshotProjectDatabase: async (destination, projectId) => {
+      await db.$executeRawUnsafe('VACUUM INTO ?', destination);
+      const snapshot = createPrismaClient(toSqliteUrl(destination));
+      await snapshot.$connect();
+      try {
+        await isolateProjectSnapshot(snapshot, projectId);
+      } finally {
+        await snapshot.$disconnect();
+      }
+    },
+    restoreProjectDatabase: async (source, projectId) => {
+      const snapshot = createPrismaClient(toSqliteUrl(source));
+      await snapshot.$connect();
+      try {
+        await restoreProjectSnapshot(db, snapshot, projectId);
+      } finally {
+        await snapshot.$disconnect();
+      }
     },
     dispose: async () => {
       clearInterval(sslRenewalTimer);
