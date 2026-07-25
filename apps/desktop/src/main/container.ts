@@ -75,7 +75,10 @@ import {
   restoreProjectSnapshot,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
-import { removeMaterializedProjectKeys } from './security/project-key-files.js';
+import {
+  clearMaterializedProjectKeyRoot,
+  removeMaterializedProjectKeys,
+} from './security/project-key-files.js';
 import { NodeProjectPasskeyHasher } from './security/project-passkey-hasher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
 import { log, pruneLogs, setActiveLogProject } from './logging/logger.js';
@@ -137,6 +140,10 @@ function toSqliteUrl(absolutePath: string): string {
 export async function initContainer(): Promise<AppContainer> {
   if (container) return container;
 
+  // Private keys exported explicitly by the user are never stored here.
+  // This directory contains only transient SSH command material and is safe
+  // to clear after a crash or forced shutdown.
+  await clearMaterializedProjectKeyRoot();
   const dbPath = join(app.getPath('userData'), 'cloudforge.db');
   const db: Db = createPrismaClient(toSqliteUrl(dbPath));
   await db.$connect();
@@ -670,6 +677,7 @@ export async function initContainer(): Promise<AppContainer> {
       clearInterval(sslRenewalTimer);
       clearInterval(cloudflareSyncTimer);
       sshTerminalService.closeAll();
+      await clearMaterializedProjectKeyRoot();
       await db.$disconnect();
       container = null;
     },
