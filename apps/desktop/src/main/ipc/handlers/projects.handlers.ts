@@ -52,6 +52,13 @@ export function registerProjectHandlers(): void {
     return project;
   });
 
+  registerHandler('projects:duplicate', async (input) => {
+    const sourceProjectId = getContainer().projectContext.requireActive().projectId;
+    return orThrow(
+      await getContainer().projectDuplicationService.duplicate(sourceProjectId, input),
+    );
+  });
+
   registerHandler('projects:update', async ({ id, changes }) => {
     requireCurrentProject(id);
     return orThrow(await getContainer().projectConfigurationService.update(id, changes));

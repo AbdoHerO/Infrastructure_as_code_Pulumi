@@ -1,6 +1,7 @@
 import type { Environment } from '../../domain/project/environment.js';
 import type { Project } from '../../domain/project/project.js';
 import type { ProjectStatus } from '../../domain/project/project-status.js';
+import type { ProjectInfrastructureSummary } from '../ports/project-summary-reader.js';
 
 /**
  * Serializable, transport-safe representation of a project. This is the shape
@@ -43,6 +44,7 @@ export interface ProjectPickerDto {
   readonly hasPasskey: boolean;
   readonly lastOpenedAt: string | null;
   readonly createdAt: string;
+  readonly summary: ProjectInfrastructureSummary;
 }
 
 /** Map a domain {@link Project} to its transport DTO. */
@@ -70,7 +72,15 @@ export function toProjectDto(project: Project): ProjectDto {
 }
 
 /** Map a project to the metadata that may be shown while it is locked. */
-export function toProjectPickerDto(project: Project): ProjectPickerDto {
+export function toProjectPickerDto(
+  project: Project,
+  summary: ProjectInfrastructureSummary = {
+    infrastructureConfigured: false,
+    targetCount: 0,
+    pipelineCount: 0,
+    deploymentCount: 0,
+  },
+): ProjectPickerDto {
   const snapshot = project.toSnapshot();
   return {
     id: snapshot.id,
@@ -84,5 +94,6 @@ export function toProjectPickerDto(project: Project): ProjectPickerDto {
     hasPasskey: snapshot.passkeyHash !== null,
     lastOpenedAt: snapshot.lastOpenedAt,
     createdAt: snapshot.createdAt,
+    summary,
   };
 }

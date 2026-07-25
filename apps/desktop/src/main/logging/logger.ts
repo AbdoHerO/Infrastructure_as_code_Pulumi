@@ -10,6 +10,7 @@ import {
   unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { app } from 'electron';
 import pino, { type Logger } from 'pino';
 
@@ -27,16 +28,44 @@ import pino, { type Logger } from 'pino';
 let logger: Logger | undefined;
 let logFilePath = '';
 let logDir = '';
+let activeProjectId: string | null = null;
+let activeProjectStream: ReturnType<typeof pino.destination> | null = null;
 const MAX_ACTIVE_LOG_BYTES = 10 * 1024 * 1024;
 
-/** Absolute path to the log directory (safe to call before init). */
+/** Absolute path to the active project's isolated log directory. */
 export function getLogDir(): string {
-  return logDir || join(app.getPath('userData'), 'logs');
+  const root = logDir || join(app.getPath('userData'), 'logs');
+  return activeProjectId ? join(root, 'projects', activeProjectId) : root;
 }
 
-/** Absolute path to the log file (safe to call before init). */
+/** Absolute path to the active project's isolated log file. */
 export function getLogFilePath(): string {
-  return logFilePath || join(getLogDir(), 'cloudforge.log');
+  return activeProjectId
+    ? join(getLogDir(), 'cloudforge.log')
+    : logFilePath || join(getLogDir(), 'cloudforge.log');
+}
+
+/**
+ * Route subsequent application records into the selected project's private
+ * log in addition to the device-level diagnostic log.
+ */
+export function setActiveLogProject(projectId: string | null): void {
+  if (activeProjectId === projectId) return;
+  try {
+    activeProjectStream?.flushSync();
+    activeProjectStream?.end();
+  } catch {
+    // Workspace switching must not fail because a diagnostic stream is busy.
+  }
+  activeProjectStream = null;
+  activeProjectId = projectId;
+  if (!projectId) return;
+
+  const directory = getLogDir();
+  mkdirSync(directory, { recursive: true });
+  const path = getLogFilePath();
+  rotatePath(path, directory);
+  activeProjectStream = pino.destination({ dest: path, sync: false, mkdir: true });
 }
 
 /** Initialise the logger once, at startup. */
@@ -49,6 +78,16 @@ export function initLogger(): Logger {
   rotateActiveLog();
 
   const fileStream = pino.destination({ dest: logFilePath, sync: false, mkdir: true });
+  const projectRouter = new Writable({
+    write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
+      try {
+        activeProjectStream?.write(chunk.toString('utf8'));
+        callback();
+      } catch (error) {
+        callback(error as Error);
+      }
+    },
+  });
 
   logger = pino(
     {
@@ -59,6 +98,7 @@ export function initLogger(): Logger {
     },
     pino.multistream([
       { level: 'trace', stream: fileStream }, // the file captures everything
+      { level: 'trace', stream: projectRouter }, // workspace log is isolated
       { level: 'info', stream: process.stdout }, // console stays readable
     ]),
   );
@@ -72,6 +112,7 @@ export function initLogger(): Logger {
   app.on('will-quit', () => {
     try {
       fileStream.flushSync();
+      activeProjectStream?.flushSync();
     } catch {
       // best effort on shutdown
     }
@@ -82,10 +123,14 @@ export function initLogger(): Logger {
 }
 
 function rotateActiveLog(): void {
+  rotatePath(logFilePath, logDir);
+}
+
+function rotatePath(path: string, directory: string): void {
   try {
-    if (!existsSync(logFilePath) || statSync(logFilePath).size < MAX_ACTIVE_LOG_BYTES) return;
+    if (!existsSync(path) || statSync(path).size < MAX_ACTIVE_LOG_BYTES) return;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    renameSync(logFilePath, join(logDir, `cloudforge-${timestamp}.log`));
+    renameSync(path, join(directory, `cloudforge-${timestamp}.log`));
   } catch {
     // Logging must remain available even if rotation cannot be performed.
   }

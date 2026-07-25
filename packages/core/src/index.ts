@@ -18,6 +18,8 @@ export * from './domain/plugin/plugin.js';
 
 // Application — ports
 export * from './application/ports/project-repository.js';
+export * from './application/ports/project-configuration-cloner.js';
+export * from './application/ports/project-summary-reader.js';
 export * from './application/ports/project-passkey-hasher.js';
 export * from './application/ports/credential-repository.js';
 export * from './application/ports/secret-cipher.js';
@@ -60,6 +62,7 @@ export * from './application/projects/project-service.js';
 export * from './application/projects/project-context.js';
 export * from './application/projects/project-session-service.js';
 export * from './application/projects/project-configuration-service.js';
+export * from './application/projects/project-duplication-service.js';
 export * from './application/credentials/credential-service.js';
 export * from './application/settings/settings.js';
 export * from './application/settings/settings-service.js';

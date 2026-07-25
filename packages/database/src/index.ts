@@ -12,6 +12,8 @@ export {
   type ProjectOwnershipMigrationHooks,
 } from './project-ownership-migration.js';
 export { PrismaProjectRepository } from './repositories/prisma-project-repository.js';
+export { PrismaProjectConfigurationCloner } from './repositories/prisma-project-configuration-cloner.js';
+export { PrismaProjectSummaryReader } from './repositories/prisma-project-summary-reader.js';
 export { PrismaCredentialRepository } from './repositories/prisma-credential-repository.js';
 export {
   PrismaSettingsRepository,

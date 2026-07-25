@@ -43,7 +43,7 @@ export class ProjectOperationRegistry {
     this.active.set(key, operation);
     return {
       signal: controller?.signal,
-      complete: operation.complete,
+      complete: () => operation.complete(),
     };
   }
 

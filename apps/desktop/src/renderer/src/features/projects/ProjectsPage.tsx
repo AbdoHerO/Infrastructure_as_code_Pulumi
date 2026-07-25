@@ -1,10 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Boxes, KeyRound, Loader2, LockKeyhole, Save, Trash2 } from 'lucide-react';
+import { Boxes, Copy, KeyRound, Loader2, LockKeyhole, Save, Trash2 } from 'lucide-react';
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
   Select,
@@ -27,7 +33,8 @@ import { useWorkspace } from './WorkspaceContext.js';
 
 /** Settings for the currently opened workspace; other projects remain locked. */
 export function ProjectsPage(): JSX.Element {
-  const { session, refreshSession, deleteCurrent, lock } = useWorkspace();
+  const { session, refreshSession, refreshProjects, duplicate, deleteCurrent, lock } =
+    useWorkspace();
   const project = session!.project;
   const { data: credentials } = useCredentials();
   const updateProject = useUpdateProject();
@@ -47,6 +54,11 @@ export function ProjectsPage(): JSX.Element {
   const [changingPasskey, setChangingPasskey] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateName, setDuplicateName] = useState(`${project.name} Copy`);
+  const [duplicatePasskey, setDuplicatePasskey] = useState('');
+  const [duplicateConfirmation, setDuplicateConfirmation] = useState('');
+  const [duplicating, setDuplicating] = useState(false);
 
   useEffect(() => {
     setName(project.name);
@@ -118,15 +130,51 @@ export function ProjectsPage(): JSX.Element {
     }
   };
 
+  const duplicateProject = async (): Promise<void> => {
+    if (!duplicateName.trim()) {
+      toast.error('A name is required for the copied project');
+      return;
+    }
+    if (duplicatePasskey.length < 8) {
+      toast.error('The copied project passkey must contain at least 8 characters');
+      return;
+    }
+    if (duplicatePasskey !== duplicateConfirmation) {
+      toast.error('The copied project passkeys do not match');
+      return;
+    }
+    setDuplicating(true);
+    try {
+      const copied = await duplicate({
+        name: duplicateName.trim(),
+        passkey: duplicatePasskey,
+      });
+      await refreshProjects();
+      setDuplicateOpen(false);
+      setDuplicatePasskey('');
+      setDuplicateConfirmation('');
+      toast.success(`Project “${copied.name}” created as a locked configuration copy`);
+    } catch (error) {
+      toast.error(error instanceof IpcCallError ? error.message : 'Failed to duplicate project');
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   return (
     <>
       <PageHeader
         title="Project Settings"
         description="Configure the currently opened, isolated workspace."
         actions={
-          <Button variant="outline" onClick={() => void lock()}>
-            <LockKeyhole className="size-4" /> Lock / switch
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setDuplicateOpen(true)}>
+              <Copy className="size-4" /> Duplicate
+            </Button>
+            <Button variant="outline" onClick={() => void lock()}>
+              <LockKeyhole className="size-4" /> Lock / switch
+            </Button>
+          </>
         }
       />
 
@@ -290,6 +338,59 @@ export function ProjectsPage(): JSX.Element {
         onOpenChange={setDeleteOpen}
         onConfirm={() => void remove()}
       />
+      <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Duplicate project configuration</DialogTitle>
+            <DialogDescription>
+              Copies providers, encrypted credentials, templates, SSH keys, secrets, settings and
+              the infrastructure plan. Live VPS targets, pipelines, deployments, runtime state, logs
+              and cloud state are intentionally not copied.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Field label="New project name">
+              <Input
+                value={duplicateName}
+                autoFocus
+                onChange={(event) => setDuplicateName(event.target.value)}
+              />
+            </Field>
+            <Field label="New project passkey">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={duplicatePasskey}
+                onChange={(event) => setDuplicatePasskey(event.target.value)}
+              />
+            </Field>
+            <Field label="Confirm passkey">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={duplicateConfirmation}
+                onChange={(event) => setDuplicateConfirmation(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void duplicateProject();
+                }}
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDuplicateOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={duplicating} onClick={() => void duplicateProject()}>
+              {duplicating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Copy className="size-4" />
+              )}
+              Create locked copy
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

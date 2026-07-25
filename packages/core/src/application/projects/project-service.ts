@@ -17,6 +17,10 @@ import {
 } from '../../domain/project/project.js';
 import type { ProjectRepository } from '../ports/project-repository.js';
 import type { ProjectPasskeyHasher } from '../ports/project-passkey-hasher.js';
+import type {
+  ProjectInfrastructureSummary,
+  ProjectSummaryReader,
+} from '../ports/project-summary-reader.js';
 import {
   type ProjectDto,
   type ProjectPickerDto,
@@ -36,6 +40,7 @@ export class ProjectService {
   constructor(
     private readonly projects: ProjectRepository,
     private readonly passkeys?: ProjectPasskeyHasher,
+    private readonly summaries?: ProjectSummaryReader,
   ) {}
 
   async create(input: CreateProjectInput): Promise<Result<ProjectDto, ProjectServiceError>> {
@@ -72,7 +77,15 @@ export class ProjectService {
   async listForPicker(): Promise<Result<ProjectPickerDto[], PersistenceError>> {
     const found = await this.projects.findAll();
     if (!found.ok) return found;
-    return ok(found.value.map(toProjectPickerDto));
+    let summaries: Result<
+      ReadonlyMap<string, ProjectInfrastructureSummary>,
+      PersistenceError
+    > = ok(new Map<string, ProjectInfrastructureSummary>());
+    if (this.summaries) summaries = await this.summaries.readAll();
+    if (!summaries.ok) return summaries;
+    return ok(
+      found.value.map((project) => toProjectPickerDto(project, summaries.value.get(project.id))),
+    );
   }
 
   async get(id: string): Promise<Result<ProjectDto, ProjectServiceError>> {

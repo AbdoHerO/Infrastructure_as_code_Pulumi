@@ -21,6 +21,7 @@ import {
   ManagedVpsTargetSyncService,
   PluginService,
   ProjectConfigurationService,
+  ProjectDuplicationService,
   InMemoryProjectContext,
   ProjectService,
   ProjectSessionService,
@@ -63,6 +64,8 @@ import {
   PrismaRuntimePlanStore,
   PrismaPluginRepository,
   PrismaProjectRepository,
+  PrismaProjectConfigurationCloner,
+  PrismaProjectSummaryReader,
   PrismaSettingsRepository,
   PrismaSystemSettingsRepository,
   PrismaTemplateStore,
@@ -72,7 +75,7 @@ import {
 import { createSecretCipher } from './security/secret-cipher.js';
 import { NodeProjectPasskeyHasher } from './security/project-passkey-hasher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
-import { log, pruneLogs } from './logging/logger.js';
+import { log, pruneLogs, setActiveLogProject } from './logging/logger.js';
 import { projectStackReference } from './infra/stack-reference.js';
 import { emitEvent } from './ipc/emit.js';
 import { projectOperations } from './project-operation-registry.js';
@@ -91,6 +94,7 @@ export interface AppContainer {
   readonly projectContext: ProjectContext;
   readonly projectSessionService: ProjectSessionService;
   readonly projectConfigurationService: ProjectConfigurationService;
+  readonly projectDuplicationService: ProjectDuplicationService;
   readonly credentialService: CredentialService;
   readonly settingsService: SettingsService;
   readonly systemSettingsService: SettingsService;
@@ -172,7 +176,11 @@ export async function initContainer(): Promise<AppContainer> {
   const projectRepository = new PrismaProjectRepository(db);
   const projectContext = new InMemoryProjectContext();
   const projectPasskeys = new NodeProjectPasskeyHasher();
-  const projectService = new ProjectService(projectRepository, projectPasskeys);
+  const projectService = new ProjectService(
+    projectRepository,
+    projectPasskeys,
+    new PrismaProjectSummaryReader(db),
+  );
   const credentialService = new CredentialService(
     new PrismaCredentialRepository(db, projectContext),
     cipher,
@@ -261,6 +269,11 @@ export async function initContainer(): Promise<AppContainer> {
     projectService,
     infrastructureService,
     projectStackReference,
+    activityService,
+  );
+  const projectDuplicationService = new ProjectDuplicationService(
+    projectService,
+    new PrismaProjectConfigurationCloner(db),
     activityService,
   );
   const remoteTargetResolver: RemoteTargetResolver = {
@@ -500,8 +513,10 @@ export async function initContainer(): Promise<AppContainer> {
         await projectOperations.deactivate(lease.projectId);
         sshTerminalService.closeAll();
         cloudflareSnapshot = '';
+        setActiveLogProject(null);
       },
       afterActivate: async (lease) => {
+        setActiveLogProject(lease.projectId);
         const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
         if (recoveredDeployments > 0) {
           log().warn(
@@ -533,6 +548,7 @@ export async function initContainer(): Promise<AppContainer> {
     projectContext,
     projectSessionService,
     projectConfigurationService,
+    projectDuplicationService,
     credentialService,
     settingsService,
     systemSettingsService,

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ok, type PersistenceError, type Result } from '@cloudforge/shared';
 import type { Project, ProjectId } from '../../domain/project/project.js';
 import type { ProjectRepository } from '../ports/project-repository.js';
+import type { ProjectSummaryReader } from '../ports/project-summary-reader.js';
 import { ProjectService } from './project-service.js';
 
 /** Minimal in-memory repository used to exercise the service in isolation. */
@@ -71,6 +72,46 @@ describe('ProjectService', () => {
     expect(listed.value[0]).not.toHaveProperty('notes');
     expect(listed.value[0]).not.toHaveProperty('tags');
     expect(listed.value[0]).not.toHaveProperty('providerId');
+  });
+
+  it('adds aggregate counts to the locked picker without exposing resource records', async () => {
+    const repository = new InMemoryProjectRepository();
+    const summaries: ProjectSummaryReader = {
+      readAll: () =>
+        Promise.resolve(
+          ok(
+            new Map([
+              [
+                [...createdIds][0] ?? '',
+                {
+                  infrastructureConfigured: true,
+                  targetCount: 2,
+                  pipelineCount: 3,
+                  deploymentCount: 4,
+                },
+              ],
+            ]),
+          ),
+        ),
+    };
+    const createdIds = new Set<string>();
+    const scoped = new ProjectService(repository);
+    const created = await scoped.create({
+      name: 'Summary',
+      environment: 'production',
+      region: 'eu-frankfurt-1',
+    });
+    if (!created.ok) throw created.error;
+    createdIds.add(created.value.id);
+
+    const picker = await new ProjectService(repository, undefined, summaries).listForPicker();
+    if (!picker.ok) throw picker.error;
+    expect(picker.value[0]?.summary).toEqual({
+      infrastructureConfigured: true,
+      targetCount: 2,
+      pipelineCount: 3,
+      deploymentCount: 4,
+    });
   });
 
   it('surfaces validation errors from create', async () => {

@@ -19,6 +19,7 @@ import type {
   CreateCredentialInput,
   UpdateCredentialInput,
   CreateProjectInput,
+  DuplicateProjectInput,
   CredentialSummaryDto,
   CustomTemplateSummary,
   DeployEvent,
@@ -109,6 +110,7 @@ export interface IpcContract {
   'projects:list': { request: void; response: ProjectDto[] };
   'projects:get': { request: { id: string }; response: ProjectDto };
   'projects:create': { request: CreateProjectInput; response: ProjectDto };
+  'projects:duplicate': { request: DuplicateProjectInput; response: ProjectDto };
   'projects:update': {
     request: { id: string; changes: UpdateProjectInput };
     response: ProjectDto;
@@ -786,6 +788,7 @@ export const IPC_CHANNELS = [
   'projects:list',
   'projects:get',
   'projects:create',
+  'projects:duplicate',
   'projects:update',
   'projects:delete',
   'projects:count',

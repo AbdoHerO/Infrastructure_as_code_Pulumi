@@ -313,7 +313,7 @@ async function isolateCredentials(db: Db, fallback: string): Promise<void> {
     'cloudflareCredentialId',
   ] as const;
   const pipelineRefs = await db.$queryRawUnsafe<
-    Array<{ id: string; projectId: string } & Record<(typeof fields)[number], string | null>>
+    ({ id: string; projectId: string } & Record<(typeof fields)[number], string | null>)[]
   >(
     `SELECT "id","projectId",${fields.map((field) => `"${field}"`).join(',')} FROM "JenkinsPipeline"`,
   );
@@ -343,7 +343,7 @@ async function duplicateTemplates(
   fallback: string,
 ): Promise<void> {
   const rows = await db.$queryRawUnsafe<
-    Array<{
+    {
       id: string;
       kind: string;
       name: string;
@@ -352,7 +352,7 @@ async function duplicateTemplates(
       builtIn: number | boolean;
       createdAt: string | Date;
       updatedAt: string | Date;
-    }>
+    }[]
   >('SELECT * FROM "Template"');
   for (const row of rows) {
     await db.$executeRawUnsafe(

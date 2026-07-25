@@ -141,6 +141,17 @@ function ProjectCard({ project }: { project: ProjectPickerDto }): JSX.Element {
             : 'Never opened'}
         </span>
       </div>
+      <div className="bg-muted/50 text-muted-foreground mb-4 rounded-lg px-3 py-2 text-xs">
+        {project.summary.infrastructureConfigured ? 'Infrastructure configured' : 'No plan yet'}
+        {' · '}
+        {project.summary.targetCount} target{project.summary.targetCount === 1 ? '' : 's'}
+        {' · '}
+        {project.summary.pipelineCount} pipeline
+        {project.summary.pipelineCount === 1 ? '' : 's'}
+        {' · '}
+        {project.summary.deploymentCount} deployment
+        {project.summary.deploymentCount === 1 ? '' : 's'}
+      </div>
 
       {project.hasPasskey ? (
         <Input

@@ -41,7 +41,7 @@ export function registerDeployHandlers(): void {
         await getContainer().deploymentService.run(
           { projectId: req.projectId, templateId: req.templateId, target, context },
           (event) => emitEvent('deploy:log', { streamId: req.streamId, event }),
-          { signal: lease.signal as AbortSignal },
+          { signal: lease.signal! },
         ),
       );
       getContainer().activityService.recordSafe({

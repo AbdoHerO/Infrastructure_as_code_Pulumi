@@ -173,7 +173,7 @@ async function operation<T>(
   const projectId = getContainer().projectContext.requireActive().projectId;
   const lease = projectOperations.begin(`ansible:${streamId}`, projectId, true);
   try {
-    return await run(lease.signal as AbortSignal);
+    return await run(lease.signal!);
   } finally {
     lease.complete();
   }

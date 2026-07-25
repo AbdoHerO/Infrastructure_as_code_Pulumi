@@ -10,6 +10,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   CreateProjectInput,
+  DuplicateProjectInput,
   ProjectDto,
   ProjectPickerDto,
   ProjectSessionDto,
@@ -23,6 +24,7 @@ interface WorkspaceContextValue {
   readonly refreshProjects: () => Promise<void>;
   readonly refreshSession: () => Promise<void>;
   readonly create: (input: CreateProjectInput) => Promise<ProjectDto>;
+  readonly duplicate: (input: DuplicateProjectInput) => Promise<ProjectDto>;
   readonly unlock: (projectId: string, passkey: string) => Promise<void>;
   readonly lock: () => Promise<void>;
   readonly deleteCurrent: () => Promise<void>;
@@ -83,6 +85,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): JSX.El
     [queryClient, refreshProjects],
   );
 
+  const duplicate = useCallback(
+    async (input: DuplicateProjectInput): Promise<ProjectDto> => {
+      const project = await invoke('projects:duplicate', input);
+      await refreshProjects();
+      return project;
+    },
+    [refreshProjects],
+  );
+
   const lock = useCallback(async (): Promise<void> => {
     await invoke('projects:lock', undefined);
     queryClient.clear();
@@ -107,6 +118,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): JSX.El
       refreshProjects,
       refreshSession,
       create,
+      duplicate,
       unlock,
       lock,
       deleteCurrent,
@@ -114,6 +126,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): JSX.El
     [
       create,
       deleteCurrent,
+      duplicate,
       loading,
       lock,
       projects,
