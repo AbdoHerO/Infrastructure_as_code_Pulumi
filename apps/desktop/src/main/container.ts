@@ -384,21 +384,46 @@ export async function initContainer(): Promise<AppContainer> {
     cloudflareService,
     runtimePlanService,
   );
-  const sslRenewalTimer = setInterval(
-    () => {
-      if (projectContext.current()) void sslService.renewDue();
-    },
-    appSettings.ssl.checkIntervalHours * 60 * 60_000,
-  );
+  const lastSslCheck = new Map<string, number>();
+  let sslRenewalRunning = false;
+  const runScheduledSslRenewal = async (force = false): Promise<void> => {
+    const project = projectContext.current();
+    if (!project || sslRenewalRunning) return;
+    const settings = await settingsService.get();
+    if (!settings.ok || !projectContext.isCurrent(project)) return;
+    const interval = settings.value.ssl.checkIntervalHours * 60 * 60_000;
+    if (!force && Date.now() - (lastSslCheck.get(project.projectId) ?? 0) < interval) return;
+
+    sslRenewalRunning = true;
+    lastSslCheck.set(project.projectId, Date.now());
+    const operation = projectOperations.begin(
+      `ssl-renewal:${project.sessionId}`,
+      project.projectId,
+      false,
+    );
+    try {
+      await sslService.renewDue();
+    } catch (cause) {
+      log().error(
+        { event: 'ssl.renewal.failed', projectId: project.projectId, err: cause },
+        'Scheduled certificate renewal failed',
+      );
+    } finally {
+      operation.complete();
+      sslRenewalRunning = false;
+    }
+  };
+  // Poll cheaply; the active project's own setting decides whether work is due.
+  const sslRenewalTimer = setInterval(() => void runScheduledSslRenewal(), 60_000);
   sslRenewalTimer.unref();
   setTimeout(() => {
-    if (projectContext.current()) void sslService.renewDue();
+    void runScheduledSslRenewal(true);
   }, 30_000).unref();
 
   let cloudflareSnapshot = '';
-  const synchronizeCloudflare = async (): Promise<{ warnings: readonly string[] }> => {
-    const lease = projectContext.current();
-    if (!lease) return { warnings: [] };
+  const synchronizeCloudflareFor = async (
+    lease: NonNullable<ReturnType<ProjectContext['current']>>,
+  ): Promise<{ warnings: readonly string[] }> => {
     const settings = await settingsService.get();
     if (!settings.ok) return { warnings: [settings.error.message] };
     const config = settings.value.cloudflare;
@@ -483,10 +508,49 @@ export async function initContainer(): Promise<AppContainer> {
     if (projectContext.isCurrent(lease)) cloudflareSnapshot = next;
     return { warnings: [] };
   };
-  const cloudflareSyncTimer = setInterval(
-    () => void synchronizeCloudflare(),
-    appSettings.cloudflare.autoRefreshMinutes * 60_000,
-  );
+  let cloudflareSyncRunning = false;
+  const synchronizeCloudflare = async (): Promise<{ warnings: readonly string[] }> => {
+    const lease = projectContext.current();
+    if (!lease) return { warnings: [] };
+    if (cloudflareSyncRunning) return { warnings: ['Cloudflare synchronization is already active'] };
+    cloudflareSyncRunning = true;
+    const operation = projectOperations.begin(
+      `cloudflare-sync:${lease.sessionId}`,
+      lease.projectId,
+      false,
+    );
+    try {
+      return await synchronizeCloudflareFor(lease);
+    } finally {
+      operation.complete();
+      cloudflareSyncRunning = false;
+    }
+  };
+  const lastCloudflareSync = new Map<string, number>();
+  const runScheduledCloudflareSync = async (force = false): Promise<void> => {
+    const lease = projectContext.current();
+    if (!lease || cloudflareSyncRunning) return;
+    const settings = await settingsService.get();
+    if (!settings.ok || !projectContext.isCurrent(lease)) return;
+    const interval = settings.value.cloudflare.autoRefreshMinutes * 60_000;
+    if (!force && Date.now() - (lastCloudflareSync.get(lease.projectId) ?? 0) < interval) return;
+    lastCloudflareSync.set(lease.projectId, Date.now());
+    try {
+      const result = await synchronizeCloudflare();
+      if (result.warnings.length > 0) {
+        log().warn(
+          { event: 'cloudflare.sync.warning', projectId: lease.projectId, warnings: result.warnings },
+          'Scheduled Cloudflare synchronization completed with warnings',
+        );
+      }
+    } catch (cause) {
+      log().error(
+        { event: 'cloudflare.sync.failed', projectId: lease.projectId, err: cause },
+        'Scheduled Cloudflare synchronization failed',
+      );
+    }
+  };
+  const cloudflareSyncTimer = setInterval(() => void runScheduledCloudflareSync(), 60_000);
   cloudflareSyncTimer.unref();
 
   const synchronizeActiveProject = async (): Promise<{ warnings: readonly string[] }> => {
@@ -517,6 +581,9 @@ export async function initContainer(): Promise<AppContainer> {
       },
       afterActivate: async (lease) => {
         setActiveLogProject(lease.projectId);
+        // Load each project's own automation schedule after its context is active.
+        void runScheduledSslRenewal(true);
+        void runScheduledCloudflareSync(true);
         const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
         if (recoveredDeployments > 0) {
           log().warn(
