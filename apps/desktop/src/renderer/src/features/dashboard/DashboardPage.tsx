@@ -1,9 +1,8 @@
-import { BookOpen, Boxes, Cloud, Rocket, Server } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
+import { Boxes, Cloud, Rocket, Server } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
 import { PageHeader } from '../../components/PageHeader.js';
-import { useProjects } from '../projects/useProjects.js';
+import { useWorkspace } from '../projects/WorkspaceContext.js';
 import { ActivityTimeline } from '../activity/ActivityTimeline.js';
 import { useActivity } from '../activity/useActivity.js';
 import { StatCard } from './StatCard.js';
@@ -14,16 +13,17 @@ import { useEngineStatus } from './useEngineStatus.js';
 /** The application landing dashboard: summary metrics, status and system info. */
 export function DashboardPage(): JSX.Element {
   const { data: info } = useAppInfo();
-  const { data: projects } = useProjects();
+  const { session } = useWorkspace();
+  const projects = [session!.project];
   const { data: engine } = useEngineStatus();
   const { data: activity } = useActivity(20);
-  const projectCount = projects?.length ?? 0;
+  const projectCount = 1;
 
   const stats = [
     {
-      label: 'Projects',
+      label: 'Workspace',
       value: projectCount,
-      hint: projectCount === 0 ? 'No projects yet' : 'Managed infrastructures',
+      hint: session!.project.name,
       icon: Boxes,
     },
     { label: 'Deployments', value: 0, hint: 'Nothing deployed', icon: Rocket },
@@ -34,33 +34,6 @@ export function DashboardPage(): JSX.Element {
   return (
     <>
       <PageHeader title="Dashboard" description={`${APP.subtitle} — ${APP.tagline.join(' ')}`} />
-
-      {projectCount === 0 ? (
-        <Card className="border-primary/30 bg-primary/5 mb-6">
-          <CardContent className="flex flex-col items-start justify-between gap-4 py-5 sm:flex-row sm:items-center">
-            <div>
-              <p className="font-semibold">
-                New to CloudForge? Start with the guided documentation.
-              </p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Configure Oracle credentials, create your first project, preview it safely, and
-                connect with SSH.
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button variant="outline" asChild>
-                <Link to="/documentation?doc=getting-started">
-                  <BookOpen />
-                  Getting started
-                </Link>
-              </Button>
-              <Button asChild>
-                <Link to="/documentation?doc=first-instance">Create first instance</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat, index) => (
@@ -97,7 +70,7 @@ export function DashboardPage(): JSX.Element {
       </div>
 
       <div className="mt-4">
-        <EnvironmentChart projects={projects ?? []} />
+        <EnvironmentChart projects={projects} />
       </div>
     </>
   );

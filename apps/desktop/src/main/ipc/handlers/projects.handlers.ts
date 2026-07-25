@@ -7,7 +7,15 @@ import { emitEvent } from '../emit.js';
 
 /** Register the Projects module IPC handlers. */
 export function registerProjectHandlers(): void {
-  registerHandler('projects:list', async () => orThrow(await getContainer().projectService.list()));
+  registerHandler('projects:picker', async () =>
+    orThrow(await getContainer().projectService.listForPicker()),
+  );
+
+  registerHandler('projects:list', async () => {
+    const session = orThrow(await getContainer().projectSessionService.current());
+    if (!session) throw new UnauthorizedError('Unlock a project first');
+    return [session.project];
+  });
 
   registerHandler('projects:count', async () =>
     orThrow(await getContainer().projectService.count()),
@@ -29,9 +37,10 @@ export function registerProjectHandlers(): void {
     orThrow(await getContainer().projectSessionService.changePasskey(currentPasskey, newPasskey)),
   );
 
-  registerHandler('projects:get', async ({ id }) =>
-    orThrow(await getContainer().projectService.get(id)),
-  );
+  registerHandler('projects:get', async ({ id }) => {
+    requireCurrentProject(id);
+    return orThrow(await getContainer().projectService.get(id));
+  });
 
   registerHandler('projects:create', async (input) => {
     const project = orThrow(await getContainer().projectService.create(input));

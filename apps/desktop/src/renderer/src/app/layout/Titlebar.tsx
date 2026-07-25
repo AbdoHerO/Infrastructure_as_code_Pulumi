@@ -1,9 +1,10 @@
-import { CircleHelp, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { CircleHelp, LockKeyhole, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@cloudforge/ui';
 import type { ThemeMode } from '@cloudforge/shared';
 import { useThemeStore } from '../theme/theme-store.js';
 import { useCommandPalette } from '../command/command-store.js';
+import { useWorkspace } from '../../features/projects/WorkspaceContext.js';
 
 const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
   light: 'dark',
@@ -24,6 +25,7 @@ export function Titlebar(): JSX.Element {
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   const openPalette = useCommandPalette((s) => s.setOpen);
+  const { session, lock } = useWorkspace();
   const ModeIcon = MODE_ICON[mode];
 
   return (
@@ -41,6 +43,25 @@ export function Titlebar(): JSX.Element {
       </button>
 
       <div className="no-drag flex items-center gap-1">
+        {session ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mr-2 max-w-56 gap-2"
+            title="Lock this project and choose another workspace"
+            onClick={() => void lock()}
+          >
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: session.project.color || 'hsl(var(--primary))' }}
+            />
+            <span className="truncate">
+              {session.project.icon ? `${session.project.icon} ` : ''}
+              {session.project.name}
+            </span>
+            <LockKeyhole className="text-muted-foreground size-3.5 shrink-0" />
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="icon"

@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Boxes, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Boxes, KeyRound, Loader2, LockKeyhole, Save, Trash2 } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -17,309 +16,289 @@ import {
   isProvisioningProviderKind,
   PROVIDER_LABELS,
   type Environment,
-  type ProjectDto,
 } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
-import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
-import { IpcCallError } from '../../lib/ipc.js';
+import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
+import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
-import { CreateProjectForm } from './CreateProjectForm.js';
 import { statusVariant } from './project-status.js';
-import { useDeleteProject, useProjects, useUpdateProject } from './useProjects.js';
+import { useUpdateProject } from './useProjects.js';
+import { useWorkspace } from './WorkspaceContext.js';
 
-/** The Projects module: create, list and delete infrastructure projects. */
+/** Settings for the currently opened workspace; other projects remain locked. */
 export function ProjectsPage(): JSX.Element {
-  const [creating, setCreating] = useState(false);
-  const { data: projects, isLoading, isError } = useProjects();
-
-  return (
-    <>
-      <PageHeader
-        title="Projects"
-        description="Each project represents one managed infrastructure."
-        actions={
-          !creating ? (
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="size-4" /> New Project
-            </Button>
-          ) : undefined
-        }
-      />
-
-      <AnimatePresence initial={false}>
-        {creating ? (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-6 overflow-hidden"
-          >
-            <CreateProjectForm
-              onCreated={() => setCreating(false)}
-              onCancel={() => setCreating(false)}
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading projects…</p>
-      ) : isError ? (
-        <p className="text-destructive text-sm">Failed to load projects.</p>
-      ) : !projects || projects.length === 0 ? (
-        <EmptyState onCreate={() => setCreating(true)} hidden={creating} />
-      ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {projects.map((project) => (
-            <ProjectRow key={project.id} project={project} />
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
-  const confirm = useConfirmation();
-  const deleteProject = useDeleteProject();
+  const { session, refreshSession, deleteCurrent, lock } = useWorkspace();
+  const project = session!.project;
+  const { data: credentials } = useCredentials();
   const updateProject = useUpdateProject();
-  const [editing, setEditing] = useState(false);
+  const providerCredentials = (credentials ?? []).filter((credential) =>
+    isProvisioningProviderKind(credential.kind),
+  );
   const [name, setName] = useState(project.name);
   const [region, setRegion] = useState(project.region);
   const [environment, setEnvironment] = useState<Environment>(project.environment);
   const [description, setDescription] = useState(project.description);
+  const [icon, setIcon] = useState(project.icon);
+  const [color, setColor] = useState(project.color || '#5146e5');
+  const [providerId, setProviderId] = useState(project.providerId ?? '');
+  const [currentPasskey, setCurrentPasskey] = useState('');
+  const [newPasskey, setNewPasskey] = useState('');
+  const [confirmPasskey, setConfirmPasskey] = useState('');
+  const [changingPasskey, setChangingPasskey] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const cancel = (): void => {
+  useEffect(() => {
     setName(project.name);
     setRegion(project.region);
     setEnvironment(project.environment);
     setDescription(project.description);
-    setEditing(false);
-  };
-  const save = (): void => {
-    if (!name.trim()) {
-      toast.error('Project name is required');
+    setIcon(project.icon);
+    setColor(project.color || '#5146e5');
+    setProviderId(project.providerId ?? '');
+  }, [project]);
+
+  const save = async (): Promise<void> => {
+    if (!name.trim() || !region.trim()) {
+      toast.error('Project name and region are required');
       return;
     }
-    if (!region.trim()) {
-      toast.error('Project region is required');
-      return;
-    }
-    updateProject.mutate(
-      {
+    try {
+      await updateProject.mutateAsync({
         id: project.id,
         changes: {
           name: name.trim(),
           region: region.trim(),
           environment,
           description: description.trim(),
+          icon,
+          color,
+          providerId: providerId || null,
         },
-      },
-      {
-        onSuccess: () => {
-          setEditing(false);
-          toast.success('Project configuration updated');
-        },
-        onError: (error) =>
-          toast.error(error instanceof Error ? error.message : 'Failed to update project'),
-      },
-    );
+      });
+      await refreshSession();
+      toast.success('Project settings saved');
+    } catch (error) {
+      toast.error(error instanceof IpcCallError ? error.message : 'Failed to update project');
+    }
   };
 
-  if (editing) {
-    return (
-      <Card>
-        <CardContent className="space-y-4 py-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <ProjectField label="Name">
-              <Input
-                value={name}
-                maxLength={100}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </ProjectField>
-            <ProjectField label="Region">
-              <Input
-                value={region}
-                placeholder="af-casablanca-1"
-                onChange={(event) => setRegion(event.target.value)}
-              />
-            </ProjectField>
-            <ProjectField label="Environment">
-              <Select
-                value={environment}
-                onChange={(event) => setEnvironment(event.target.value as Environment)}
-              >
-                {ENVIRONMENTS.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </Select>
-            </ProjectField>
-            <ProjectField label="Cloud provider">
-              <ProviderLink project={project} compact />
-            </ProjectField>
-          </div>
-          <ProjectField label="Description">
-            <Textarea
-              value={description}
-              placeholder="What does this infrastructure host?"
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </ProjectField>
-          <p className="text-muted-foreground text-xs">
-            For projects without provisioned infrastructure, region changes are synchronized to the
-            saved infrastructure plan. Stack identity and provider fields are protected after
-            resources are created.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" disabled={updateProject.isPending} onClick={cancel}>
-              <X className="size-4" /> Cancel
-            </Button>
-            <Button disabled={updateProject.isPending} onClick={save}>
-              {updateProject.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              Save changes
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const changePasskey = async (): Promise<void> => {
+    if (newPasskey.length < 8) {
+      toast.error('New passkey must contain at least 8 characters');
+      return;
+    }
+    if (newPasskey !== confirmPasskey) {
+      toast.error('New passkeys do not match');
+      return;
+    }
+    setChangingPasskey(true);
+    try {
+      await invoke('projects:changePasskey', { currentPasskey, newPasskey });
+      setCurrentPasskey('');
+      setNewPasskey('');
+      setConfirmPasskey('');
+      await refreshSession();
+      toast.success('Project passkey changed');
+    } catch (error) {
+      toast.error(error instanceof IpcCallError ? error.message : 'Failed to change passkey');
+    } finally {
+      setChangingPasskey(false);
+    }
+  };
+
+  const remove = async (): Promise<void> => {
+    setDeleting(true);
+    try {
+      await deleteCurrent();
+      toast.success(`Project “${project.name}” deleted`);
+    } catch (error) {
+      toast.error(error instanceof IpcCallError ? error.message : 'Failed to delete project');
+      setDeleting(false);
+    }
+  };
 
   return (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
-        <div className="flex items-center gap-4">
-          <div className="bg-secondary text-muted-foreground flex size-10 items-center justify-center rounded-lg">
-            <Boxes className="size-5" />
+    <>
+      <PageHeader
+        title="Project Settings"
+        description="Configure the currently opened, isolated workspace."
+        actions={
+          <Button variant="outline" onClick={() => void lock()}>
+            <LockKeyhole className="size-4" /> Lock / switch
+          </Button>
+        }
+      />
+
+      <Card className="mb-5 overflow-hidden">
+        <div className="h-1.5" style={{ backgroundColor: project.color || color }} />
+        <CardContent className="flex items-center gap-4 py-5">
+          <div className="bg-secondary grid size-12 place-items-center rounded-xl text-xl">
+            {project.icon || <Boxes className="size-5" />}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <p className="font-medium">{project.name}</p>
+              <h2 className="font-semibold">{project.name}</h2>
               <Badge variant={statusVariant(project.status)}>{project.status}</Badge>
             </div>
-            <p className="text-muted-foreground text-xs">
-              {project.environment} · {project.region}
+            <p className="text-muted-foreground text-sm">
+              {project.environment} · {project.region} · created{' '}
+              {new Date(project.createdAt).toLocaleDateString()}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card>
+          <CardContent className="space-y-4 py-6">
+            <div>
+              <h2 className="font-semibold">Workspace details</h2>
+              <p className="text-muted-foreground text-sm">
+                These values belong only to this project.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Name">
+                <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+              </Field>
+              <Field label="Region">
+                <Input value={region} onChange={(e) => setRegion(e.target.value)} />
+              </Field>
+              <Field label="Environment">
+                <Select
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value as Environment)}
+                >
+                  {ENVIRONMENTS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Cloud provider">
+                <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
+                  <option value="">None</option>
+                  {providerCredentials.map((credential) => (
+                    <option key={credential.id} value={credential.id}>
+                      {credential.name} (
+                      {PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Icon">
+                <Input value={icon} maxLength={8} onChange={(e) => setIcon(e.target.value)} />
+              </Field>
+              <Field label="Color">
+                <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Description">
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <div className="flex justify-end">
+              <Button disabled={updateProject.isPending} onClick={() => void save()}>
+                {updateProject.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                Save settings
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-5">
+          <Card>
+            <CardContent className="space-y-4 py-6">
+              <div className="flex gap-3">
+                <KeyRound className="text-muted-foreground mt-0.5 size-5" />
+                <div>
+                  <h2 className="font-semibold">Change passkey</h2>
+                  <p className="text-muted-foreground text-sm">
+                    Unlocking this project never unlocks any other workspace.
+                  </p>
+                </div>
+              </div>
+              {project.hasPasskey ? (
+                <Field label="Current passkey">
+                  <Input
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPasskey}
+                    onChange={(e) => setCurrentPasskey(e.target.value)}
+                  />
+                </Field>
+              ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="New passkey">
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPasskey}
+                    onChange={(e) => setNewPasskey(e.target.value)}
+                  />
+                </Field>
+                <Field label="Confirm new passkey">
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPasskey}
+                    onChange={(e) => setConfirmPasskey(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Button
+                variant="outline"
+                disabled={changingPasskey}
+                onClick={() => void changePasskey()}
+              >
+                {changingPasskey ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <KeyRound className="size-4" />
+                )}
+                Update passkey
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-destructive/30">
+            <CardContent className="space-y-3 py-6">
+              <h2 className="text-destructive font-semibold">Danger zone</h2>
+              <p className="text-muted-foreground text-sm">
+                Delete this workspace only after destroying its managed cloud stack. The exact
+                project name is required for confirmation.
+              </p>
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="size-4" /> Delete project
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-        <div className="flex items-center gap-3">
-          <ProviderLink project={project} />
-          <Button variant="ghost" size="icon" title="Edit project" onClick={() => setEditing(true)}>
-            <Pencil className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Delete project"
-            disabled={deleteProject.isPending}
-            onClick={() => {
-              void confirm({
-                title: 'Delete project?',
-                description: `Delete “${project.name}” from CloudForge? This removes its saved configuration. It does not automatically destroy cloud resources; destroy managed infrastructure first if it still exists.`,
-                confirmLabel: 'Delete project',
-              }).then((confirmed) => {
-                if (!confirmed) return;
-                deleteProject.mutate(project.id, {
-                  onSuccess: () => toast.success(`Project "${project.name}" deleted`),
-                  onError: () => toast.error('Failed to delete project'),
-                });
-              });
-            }}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+      <NameConfirmationDialog
+        open={deleteOpen}
+        title="Delete this project?"
+        description={`Permanently delete “${project.name}” and all of its CloudForge configuration? Managed cloud resources must be destroyed first. Other projects are not affected.`}
+        expectedName={project.name}
+        confirmLabel="Delete project"
+        pending={deleting}
+        onOpenChange={setDeleteOpen}
+        onConfirm={() => void remove()}
+      />
+    </>
   );
 }
 
-/**
- * Inline selector that links (or clears) the cloud-provider credential a
- * project uses for provisioning. Required before Preview / Apply can run.
- */
-function ProviderLink({
-  project,
-  compact = false,
-}: {
-  project: ProjectDto;
-  compact?: boolean;
-}): JSX.Element {
-  const { data: credentials } = useCredentials();
-  const updateProject = useUpdateProject();
-  const providerCredentials = (credentials ?? []).filter((c) => isProvisioningProviderKind(c.kind));
-
-  const change = (providerId: string): void => {
-    updateProject.mutate(
-      { id: project.id, changes: { providerId: providerId || null } },
-      {
-        onSuccess: () =>
-          toast.success(providerId ? 'Cloud provider linked' : 'Cloud provider unlinked'),
-        onError: (error) =>
-          toast.error(error instanceof IpcCallError ? error.message : 'Failed to update project'),
-      },
-    );
-  };
-
-  return (
-    <div className="flex flex-col gap-1">
-      {!compact ? (
-        <Label className="text-muted-foreground text-[11px] uppercase tracking-wide">
-          Cloud provider
-        </Label>
-      ) : null}
-      <Select
-        className={compact ? 'h-9 w-full' : 'h-9 w-56'}
-        value={project.providerId ?? ''}
-        disabled={updateProject.isPending || providerCredentials.length === 0}
-        onChange={(event) => change(event.target.value)}
-      >
-        <option value="">
-          {providerCredentials.length === 0 ? 'Add one in Cloud Providers' : 'None (not linked)'}
-        </option>
-        {providerCredentials.map((credential) => (
-          <option key={credential.id} value={credential.id}>
-            {credential.name} ({PROVIDER_LABELS[credential.kind as keyof typeof PROVIDER_LABELS]})
-          </option>
-        ))}
-      </Select>
-    </div>
-  );
-}
-
-function ProjectField({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+function Field({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
     </div>
-  );
-}
-
-function EmptyState({ onCreate, hidden }: { onCreate: () => void; hidden: boolean }): JSX.Element {
-  if (hidden) return <></>;
-  return (
-    <Card className="border-dashed">
-      <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <div className="bg-secondary text-muted-foreground flex size-14 items-center justify-center rounded-2xl">
-          <Boxes className="size-7" />
-        </div>
-        <div className="space-y-1">
-          <p className="font-medium">No projects yet</p>
-          <p className="text-muted-foreground text-sm">
-            Create your first project to start managing infrastructure.
-          </p>
-        </div>
-        <Button onClick={onCreate}>
-          <Plus className="size-4" /> New Project
-        </Button>
-      </CardContent>
-    </Card>
   );
 }

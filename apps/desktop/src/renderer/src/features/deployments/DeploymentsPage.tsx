@@ -24,7 +24,7 @@ import { IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
-import { useProjects } from '../projects/useProjects.js';
+import { useWorkspace } from '../projects/WorkspaceContext.js';
 import {
   useDeployLogs,
   useDeployments,
@@ -51,7 +51,8 @@ function statusVariant(status: DeploymentDto['status']): BadgeProps['variant'] {
 /** The Deployments module: run a template on a host over SSH with live logs. */
 export function DeploymentsPage(): JSX.Element {
   const confirm = useConfirmation();
-  const { data: projects } = useProjects();
+  const { session } = useWorkspace();
+  const projectId = session!.project.id;
   const { data: templates } = useDeploymentTemplates();
   const sshCredentials = useSshCredentials();
   const targets = useVpsTargets();
@@ -61,7 +62,6 @@ export function DeploymentsPage(): JSX.Element {
   const [streamId] = useState(() => crypto.randomUUID());
   const { lines, clear } = useDeployLogs(streamId);
 
-  const [projectId, setProjectId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [host, setHost] = useState('');
   const [selectedTargetId, setSelectedTargetId] = useState('');
@@ -71,7 +71,7 @@ export function DeploymentsPage(): JSX.Element {
   const [appImage, setAppImage] = useState('');
   const [hostKeySha256, setHostKeySha256] = useState('');
 
-  const { data: history } = useDeployments(projectId || null);
+  const { data: history } = useDeployments(projectId);
 
   const selectTarget = useCallback(
     (id: string): void => {
@@ -94,9 +94,6 @@ export function DeploymentsPage(): JSX.Element {
   );
 
   useEffect(() => {
-    if (!projectId && projects && projects.length > 0) setProjectId(projects[0]!.id);
-  }, [projects, projectId]);
-  useEffect(() => {
     if (!templateId && templates && templates.length > 0) setTemplateId(templates[0]!.id);
   }, [templates, templateId]);
   useEffect(() => {
@@ -109,15 +106,6 @@ export function DeploymentsPage(): JSX.Element {
     if (managed) selectTarget(managed.id);
     else if (selectedTargetId && !selected) selectTarget('');
   }, [projectId, selectedTargetId, selectTarget, targets.data]);
-
-  if (projects?.length === 0) {
-    return (
-      <>
-        <PageHeader title="Deployments" description="Provision and deploy applications." />
-        <EmptyLink to="/projects" label="Create a project first" cta="Go to Projects" />
-      </>
-    );
-  }
 
   const canRun =
     projectId &&
@@ -171,15 +159,6 @@ export function DeploymentsPage(): JSX.Element {
         <Card>
           <CardContent className="space-y-4 pt-6">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Project">
-                <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                  {projects?.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
               <Field label="Template">
                 <Select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
                   {templates?.map((t) => (
@@ -368,18 +347,5 @@ function Field({ label, children }: { label: string; children: ReactNode }): JSX
       <Label>{label}</Label>
       {children}
     </div>
-  );
-}
-
-function EmptyLink({ to, label, cta }: { to: string; label: string; cta: string }): JSX.Element {
-  return (
-    <Card className="border-dashed">
-      <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-        <p className="font-medium">{label}</p>
-        <Button asChild>
-          <Link to={to}>{cta}</Link>
-        </Button>
-      </CardContent>
-    </Card>
   );
 }

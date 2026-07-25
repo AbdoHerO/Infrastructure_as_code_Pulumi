@@ -42,6 +42,7 @@ import type {
   PluginManifest,
   PreviewResult,
   ProjectDto,
+  ProjectPickerDto,
   ProjectSessionDto,
   Region,
   RemoteContainer,
@@ -104,6 +105,7 @@ export interface IpcContract {
   'app:copyText': { request: { text: string }; response: void };
   'app:synchronize': { request: void; response: { warnings: readonly string[] } };
 
+  'projects:picker': { request: void; response: ProjectPickerDto[] };
   'projects:list': { request: void; response: ProjectDto[] };
   'projects:get': { request: { id: string }; response: ProjectDto };
   'projects:create': { request: CreateProjectInput; response: ProjectDto };
@@ -780,6 +782,7 @@ export const IPC_CHANNELS = [
   'app:copyDiagnostics',
   'app:copyText',
   'app:synchronize',
+  'projects:picker',
   'projects:list',
   'projects:get',
   'projects:create',

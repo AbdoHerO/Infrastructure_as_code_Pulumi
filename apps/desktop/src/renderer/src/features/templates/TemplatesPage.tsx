@@ -7,7 +7,7 @@ import type { CustomTemplateSummary, InfrastructureTemplateSummary } from '@clou
 import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
-import { useProjects } from '../projects/useProjects.js';
+import { useWorkspace } from '../projects/WorkspaceContext.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import {
   useApplyCustomTemplate,
@@ -27,12 +27,12 @@ const CATEGORY_ICON = {
 export function TemplatesPage(): JSX.Element {
   const confirm = useConfirmation();
   const navigate = useNavigate();
-  const { data: projects } = useProjects();
+  const { session } = useWorkspace();
+  const projectId = session!.project.id;
   const { data: credentials } = useCredentials();
   const sshKeys = useSshKeys();
-  const [projectId, setProjectId] = useState('');
   const [sshKeyId, setSshKeyId] = useState('');
-  const selectedProject = projects?.find((project) => project.id === projectId);
+  const selectedProject = session!.project;
   const selectedProviderKind = credentials?.find(
     (credential) => credential.id === selectedProject?.providerId,
   )?.kind;
@@ -61,9 +61,6 @@ export function TemplatesPage(): JSX.Element {
   const applyCustom = useApplyCustomTemplate();
   const deleteCustom = useDeleteTemplate();
 
-  useEffect(() => {
-    if (!projectId && projects && projects.length > 0) setProjectId(projects[0]!.id);
-  }, [projects, projectId]);
   useEffect(() => {
     if (!sshKeyId && sshKeys.data?.length) setSshKeyId(sshKeys.data[0]!.id);
   }, [sshKeys.data, sshKeyId]);
@@ -134,21 +131,6 @@ export function TemplatesPage(): JSX.Element {
       <PageHeader
         title="Templates"
         description="Reusable infrastructure and deployment blueprints."
-        actions={
-          projects && projects.length > 0 ? (
-            <Select
-              className="w-56"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </Select>
-          ) : undefined
-        }
       />
 
       <h2 className="text-muted-foreground mb-3 text-sm font-semibold">Infrastructure</h2>

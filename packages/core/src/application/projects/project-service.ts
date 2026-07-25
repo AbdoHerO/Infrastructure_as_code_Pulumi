@@ -17,7 +17,12 @@ import {
 } from '../../domain/project/project.js';
 import type { ProjectRepository } from '../ports/project-repository.js';
 import type { ProjectPasskeyHasher } from '../ports/project-passkey-hasher.js';
-import { type ProjectDto, toProjectDto } from '../dto/project-dto.js';
+import {
+  type ProjectDto,
+  type ProjectPickerDto,
+  toProjectDto,
+  toProjectPickerDto,
+} from '../dto/project-dto.js';
 
 /** Union of every failure the project use-cases can surface. */
 export type ProjectServiceError = ValidationError | NotFoundError | PersistenceError;
@@ -62,6 +67,12 @@ export class ProjectService {
     const found = await this.projects.findAll();
     if (!found.ok) return found;
     return ok(found.value.map(toProjectDto));
+  }
+
+  async listForPicker(): Promise<Result<ProjectPickerDto[], PersistenceError>> {
+    const found = await this.projects.findAll();
+    if (!found.ok) return found;
+    return ok(found.value.map(toProjectPickerDto));
   }
 
   async get(id: string): Promise<Result<ProjectDto, ProjectServiceError>> {

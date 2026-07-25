@@ -26,7 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   LogTerminal,
-  Select,
   toast,
 } from '@cloudforge/ui';
 import {
@@ -45,7 +44,7 @@ import {
 import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
-import { useProjects } from '../projects/useProjects.js';
+import { useWorkspace } from '../projects/WorkspaceContext.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
@@ -71,10 +70,11 @@ import {
 /** The Infrastructure module: compose a plan and preview/apply/destroy it. */
 export function InfrastructurePage(): JSX.Element {
   const confirm = useConfirmation();
-  const { data: projects } = useProjects();
+  const { session } = useWorkspace();
+  const projectId = session!.project.id;
+  const projects = [session!.project];
   const { data: credentials } = useCredentials();
   const sshKeys = useSshKeys();
-  const [projectId, setProjectId] = useState<string | null>(null);
   const [resources, setResources] = useState<ResourceSpec[]>([]);
   const [config, setConfig] = useState<Record<string, string>>({});
   const [streamId] = useState(() => crypto.randomUUID());
@@ -84,7 +84,7 @@ export function InfrastructurePage(): JSX.Element {
     result: PreviewResult;
   } | null>(null);
 
-  const credentialId = projects?.find((p) => p.id === projectId)?.providerId ?? null;
+  const credentialId = session!.project.providerId;
   const linkedCredentialKind = credentials?.find(
     (credential) => credential.id === credentialId,
   )?.kind;
@@ -103,7 +103,7 @@ export function InfrastructurePage(): JSX.Element {
   const refresh = useRefresh();
   const destroyManagedStack = useDestroyManagedStack();
   const managedStacks = useManagedStacks();
-  const currentProject = projects?.find((project) => project.id === projectId);
+  const currentProject = session!.project;
   const currentRef = currentProject ? stackReference(currentProject) : null;
   const currentStackExists =
     currentRef !== null &&
@@ -131,10 +131,7 @@ export function InfrastructurePage(): JSX.Element {
   );
   const { lines, progress, resources: resourceProgress, clear } = useEngineLogs(streamId);
 
-  // Default to the first project and hydrate local state from its stored plan.
-  useEffect(() => {
-    if (projectId === null && projects && projects.length > 0) setProjectId(projects[0]!.id);
-  }, [projects, projectId]);
+  // Hydrate local state from the active project's stored plan.
   useEffect(() => {
     if (plan) {
       setResources([...plan.resources]);
@@ -201,28 +198,6 @@ export function InfrastructurePage(): JSX.Element {
       sshKeys.data,
     ],
   );
-
-  if (projects?.length === 0) {
-    return (
-      <>
-        <PageHeader title="Infrastructure" description="Compose and provision cloud resources." />
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-            <p className="font-medium">Create a project first</p>
-            <Button asChild>
-              <Link to="/projects">Go to Projects</Link>
-            </Button>
-          </CardContent>
-        </Card>
-        <ManagedStacksPanel
-          stacks={managedStacks.data ?? []}
-          projects={projects ?? []}
-          busy={destroyManagedStack.isPending}
-          onDestroy={(stack) => void destroyStack(stack)}
-        />
-      </>
-    );
-  }
 
   const addResource = (kind: ResourceKind): void => {
     setResources((prev) => [
@@ -336,19 +311,6 @@ export function InfrastructurePage(): JSX.Element {
       <PageHeader
         title="Infrastructure"
         description="Compose a declarative plan, then preview, apply or destroy it."
-        actions={
-          <Select
-            className="w-56"
-            value={projectId ?? ''}
-            onChange={(event) => setProjectId(event.target.value)}
-          >
-            {projects?.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </Select>
-        }
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

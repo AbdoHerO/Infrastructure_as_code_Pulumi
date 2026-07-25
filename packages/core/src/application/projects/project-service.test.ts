@@ -46,6 +46,33 @@ describe('ProjectService', () => {
     expect(listed.ok && listed.value).toHaveLength(1);
   });
 
+  it('exposes only non-sensitive metadata to the locked project picker', async () => {
+    const created = await service.create({
+      name: 'Private API',
+      description: 'Workspace card',
+      environment: 'production',
+      region: 'eu-frankfurt-1',
+      variables: { INTERNAL_ENDPOINT: 'private.example.test' },
+      notes: 'operator-only note',
+      tags: ['confidential'],
+    });
+    if (!created.ok) throw created.error;
+
+    const listed = await service.listForPicker();
+    if (!listed.ok) throw listed.error;
+
+    expect(listed.value[0]).toMatchObject({
+      id: created.value.id,
+      name: 'Private API',
+      description: 'Workspace card',
+      hasPasskey: false,
+    });
+    expect(listed.value[0]).not.toHaveProperty('variables');
+    expect(listed.value[0]).not.toHaveProperty('notes');
+    expect(listed.value[0]).not.toHaveProperty('tags');
+    expect(listed.value[0]).not.toHaveProperty('providerId');
+  });
+
   it('surfaces validation errors from create', async () => {
     const result = await service.create({ name: '', environment: 'production', region: 'r' });
     expect(result.ok).toBe(false);

@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Toaster } from '@cloudforge/ui';
 import { Sidebar } from './Sidebar.js';
 import { Titlebar } from './Titlebar.js';
 import { applyTheme, useThemeStore } from '../theme/theme-store.js';
@@ -32,7 +31,6 @@ export function AppShell(): JSX.Element {
         </main>
       </div>
       <CommandPalette />
-      <Toaster />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { TooltipProvider } from '@cloudforge/ui';
+import { Toaster, TooltipProvider } from '@cloudforge/ui';
 import { useSettings } from '../features/settings/useSettings.js';
 import { invoke } from '../lib/ipc.js';
 import { ConfirmationDialogProvider } from '../components/ConfirmationDialogProvider.js';
+import { WorkspaceProvider } from '../features/projects/WorkspaceContext.js';
+import { WorkspaceGate } from '../features/projects/WorkspaceGate.js';
 
 /** Application-wide context providers (data fetching, tooltips, and more). */
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
@@ -23,10 +25,17 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SettingsEffects />
-      <TooltipProvider delayDuration={300}>
-        <ConfirmationDialogProvider>{children}</ConfirmationDialogProvider>
-      </TooltipProvider>
+      <WorkspaceProvider>
+        <TooltipProvider delayDuration={300}>
+          <ConfirmationDialogProvider>
+            <WorkspaceGate>
+              <SettingsEffects />
+              {children}
+            </WorkspaceGate>
+          </ConfirmationDialogProvider>
+          <Toaster />
+        </TooltipProvider>
+      </WorkspaceProvider>
     </QueryClientProvider>
   );
 }
