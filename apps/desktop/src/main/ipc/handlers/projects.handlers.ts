@@ -67,13 +67,17 @@ export function registerProjectHandlers(): void {
     return orThrow(await getContainer().projectConfigurationService.update(id, changes));
   });
 
-  registerHandler('projects:delete', async ({ id }) => {
+  registerHandler('projects:delete', async ({ id, confirmationName, passkey }) => {
     requireCurrentProject(id);
     orThrow(
       await getContainer().projectSessionService.deactivateAndRun(
+        { passkey },
         async (lease) => {
           if (lease.projectId !== id) throw new UnauthorizedError('Project session changed');
           const project = orThrow(await getContainer().projectService.get(id));
+          if (confirmationName !== project.name) {
+            throw new UnauthorizedError('Type the exact project name to confirm deletion');
+          }
           const ref = projectStackReference(project);
           const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
           if (

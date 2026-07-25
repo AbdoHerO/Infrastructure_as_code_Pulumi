@@ -210,6 +210,7 @@ describe('ProjectSessionService', () => {
     });
 
     const deleting = service.deactivateAndRun(
+      { passkey: '' },
       (lease) => {
         expect(lease.projectId).toBe(first.id);
         return Promise.resolve('prepared');
@@ -240,11 +241,34 @@ describe('ProjectSessionService', () => {
     await service.unlock(project.id, '');
 
     const result = await service.deactivateAndRun(
+      { passkey: '' },
       () => Promise.reject(new Error('managed resources remain')),
       () => Promise.resolve('never'),
     );
 
     expect(result.ok).toBe(false);
+    expect(context.current()?.projectId).toBe(project.id);
+  });
+
+  it('requires the protected project passkey before deletion preparation runs', async () => {
+    const projects = new MemoryProjects();
+    const project = makeProject('Protected', 'correct-passkey');
+    projects.values.set(project.id, project);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(project.id, 'correct-passkey');
+    const prepare = vi.fn(() => Promise.resolve('prepared'));
+
+    const rejected = await service.deactivateAndRun({ passkey: 'wrong-passkey' }, prepare, () =>
+      Promise.resolve('never'),
+    );
+
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.error).toBeInstanceOf(UnauthorizedError);
+      expect(rejected.error.message).toBe('Incorrect project passkey');
+    }
+    expect(prepare).not.toHaveBeenCalled();
     expect(context.current()?.projectId).toBe(project.id);
   });
 });

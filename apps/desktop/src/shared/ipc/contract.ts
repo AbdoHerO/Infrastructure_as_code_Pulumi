@@ -115,7 +115,10 @@ export interface IpcContract {
     request: { id: string; changes: UpdateProjectInput };
     response: ProjectDto;
   };
-  'projects:delete': { request: { id: string }; response: void };
+  'projects:delete': {
+    request: { id: string; confirmationName: string; passkey: string };
+    response: void;
+  };
   'projects:count': { request: void; response: number };
   'projects:session': { request: void; response: ProjectSessionDto | null };
   'projects:unlock': {

@@ -27,7 +27,7 @@ interface WorkspaceContextValue {
   readonly duplicate: (input: DuplicateProjectInput) => Promise<ProjectDto>;
   readonly unlock: (projectId: string, passkey: string) => Promise<void>;
   readonly lock: () => Promise<void>;
-  readonly deleteCurrent: () => Promise<void>;
+  readonly deleteCurrent: (confirmationName: string, passkey: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -101,14 +101,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): JSX.El
     await refreshProjects();
   }, [queryClient, refreshProjects]);
 
-  const deleteCurrent = useCallback(async (): Promise<void> => {
-    const current = session;
-    if (!current) return;
-    await invoke('projects:delete', { id: current.project.id });
-    queryClient.clear();
-    setSession(null);
-    await refreshProjects();
-  }, [queryClient, refreshProjects, session]);
+  const deleteCurrent = useCallback(
+    async (confirmationName: string, passkey: string): Promise<void> => {
+      const current = session;
+      if (!current) return;
+      await invoke('projects:delete', { id: current.project.id, confirmationName, passkey });
+      queryClient.clear();
+      setSession(null);
+      await refreshProjects();
+    },
+    [queryClient, refreshProjects, session],
+  );
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({

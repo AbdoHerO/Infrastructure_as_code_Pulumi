@@ -41,10 +41,14 @@ export function useUpdateProject(): UseMutationResult<
 }
 
 /** Delete a project and refresh the list. */
-export function useDeleteProject(): UseMutationResult<void, Error, string> {
+export function useDeleteProject(): UseMutationResult<
+  void,
+  Error,
+  { id: string; confirmationName: string; passkey: string }
+> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke('projects:delete', { id }),
+    mutationFn: (request) => invoke('projects:delete', request),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
   });
 }

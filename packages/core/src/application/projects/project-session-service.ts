@@ -1,4 +1,5 @@
 import {
+  AppError,
   err,
   type EncryptionError,
   NotFoundError,
@@ -117,13 +118,22 @@ export class ProjectSessionService {
    * reopening is safer than exposing a half-deleted project.
    */
   async deactivateAndRun<TPrepared, TResult>(
+    authorization: { readonly passkey: string },
     prepare: (lease: ProjectSessionLease) => Promise<TPrepared>,
     operation: (lease: ProjectSessionLease, prepared: TPrepared) => Promise<TResult>,
-  ): Promise<Result<TResult, PersistenceError | UnauthorizedError>> {
+  ): Promise<Result<TResult, AppError>> {
     return this.exclusive(async () => {
       const prior = this.context.current();
       if (!prior) return err(new UnauthorizedError('Unlock a project to continue'));
       try {
+        const project = await this.load(prior.projectId);
+        if (!project.ok) throw project.error;
+        const snapshot = project.value.toSnapshot();
+        if (snapshot.passkeyHash !== null && snapshot.passkeySalt !== null) {
+          const verified = await this.hasher.verify(authorization.passkey, passkeyFrom(snapshot));
+          if (!verified.ok) throw verified.error;
+          if (!verified.value) throw new UnauthorizedError('Incorrect project passkey');
+        }
         // Safety checks that require scoped repositories run while the
         // workspace is still active. A failed check leaves the session open.
         const prepared = await prepare(prior);
@@ -131,7 +141,10 @@ export class ProjectSessionService {
         this.context.clear();
         return ok(await operation(prior, prepared));
       } catch (cause) {
-        return err(new PersistenceError('Failed to close and clean up project workspace', { cause }));
+        if (cause instanceof AppError) return err(cause);
+        return err(
+          new PersistenceError('Failed to close and clean up project workspace', { cause }),
+        );
       }
     });
   }

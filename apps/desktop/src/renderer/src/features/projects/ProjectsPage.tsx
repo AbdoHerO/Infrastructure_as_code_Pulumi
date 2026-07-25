@@ -119,10 +119,10 @@ export function ProjectsPage(): JSX.Element {
     }
   };
 
-  const remove = async (): Promise<void> => {
+  const remove = async (confirmationName: string, passkey: string): Promise<void> => {
     setDeleting(true);
     try {
-      await deleteCurrent();
+      await deleteCurrent(confirmationName, passkey);
       toast.success(`Project “${project.name}” deleted`);
     } catch (error) {
       toast.error(error instanceof IpcCallError ? error.message : 'Failed to delete project');
@@ -334,9 +334,12 @@ export function ProjectsPage(): JSX.Element {
         description={`Permanently delete “${project.name}” and all of its CloudForge configuration? Managed cloud resources must be destroyed first. Other projects are not affected.`}
         expectedName={project.name}
         confirmLabel="Delete project"
+        requirePasskey={project.hasPasskey}
         pending={deleting}
         onOpenChange={setDeleteOpen}
-        onConfirm={() => void remove()}
+        onConfirm={(confirmation) =>
+          void remove(confirmation?.typedName ?? '', confirmation?.passkey ?? '')
+        }
       />
       <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
         <DialogContent>
