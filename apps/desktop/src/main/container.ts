@@ -73,6 +73,7 @@ import {
   PrismaJenkinsPipelineRepository,
   isolateProjectSnapshot,
   restoreProjectSnapshot,
+  importProjectSnapshot,
 } from '@cloudforge/database';
 import { createSecretCipher } from './security/secret-cipher.js';
 import {
@@ -126,7 +127,22 @@ export interface AppContainer {
   snapshotDatabase(destination: string): Promise<void>;
   snapshotProjectDatabase(destination: string, projectId: string): Promise<void>;
   restoreProjectDatabase(source: string, projectId: string): Promise<void>;
+  exportProjectSecrets(projectId: string): Promise<PortableProjectSecrets>;
+  rewrapProjectSecrets(projectId: string, secrets: PortableProjectSecrets): Promise<void>;
+  importProjectDatabase(
+    source: string,
+    projectId: string,
+    passkey: string,
+    portableSecrets: PortableProjectSecrets,
+  ): Promise<void>;
   dispose(): Promise<void>;
+}
+
+export interface PortableProjectSecrets {
+  readonly format: 1;
+  readonly credentials: Readonly<Record<string, string>>;
+  readonly sshKeys: Readonly<Record<string, string>>;
+  readonly secrets: Readonly<Record<string, string>>;
 }
 
 let container: AppContainer | null = null;
@@ -674,6 +690,93 @@ export async function initContainer(): Promise<AppContainer> {
       await snapshot.$connect();
       try {
         await restoreProjectSnapshot(db, snapshot, projectId);
+      } finally {
+        await snapshot.$disconnect();
+      }
+    },
+    exportProjectSecrets: async (projectId) => {
+      const [credentials, sshKeys, secrets] = await Promise.all([
+        db.credential.findMany({ where: { projectId } }),
+        db.sshKey.findMany({ where: { projectId, ciphertext: { not: null } } }),
+        db.secret.findMany({ where: { projectId } }),
+      ]);
+      const decryptAll = (
+        rows: readonly { id: string; ciphertext: string | null }[],
+      ): Record<string, string> => {
+        const output: Record<string, string> = {};
+        for (const row of rows) {
+          if (!row.ciphertext) continue;
+          const decrypted = cipher.decrypt(row.ciphertext);
+          if (!decrypted.ok) throw decrypted.error;
+          output[row.id] = decrypted.value;
+        }
+        return output;
+      };
+      return {
+        format: 1,
+        credentials: decryptAll(credentials),
+        sshKeys: decryptAll(sshKeys),
+        secrets: decryptAll(secrets),
+      };
+    },
+    rewrapProjectSecrets: async (projectId, secrets) => {
+      const encryptAll = (values: Readonly<Record<string, string>>): Record<string, string> =>
+        Object.fromEntries(
+          Object.entries(values).map(([id, plaintext]) => {
+            const encrypted = cipher.encrypt(plaintext);
+            if (!encrypted.ok) throw encrypted.error;
+            return [id, encrypted.value];
+          }),
+        );
+      const wrapped = {
+        credentials: encryptAll(secrets.credentials),
+        sshKeys: encryptAll(secrets.sshKeys),
+        secrets: encryptAll(secrets.secrets),
+      };
+      await db.$transaction(async (tx) => {
+        for (const [id, ciphertext] of Object.entries(wrapped.credentials)) {
+          const updated = await tx.credential.updateMany({
+            where: { id, projectId },
+            data: { ciphertext },
+          });
+          if (updated.count !== 1) throw new Error('A restored credential record is missing');
+        }
+        for (const [id, ciphertext] of Object.entries(wrapped.sshKeys)) {
+          const updated = await tx.sshKey.updateMany({
+            where: { id, projectId },
+            data: { ciphertext },
+          });
+          if (updated.count !== 1) throw new Error('A restored SSH key record is missing');
+        }
+        for (const [id, ciphertext] of Object.entries(wrapped.secrets)) {
+          const updated = await tx.secret.updateMany({
+            where: { id, projectId },
+            data: { ciphertext },
+          });
+          if (updated.count !== 1) throw new Error('A restored secret record is missing');
+        }
+      });
+    },
+    importProjectDatabase: async (source, projectId, passkey, portableSecrets) => {
+      const digest = await projectPasskeys.hash(passkey);
+      if (!digest.ok) throw digest.error;
+      const encryptAll = (values: Readonly<Record<string, string>>): Record<string, string> =>
+        Object.fromEntries(
+          Object.entries(values).map(([id, plaintext]) => {
+            const encrypted = cipher.encrypt(plaintext);
+            if (!encrypted.ok) throw encrypted.error;
+            return [id, encrypted.value];
+          }),
+        );
+      const wrapped = {
+        credentials: encryptAll(portableSecrets.credentials),
+        sshKeys: encryptAll(portableSecrets.sshKeys),
+        secrets: encryptAll(portableSecrets.secrets),
+      };
+      const snapshot = createPrismaClient(toSqliteUrl(source));
+      await snapshot.$connect();
+      try {
+        await importProjectSnapshot(db, snapshot, projectId, digest.value, wrapped);
       } finally {
         await snapshot.$disconnect();
       }

@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPrismaClient, type Db } from './client.js';
 import { ensureSchema } from './schema-bootstrap.js';
-import { isolateProjectSnapshot, restoreProjectSnapshot } from './project-snapshot.js';
+import {
+  importProjectSnapshot,
+  isolateProjectSnapshot,
+  restoreProjectSnapshot,
+} from './project-snapshot.js';
 
 const PROJECT_A = '10000000-0000-4000-8000-000000000001';
 const PROJECT_B = '10000000-0000-4000-8000-000000000002';
@@ -121,6 +125,73 @@ describe('project snapshots', () => {
           where: { projectId_key: { projectId: PROJECT_A, key: 'runtime-plan:test' } },
         }),
       ).not.toBeNull();
+    } finally {
+      await Promise.all([source.$disconnect(), target.$disconnect()]);
+    }
+  });
+
+  it('imports an isolated project with a new passkey and destination ciphertexts', async () => {
+    const source = await database('import-source');
+    const target = await database('import-target');
+    try {
+      await seed(source);
+      await isolateProjectSnapshot(source, PROJECT_A);
+      await importProjectSnapshot(
+        target,
+        source,
+        PROJECT_A,
+        { hash: 'destination-hash', salt: 'destination-salt', version: 1 },
+        {
+          credentials: {
+            '20000000-0000-4000-8000-000000000001': 'destination-ciphertext',
+          },
+          sshKeys: {},
+          secrets: {},
+        },
+      );
+
+      const imported = await target.project.findUniqueOrThrow({ where: { id: PROJECT_A } });
+      expect(imported.name).toBe('A');
+      expect(imported.passkeyHash).toBe('destination-hash');
+      expect(imported.passkeySalt).toBe('destination-salt');
+      expect(imported.lastOpenedAt).toBeNull();
+      expect(
+        await target.credential.findUniqueOrThrow({
+          where: { id: '20000000-0000-4000-8000-000000000001' },
+        }),
+      ).toMatchObject({ ciphertext: 'destination-ciphertext', projectId: PROJECT_A });
+      expect(await target.systemSetting.count()).toBe(0);
+    } finally {
+      await Promise.all([source.$disconnect(), target.$disconnect()]);
+    }
+  });
+
+  it('refuses to merge an imported snapshot into an existing project', async () => {
+    const source = await database('collision-source');
+    const target = await database('collision-target');
+    try {
+      await seed(source);
+      await isolateProjectSnapshot(source, PROJECT_A);
+      await target.project.create({
+        data: { id: PROJECT_A, name: 'Existing', environment: 'production', region: 'eu-test-1' },
+      });
+
+      await expect(
+        importProjectSnapshot(
+          target,
+          source,
+          PROJECT_A,
+          { hash: 'hash', salt: 'salt', version: 1 },
+          {
+            credentials: { '20000000-0000-4000-8000-000000000001': 'wrapped' },
+            sshKeys: {},
+            secrets: {},
+          },
+        ),
+      ).rejects.toThrow('already exists');
+      expect((await target.project.findUniqueOrThrow({ where: { id: PROJECT_A } })).name).toBe(
+        'Existing',
+      );
     } finally {
       await Promise.all([source.$disconnect(), target.$disconnect()]);
     }

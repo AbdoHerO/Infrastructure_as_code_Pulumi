@@ -12,11 +12,15 @@ Code distribution and application-state transfer are deliberately separate:
 
 On the source computer:
 
-1. Open **Settings → Security**.
-2. Enter a unique backup passphrase of at least 12 characters.
-3. Select **Create backup** and choose a removable drive or an encrypted/synced
+1. If this is a migrated project with no passkey, open **Projects → Change
+   passkey**, enter and confirm a new passkey, then select **Update passkey**.
+2. Open **Settings → Security**.
+3. Enter the current project passkey and a unique backup passphrase of at least
+   12 characters. These are separate: the project passkey authorizes the export;
+   the backup passphrase encrypts the portable file.
+4. Select **Export project** and choose a removable drive or an encrypted/synced
    folder such as OneDrive. Wait until that folder has finished syncing.
-4. Keep the passphrase separately. It is not stored in the backup.
+5. Keep the backup passphrase separately. It is not stored in the backup.
 
 The backup uses SQLite `VACUUM INTO` for a transactionally consistent database
 snapshot. Credential plaintext exists only briefly in main-process memory and
@@ -26,15 +30,23 @@ On the destination computer:
 
 1. Install the same or a newer CloudForge release and install Pulumi CLI.
 2. Allow the backup folder to finish downloading completely.
-3. Open **Settings → Security**, enter the same passphrase, and select
-   **Restore backup**.
-4. CloudForge safety-backs up the current destination state, restores the
-   database/Pulumi backend, re-encrypts credentials with the destination OS
-   keychain, restarts, and applies pending database migrations automatically.
+3. Lock the current project to return to the **Project Picker**. On a fresh
+   installation, the picker is already displayed.
+4. Select **Import project**, enter the backup passphrase, choose a new project
+   passkey (at least 8 characters), and select the exported folder.
+5. CloudForge imports only that isolated workspace, preserves its resource and
+   Pulumi identities, re-encrypts credentials with the destination OS keychain,
+   restores its Pulumi checkpoint and project log, then restarts. Other projects
+   on the destination remain untouched.
 
-Format-1 legacy backups can still restore on the same machine, but their
+To roll back an existing project from one of its own backups, open that project
+and use **Settings → Security → Restore backup**. Restore requires the same
+project identity and never changes its current passkey. Import and Restore are
+deliberately separate so a backup cannot overwrite another workspace.
+
+Format-1 and format-2 legacy backups can still restore on the same machine, but their
 OS-keychain ciphertext is not guaranteed to work on another machine. Create a
-new portable format-2 backup before moving computers.
+new project export before moving computers.
 
 Do not continuously synchronize the live Electron `userData` directory. SQLite
 and Pulumi state are mutable files; two running computers or partial cloud-sync

@@ -18,6 +18,7 @@ const WITHOUT_PROJECT_SESSION = new Set<IpcChannel>([
   'projects:session',
   'projects:unlock',
   'projects:create',
+  'backup:importProject',
   'updates:state',
   'updates:check',
   'updates:download',

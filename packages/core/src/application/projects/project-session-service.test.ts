@@ -178,6 +178,34 @@ describe('ProjectSessionService', () => {
     expect(project.toSnapshot().passkeyHash).toBe('hash:replacement-passkey');
   });
 
+  it('requires the current passkey before portable export', async () => {
+    const projects = new MemoryProjects();
+    const project = makeProject('Protected', 'current-passkey');
+    projects.values.set(project.id, project);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(project.id, 'current-passkey');
+
+    expect((await service.authorizeCurrent('wrong')).ok).toBe(false);
+    expect(await service.authorizeCurrent('current-passkey')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+  });
+
+  it('requires a migrated workspace to set a passkey before portable export', async () => {
+    const projects = new MemoryProjects();
+    const project = makeProject('Legacy');
+    projects.values.set(project.id, project);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(project.id, '');
+
+    const result = await service.authorizeCurrent('anything');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('Set a project passkey');
+  });
+
   it('does not activate a workspace when lifecycle setup fails', async () => {
     const projects = new MemoryProjects();
     const project = makeProject('Broken');

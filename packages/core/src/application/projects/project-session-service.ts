@@ -174,6 +174,25 @@ export class ProjectSessionService {
     });
   }
 
+  /** Re-authenticate the active project before exporting portable secrets. */
+  async authorizeCurrent(passkey: string): Promise<Result<void, ProjectSessionError>> {
+    const lease = this.context.current();
+    if (!lease) return err(new UnauthorizedError('Unlock a project to continue'));
+    const project = await this.load(lease.projectId);
+    if (!project.ok) return project;
+    const snapshot = project.value.toSnapshot();
+    if (!snapshot.passkeyHash || !snapshot.passkeySalt) {
+      return err(
+        new UnauthorizedError(
+          'Set a project passkey in Projects before exporting this migrated workspace',
+        ),
+      );
+    }
+    const verified = await this.hasher.verify(passkey, passkeyFrom(snapshot));
+    if (!verified.ok) return verified;
+    return verified.value ? ok(undefined) : err(new UnauthorizedError('Incorrect project passkey'));
+  }
+
   private async load(projectId: string): Promise<Result<Project, ProjectSessionError>> {
     const uuid = parseUuid(projectId);
     if (!uuid) return err(new ValidationError('Invalid project id'));

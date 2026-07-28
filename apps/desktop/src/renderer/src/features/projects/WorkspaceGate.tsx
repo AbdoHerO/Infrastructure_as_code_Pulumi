@@ -8,12 +8,13 @@ import {
   LoaderCircle,
   LockKeyhole,
   Plus,
+  Upload,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { Button, Card, Input, Label, Select, Textarea, toast } from '@cloudforge/ui';
 import type { CreateProjectInput, ProjectPickerDto } from '@cloudforge/core';
-import { IpcCallError } from '../../lib/ipc.js';
+import { invoke, IpcCallError } from '../../lib/ipc.js';
 import { useWorkspace } from './WorkspaceContext.js';
 
 /** Prevents all workspace-scoped routes from mounting until a project is unlocked. */
@@ -38,6 +39,7 @@ function WorkspaceLoading(): JSX.Element {
 function ProjectPicker(): JSX.Element {
   const { projects } = useWorkspace();
   const [creating, setCreating] = useState(projects.length === 0);
+  const [importing, setImporting] = useState(false);
 
   return (
     <div className="bg-background text-foreground h-full overflow-y-auto">
@@ -56,14 +58,23 @@ function ProjectPicker(): JSX.Element {
               <h1 className="text-3xl font-semibold tracking-tight">Welcome to CloudForge</h1>
             </div>
           </div>
-          {projects.length > 0 && !creating ? (
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="size-4" /> New project
-            </Button>
+          {!importing ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setImporting(true)}>
+                <Upload className="size-4" /> Import project
+              </Button>
+              {projects.length > 0 && !creating ? (
+                <Button onClick={() => setCreating(true)}>
+                  <Plus className="size-4" /> New project
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </header>
 
-        {creating ? (
+        {importing ? (
+          <ImportWorkspace onCancel={() => setImporting(false)} />
+        ) : creating ? (
           <CreateWorkspace
             first={projects.length === 0}
             onCancel={projects.length === 0 ? undefined : () => setCreating(false)}
@@ -86,6 +97,88 @@ function ProjectPicker(): JSX.Element {
         )}
       </main>
     </div>
+  );
+}
+
+function ImportWorkspace({ onCancel }: { onCancel: () => void }): JSX.Element {
+  const [form, setForm] = useState({ passphrase: '', passkey: '', confirmation: '' });
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (): Promise<void> => {
+    if (form.passphrase.length < 12)
+      return setError('Backup passphrase must contain at least 12 characters');
+    if (form.passkey.length < 8)
+      return setError('New project passkey must contain at least 8 characters');
+    if (form.passkey !== form.confirmation) return setError('Project passkeys do not match');
+    setWorking(true);
+    setError('');
+    try {
+      await invoke('backup:importProject', {
+        passphrase: form.passphrase,
+        projectPasskey: form.passkey,
+      });
+    } catch (cause) {
+      setError(cause instanceof IpcCallError ? cause.message : 'Could not import the project');
+      setWorking(false);
+    }
+  };
+
+  return (
+    <Card className="mx-auto w-full max-w-2xl p-6">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold">Import a portable project</h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Select an exported CloudForge project folder. Credentials are decrypted with the backup
+          passphrase, then encrypted again for this computer. The new passkey protects only the
+          imported project.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label="Backup passphrase">
+            <Input
+              type="password"
+              autoComplete="off"
+              value={form.passphrase}
+              placeholder="Passphrase used during export"
+              onChange={(event) => setForm({ ...form, passphrase: event.target.value })}
+            />
+          </Field>
+        </div>
+        <Field label="New project passkey">
+          <Input
+            type="password"
+            autoComplete="new-password"
+            value={form.passkey}
+            placeholder="At least 8 characters"
+            onChange={(event) => setForm({ ...form, passkey: event.target.value })}
+          />
+        </Field>
+        <Field label="Confirm project passkey">
+          <Input
+            type="password"
+            autoComplete="new-password"
+            value={form.confirmation}
+            onChange={(event) => setForm({ ...form, confirmation: event.target.value })}
+          />
+        </Field>
+      </div>
+      {error ? <p className="text-destructive mt-3 text-sm">{error}</p> : null}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="ghost" disabled={working} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button disabled={working} onClick={() => void submit()}>
+          {working ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : (
+            <Upload className="size-4" />
+          )}
+          {working ? 'Importing…' : 'Choose backup and import'}
+        </Button>
+      </div>
+    </Card>
   );
 }
 

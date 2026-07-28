@@ -22,6 +22,7 @@ import { useCredentials, useSecurityStatus } from '../secrets/useCredentials.js'
 import { useSettings, useUpdateSettings } from './useSettings.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { toast } from '@cloudforge/ui';
+import { useWorkspace } from '../projects/WorkspaceContext.js';
 
 /** The Settings module with grouped, tabbed sections. */
 export function SettingsPage(): JSX.Element {
@@ -33,7 +34,10 @@ export function SettingsPage(): JSX.Element {
   const { data: security } = useSecurityStatus();
   const { data: credentials } = useCredentials();
   const [backupPassphrase, setBackupPassphrase] = useState('');
+  const [projectPasskey, setProjectPasskey] = useState('');
   const backupReady = backupPassphrase.length >= 12;
+  const exportReady = backupReady && projectPasskey.length >= 8;
+  const { session } = useWorkspace();
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: 'idle',
     current: '—',
@@ -511,21 +515,42 @@ export function SettingsPage(): JSX.Element {
                 />
               </Row>
               <Row
-                title="Backup"
-                description="Create a consistent database snapshot with portable encrypted credentials and Pulumi state."
+                title="Current project passkey"
+                description={
+                  session?.project.hasPasskey
+                    ? 'Re-authenticate before exporting secrets. This passkey is not written to the backup.'
+                    : 'This migrated project has no passkey. Set one from Projects before exporting it.'
+                }
+              >
+                <Input
+                  className="w-64"
+                  type="password"
+                  autoComplete="current-password"
+                  value={projectPasskey}
+                  disabled={!session?.project.hasPasskey}
+                  onChange={(event) => setProjectPasskey(event.target.value)}
+                  placeholder="Project passkey"
+                />
+              </Row>
+              <Row
+                title="Export project"
+                description="Export this project, all module data, portable encrypted credentials, Pulumi state and its project log."
               >
                 <Button
                   variant="outline"
-                  disabled={!backupReady}
+                  disabled={!exportReady}
                   onClick={() =>
-                    void invoke('backup:create', { passphrase: backupPassphrase })
+                    void invoke('backup:create', {
+                      passphrase: backupPassphrase,
+                      projectPasskey,
+                    })
                       .then(({ path }) => {
                         if (path) toast.success(`Portable backup created: ${path}`);
                       })
                       .catch((error: Error) => toast.error(error.message))
                   }
                 >
-                  Create backup
+                  Export project
                 </Button>
               </Row>
               <Row title="Restore" description="Restore a backup and restart CloudForge.">

@@ -6,7 +6,13 @@
  * the Electron main process; never by the renderer.
  */
 export { createPrismaClient, PrismaClient, type Db } from './client.js';
-export { isolateProjectSnapshot, restoreProjectSnapshot } from './project-snapshot.js';
+export {
+  isolateProjectSnapshot,
+  restoreProjectSnapshot,
+  importProjectSnapshot,
+  type ImportedProjectPasskey,
+  type ImportedProjectCiphertexts,
+} from './project-snapshot.js';
 export { ensureSchema, migrateSchema, type MigrateSchemaHooks } from './schema-bootstrap.js';
 export {
   migrateProjectOwnership,

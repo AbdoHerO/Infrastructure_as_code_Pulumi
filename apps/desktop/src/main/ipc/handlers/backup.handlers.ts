@@ -2,9 +2,9 @@ import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { app, dialog } from 'electron';
-import type { PortableCredentialSecrets, StackReference } from '@cloudforge/core';
+import type { StackReference } from '@cloudforge/core';
 import { ConflictError, UnauthorizedError } from '@cloudforge/shared';
-import { getContainer } from '../../container.js';
+import { getContainer, type PortableProjectSecrets } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { projectOperations } from '../../project-operation-registry.js';
 import { registerHandler } from '../registry.js';
@@ -15,7 +15,7 @@ import {
 } from '../../security/portable-backup.js';
 
 interface ProjectBackupManifest {
-  readonly format: 3;
+  readonly format: 3 | 4;
   readonly product: 'CloudForge';
   readonly scope: 'project';
   readonly projectId: string;
@@ -34,10 +34,12 @@ interface LegacyBackupManifest {
 type BackupManifest = ProjectBackupManifest | LegacyBackupManifest;
 
 export function registerBackupHandlers(): void {
-  registerHandler('backup:create', async ({ passphrase }) => {
+  registerHandler('backup:create', async ({ passphrase, projectPasskey }) => {
     const current = getContainer();
     const lease = current.projectContext.current();
     if (!lease) throw new UnauthorizedError('Unlock a project to create its backup');
+    const authorized = await current.projectSessionService.authorizeCurrent(projectPasskey);
+    if (!authorized.ok) throw authorized.error;
     const project = await current.projectService.get(lease.projectId);
     if (!project.ok) throw project.error;
 
@@ -57,9 +59,8 @@ export function registerBackupHandlers(): void {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       destination = join(selection.filePaths[0], `CloudForge-project-${timestamp}`);
       await mkdir(destination, { recursive: false });
-      const secrets = await current.credentialService.exportPortableSecrets();
-      if (!secrets.ok) throw secrets.error;
-      const envelope = encryptPortableSecrets(JSON.stringify(secrets.value), passphrase);
+      const secrets = await current.exportProjectSecrets(lease.projectId);
+      const envelope = encryptPortableSecrets(JSON.stringify(secrets), passphrase);
       await current.snapshotProjectDatabase(join(destination, 'project.db'), lease.projectId);
       const stack = projectStackReference(project.value);
       const hasPulumiState = await copyProjectPulumiState(
@@ -70,7 +71,7 @@ export function registerBackupHandlers(): void {
       await copyProjectLog(app.getPath('userData'), destination, lease.projectId);
       await writeFile(join(destination, 'credentials.enc'), JSON.stringify(envelope), 'utf8');
       const manifest: ProjectBackupManifest = {
-        format: 3,
+        format: 4,
         product: 'CloudForge',
         scope: 'project',
         projectId: lease.projectId,
@@ -105,7 +106,7 @@ export function registerBackupHandlers(): void {
     if (selection.canceled || !selection.filePaths[0]) return { restored: false };
     const source = selection.filePaths[0];
     const manifest = await readManifest(source);
-    if (manifest.format !== 3) {
+    if (manifest.format !== 3 && manifest.format !== 4) {
       throw new ConflictError(
         'This is a legacy whole-application backup. It cannot be restored over a multi-project database because that would overwrite unrelated projects.',
       );
@@ -143,8 +144,7 @@ export function registerBackupHandlers(): void {
       await copyProjectPulumiState(app.getPath('userData'), safetyBackup, manifest.stack);
       try {
         await current.restoreProjectDatabase(join(source, 'project.db'), lease.projectId);
-        const imported = await current.credentialService.importPortableSecrets(portableSecrets);
-        if (!imported.ok) throw imported.error;
+        await current.rewrapProjectSecrets(lease.projectId, portableSecrets);
         await restoreProjectPulumiState(source, app.getPath('userData'), manifest);
         restored = true;
       } catch (cause) {
@@ -164,6 +164,58 @@ export function registerBackupHandlers(): void {
     app.exit(0);
     return { restored: true };
   });
+
+  registerHandler('backup:importProject', async ({ passphrase, projectPasskey }) => {
+    const current = getContainer();
+    if (current.projectContext.current()) {
+      throw new ConflictError('Lock the current project before importing another workspace');
+    }
+    if (projectPasskey.length < 8) {
+      throw new UnauthorizedError('The new project passkey must contain at least 8 characters');
+    }
+    const selection = await dialog.showOpenDialog({
+      title: 'Select a CloudForge project backup folder to import',
+      properties: ['openDirectory'],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return { imported: false };
+    const source = selection.filePaths[0];
+    const manifest = await readManifest(source);
+    if ((manifest.format !== 3 && manifest.format !== 4) || manifest.scope !== 'project') {
+      throw new ConflictError('Only a portable multi-project backup can be imported');
+    }
+    if (!existsSync(join(source, 'project.db')))
+      throw new Error('Project backup database is missing');
+    const projects = await current.projectService.listForPicker();
+    if (!projects.ok) throw projects.error;
+    if (projects.value.some((project) => project.id === manifest.projectId)) {
+      throw new ConflictError('This project already exists. Open it and use Restore instead.');
+    }
+    const checkpointTarget = projectStackPath(app.getPath('userData'), manifest.stack);
+    if (existsSync(checkpointTarget)) {
+      throw new ConflictError(
+        'A Pulumi stack with this project identity already exists on this computer. Import was stopped to avoid overwriting it.',
+      );
+    }
+    const portableSecrets = await readPortableSecrets(source, passphrase);
+    await current.importProjectDatabase(
+      join(source, 'project.db'),
+      manifest.projectId,
+      projectPasskey,
+      portableSecrets,
+    );
+    try {
+      await restoreProjectPulumiState(source, app.getPath('userData'), manifest);
+      await restoreProjectLog(source, app.getPath('userData'), manifest.projectId);
+    } catch (cause) {
+      const removed = await current.projectService.remove(manifest.projectId);
+      if (!removed.ok) throw removed.error;
+      await rm(checkpointTarget, { force: true });
+      throw cause;
+    }
+    app.relaunch();
+    app.exit(0);
+    return { imported: true };
+  });
 }
 
 async function readManifest(source: string): Promise<BackupManifest> {
@@ -175,7 +227,7 @@ async function readManifest(source: string): Promise<BackupManifest> {
   )
     throw new Error('The selected folder is not a CloudForge backup');
   const manifest = parsed as BackupManifest;
-  if (![1, 2, 3].includes(manifest.format))
+  if (![1, 2, 3, 4].includes(manifest.format))
     throw new Error('The selected folder uses an unsupported backup format');
   return manifest;
 }
@@ -235,20 +287,57 @@ async function copyProjectLog(
   await copyFile(source, join(destination, 'logs', 'cloudforge.log'));
 }
 
+async function restoreProjectLog(
+  source: string,
+  userData: string,
+  projectId: string,
+): Promise<void> {
+  assertSafeSegment(projectId);
+  const backupLog = join(source, 'logs', 'cloudforge.log');
+  if (!existsSync(backupLog)) return;
+  const destination = join(userData, 'logs', 'projects', projectId, 'cloudforge.log');
+  await mkdir(resolve(destination, '..'), { recursive: true });
+  await copyFile(backupLog, destination);
+}
+
 async function readPortableSecrets(
   source: string,
   passphrase: string,
-): Promise<PortableCredentialSecrets> {
+): Promise<PortableProjectSecrets> {
   const path = join(source, 'credentials.enc');
   if (!existsSync(path)) throw new Error('Portable credential backup is missing');
   const envelope = JSON.parse(await readFile(path, 'utf8')) as PortableSecretEnvelope;
   const parsed: unknown = JSON.parse(decryptPortableSecrets(envelope, passphrase));
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
     throw new Error('Portable credential backup is invalid');
-  const entries = Object.entries(parsed as Record<string, unknown>);
-  if (entries.some(([, value]) => typeof value !== 'string'))
-    throw new Error('Portable credential backup is invalid');
-  return Object.fromEntries(entries) as PortableCredentialSecrets;
+  const record = parsed as Record<string, unknown>;
+  // Format 3 stored only the current Credential table as a flat id/value map.
+  // It remains importable because all current secret kinds use that table.
+  if (record.format !== 1) {
+    const entries = Object.entries(record);
+    if (entries.some(([, value]) => typeof value !== 'string'))
+      throw new Error('Portable credential backup is invalid');
+    return {
+      format: 1,
+      credentials: Object.fromEntries(entries) as Readonly<Record<string, string>>,
+      sshKeys: {},
+      secrets: {},
+    };
+  }
+  const groups = ['credentials', 'sshKeys', 'secrets'] as const;
+  for (const group of groups) {
+    const value = record[group];
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Portable project secret backup is invalid');
+    if (Object.values(value as Record<string, unknown>).some((entry) => typeof entry !== 'string'))
+      throw new Error('Portable project secret backup is invalid');
+  }
+  return {
+    format: 1,
+    credentials: record.credentials as Readonly<Record<string, string>>,
+    sshKeys: record.sshKeys as Readonly<Record<string, string>>,
+    secrets: record.secrets as Readonly<Record<string, string>>,
+  };
 }
 
 function assertSafeSegment(value: string): void {

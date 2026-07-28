@@ -272,8 +272,15 @@ export interface IpcContract {
   'jenkins:status': { request: { id: string }; response: JenkinsJobStatus };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
-  'backup:create': { request: { passphrase: string }; response: { path: string | null } };
+  'backup:create': {
+    request: { passphrase: string; projectPasskey: string };
+    response: { path: string | null };
+  };
   'backup:restore': { request: { passphrase: string }; response: { restored: boolean } };
+  'backup:importProject': {
+    request: { passphrase: string; projectPasskey: string };
+    response: { imported: boolean };
+  };
 
   'sshKeys:list': { request: void; response: SshKeySummary[] };
   'sshKeys:generate': {
@@ -840,6 +847,7 @@ export const IPC_CHANNELS = [
   'security:status',
   'backup:create',
   'backup:restore',
+  'backup:importProject',
   'sshKeys:list',
   'sshKeys:generate',
   'sshKeys:import',
