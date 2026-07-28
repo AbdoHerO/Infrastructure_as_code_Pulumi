@@ -2,18 +2,25 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createPrismaClient } from './client.js';
+import { createPrismaClient, type Db } from './client.js';
 import { migrateProjectOwnership } from './project-ownership-migration.js';
 import { ensureSchema, migrateSchema } from './schema-bootstrap.js';
 
 const PROJECT_A = '10000000-0000-4000-8000-000000000001';
 const PROJECT_B = '10000000-0000-4000-8000-000000000002';
-const created: string[] = [];
+const created: { directory: string; db: Db }[] = [];
+
+function trackDatabase(directory: string, db: Db): Db {
+  created.push({ directory, db });
+  return db;
+}
 
 async function database() {
   const directory = await mkdtemp(join(tmpdir(), 'cloudforge-ownership-'));
-  created.push(directory);
-  const db = createPrismaClient(`file:${join(directory, 'test.db').replace(/\\/g, '/')}`);
+  const db = trackDatabase(
+    directory,
+    createPrismaClient(`file:${join(directory, 'test.db').replace(/\\/g, '/')}`),
+  );
   await db.$connect();
   await ensureSchema(db);
   await migrateProjectOwnership(db);
@@ -28,8 +35,10 @@ async function database() {
 
 async function legacyDatabase() {
   const directory = await mkdtemp(join(tmpdir(), 'cloudforge-legacy-'));
-  created.push(directory);
-  const db = createPrismaClient(`file:${join(directory, 'legacy.db').replace(/\\/g, '/')}`);
+  const db = trackDatabase(
+    directory,
+    createPrismaClient(`file:${join(directory, 'legacy.db').replace(/\\/g, '/')}`),
+  );
   await db.$connect();
   const statements = [
     `CREATE TABLE "Project" (
@@ -118,7 +127,15 @@ async function legacyDatabase() {
 }
 
 afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  for (const fixture of created.splice(0)) {
+    await fixture.db.$disconnect();
+    await rm(fixture.directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
 });
 
 describe('project ownership database guards', () => {
