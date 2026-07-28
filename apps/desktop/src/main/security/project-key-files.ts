@@ -1,6 +1,7 @@
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
+import { enforceOwnerOnlyPath } from './owner-only-file.js';
 
 const materialized = new Map<string, Set<string>>();
 
@@ -28,11 +29,16 @@ export async function materializeProjectSshKey(input: {
 }): Promise<string> {
   const directory = projectDirectory(input.projectId);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await chmod(directory, 0o700).catch(() => undefined);
+  await enforceOwnerOnlyPath(directory, 0o700);
   const safeName = safeSegment(input.suggestedName);
   const path = join(directory, `${safeName}-${safeSegment(input.credentialId)}`);
   await writeFile(path, input.privateKey, { encoding: 'utf8', mode: 0o600 });
-  await chmod(path, 0o600).catch(() => undefined);
+  try {
+    await enforceOwnerOnlyPath(path, 0o600);
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  }
   const paths = materialized.get(input.projectId) ?? new Set<string>();
   paths.add(path);
   materialized.set(input.projectId, paths);

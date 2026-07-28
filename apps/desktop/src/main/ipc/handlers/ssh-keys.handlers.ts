@@ -1,10 +1,11 @@
-import { chmod, writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { dialog } from 'electron';
 import { getContainer } from '../../container.js';
 import {
   materializeProjectSshKey,
   removeMaterializedCredential,
 } from '../../security/project-key-files.js';
+import { enforceOwnerOnlyPath } from '../../security/owner-only-file.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 
@@ -32,7 +33,12 @@ export function registerSshKeyHandlers(): void {
     if (selected.canceled || !selected.filePath) return { path: null };
     const privateKey = orThrow(await getContainer().sshKeyService.revealPrivate(id));
     await writeFile(selected.filePath, privateKey, { encoding: 'utf8', mode: 0o600 });
-    await chmod(selected.filePath, 0o600).catch(() => undefined);
+    try {
+      await enforceOwnerOnlyPath(selected.filePath, 0o600);
+    } catch (error) {
+      await rm(selected.filePath, { force: true });
+      throw error;
+    }
     return { path: selected.filePath };
   });
 
