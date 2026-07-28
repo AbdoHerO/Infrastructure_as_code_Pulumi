@@ -95,6 +95,16 @@ describe('portStateFunction', () => {
     expect(script).toContain('nft list ruleset');
   });
 
+  it('inspects only nftables input chains, not Docker forwarding policy', () => {
+    // Docker commonly installs a FORWARD chain with policy drop. That does not
+    // block native services listening on the host's INPUT path.
+    const script = portStateFunction();
+
+    expect(script).toContain('hook[[:space:]]+input');
+    expect(script).toContain('input_rules=');
+    expect(script).not.toContain(`printf '%s\\n' "$rules" | grep -qE 'policy (drop|reject)'`);
+  });
+
   it('answers open when a firewall is installed but not running', () => {
     // Nothing is filtering, so the port really is reachable. `unknown` here sends
     // someone hunting a firewall that is switched off.
@@ -151,6 +161,18 @@ describe('detectBackendScript', () => {
     // `command -v` is a shell builtin. sudo cannot run it, and it needs no root.
     expect(script).not.toContain('$S command -v');
   });
+
+  it('uses the iptables frontend before generic nftables discovery', () => {
+    // Ubuntu/OCI plus Docker exposes nftables tables even though INPUT is owned
+    // through iptables-nft. A parallel nft accept chain cannot override INPUT.
+    const script = detectBackendScript();
+    const activeNativeNft = script.indexOf('systemctl is-active --quiet nftables');
+    const iptables = script.indexOf('iptables -S');
+    const genericNft = script.lastIndexOf('nft list ruleset');
+
+    expect(activeNativeNft).toBeLessThan(iptables);
+    expect(iptables).toBeLessThan(genericNft);
+  });
 });
 
 describe('isValidPort', () => {
@@ -175,10 +197,12 @@ describe('openPortsScript', () => {
     }
   });
 
-  it('prefers nftables over the iptables compatibility shim', () => {
+  it('prefers an explicitly active native nftables service over iptables', () => {
     const script = detectBackendScript();
 
-    expect(script.indexOf('nft list ruleset')).toBeLessThan(script.indexOf('iptables -S'));
+    expect(script.indexOf('systemctl is-active --quiet nftables')).toBeLessThan(
+      script.indexOf('iptables -S'),
+    );
   });
 
   it('only treats ufw and firewalld as in charge when they are running', () => {

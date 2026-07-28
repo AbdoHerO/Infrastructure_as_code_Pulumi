@@ -105,6 +105,9 @@ export interface VpsFacts {
   readonly initSystem: string;
   readonly pythonVersion: string | null;
   readonly ansibleVersion: string | null;
+  /** Live Docker versions are optional for compatibility with older reports. */
+  readonly dockerVersion?: string | null;
+  readonly composeVersion?: string | null;
   readonly memoryMb: number;
   readonly diskFreeMb: number;
   readonly firewall: string;

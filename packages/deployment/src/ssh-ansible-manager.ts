@@ -210,8 +210,17 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
       );
     if (profileId === 'dockhand' || profileId === 'portainer') {
       onEvent?.({ stream: 'step', message: 'Ensuring the Docker dependency is ready…' });
-      const docker = await this.run(target, 'docker', { docker_users: '' }, onEvent, options);
-      if (!docker.ok) return docker;
+      const dockerVersion = readiness.value.facts.dockerVersion;
+      const composeVersion = readiness.value.facts.composeVersion;
+      if (dockerVersion && composeVersion) {
+        onEvent?.({
+          stream: 'step',
+          message: `Docker ${dockerVersion} and Compose ${composeVersion} are already ready.`,
+        });
+      } else {
+        const docker = await this.run(target, 'docker', { docker_users: '' }, onEvent, options);
+        if (!docker.ok) return docker;
+      }
     }
 
     const job = `/tmp/cloudforge-ansible-${randomUUID()}`;
@@ -637,7 +646,11 @@ function withConnection<T>(
   signal: AbortSignal | undefined,
   action: (client: Client) => Promise<T>,
 ): Promise<Result<T, DeploymentError>> {
-  return withSshConnection(target, { label: LABEL, ...(signal ? { signal } : {}) }, action);
+  return withSshConnection(
+    target,
+    { label: LABEL, connectionAttempts: 3, ...(signal ? { signal } : {}) },
+    action,
+  );
 }
 
 function execute(

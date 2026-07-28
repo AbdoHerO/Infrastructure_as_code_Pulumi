@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   base64,
   fingerprintHostKey,
+  isTransientSshHandshakeFailure,
   normalizeFingerprint,
   privilegedScript,
   quote,
@@ -186,6 +187,28 @@ describe('sshConnectionConfig', () => {
   it('rejects a target with no authentication material', () => {
     expect(() => sshConnectionConfig({ ...target, privateKey: undefined })).toThrow(
       /private key or password/i,
+    );
+  });
+});
+
+describe('transient SSH handshake failures', () => {
+  it('retries transport timeouts and resets', () => {
+    expect(isTransientSshHandshakeFailure(new Error('Timed out while waiting for handshake'))).toBe(
+      true,
+    );
+    expect(
+      isTransientSshHandshakeFailure(
+        Object.assign(new Error('socket reset'), { code: 'ECONNRESET' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not retry authentication or host-key failures', () => {
+    expect(
+      isTransientSshHandshakeFailure(new Error('All configured authentication methods failed')),
+    ).toBe(false);
+    expect(isTransientSshHandshakeFailure(new Error('Host denied (verification failed)'))).toBe(
+      false,
     );
   });
 });

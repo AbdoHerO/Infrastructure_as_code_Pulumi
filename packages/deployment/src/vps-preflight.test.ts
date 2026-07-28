@@ -22,6 +22,8 @@ const ready = {
   venv: 'yes',
   ansible_path: '/opt/cloudforge/ansible/bin/ansible-playbook',
   ansible_version: 'ansible-playbook [core 2.18.6]',
+  docker: '29.6.2',
+  compose: 'v5.3.1',
   memory_mb: '24000',
   disk_mb: '190000',
   coreutils: 'yes',
@@ -57,6 +59,8 @@ describe('VPS preflight', () => {
     const report = buildPreflightReport(ready, 'jenkins', 8080);
     expect(report.status).toBe('ready');
     expect(report.facts.architecture).toBe('aarch64');
+    expect(report.facts.dockerVersion).toBe('29.6.2');
+    expect(report.facts.composeVersion).toBe('v5.3.1');
   });
 
   it('offers an explicit package repair plan when the managed runtime is absent', () => {

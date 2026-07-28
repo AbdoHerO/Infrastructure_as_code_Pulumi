@@ -394,6 +394,8 @@ export function buildPreflightReport(
     initSystem: raw.init ?? '',
     pythonVersion: nullableNonEmpty(raw.python_version),
     ansibleVersion: nullableNonEmpty(raw.ansible_version),
+    dockerVersion: nullableNonEmpty(raw.docker),
+    composeVersion: nullableNonEmpty(raw.compose),
     memoryMb,
     diskFreeMb,
     firewall: raw.firewall ?? 'unknown',

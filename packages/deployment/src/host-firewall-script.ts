@@ -62,9 +62,12 @@ function assertPorts(ports: readonly FirewallPort[]): void {
  * "the firewall" would make CloudForge report a port as blocked when nothing is
  * blocking it.
  *
- * nftables is checked before iptables because on a modern distro `iptables` is
- * usually a compatibility shim over nftables. Driving the shim while reading the
- * real table is how rules appear to vanish.
+ * A deliberately active native nftables service wins over iptables. Otherwise
+ * iptables is checked first: Ubuntu/OCI and Docker commonly expose nftables
+ * tables through the kernel while the host's INPUT policy is still owned through
+ * the iptables-nft compatibility frontend. Treating the mere presence of any nft
+ * table as a native nftables firewall made CloudForge create a parallel accept
+ * chain that could not override the real INPUT reject chain.
  *
  * `sudo` prefixes the commands that need root. Most callers leave it empty
  * because `runPrivilegedScript` already runs the whole script as root. The
@@ -78,10 +81,12 @@ export function detectBackendScript(sudo = ''): string {
   printf ufw
 elif command -v firewall-cmd >/dev/null 2>&1 && ${sudo}systemctl is-active --quiet firewalld 2>/dev/null; then
   printf firewalld
-elif command -v nft >/dev/null 2>&1 && ${sudo}nft list ruleset >/dev/null 2>&1; then
+elif command -v nft >/dev/null 2>&1 && { ${sudo}systemctl is-active --quiet nftables 2>/dev/null || ${sudo}rc-service nftables status >/dev/null 2>&1; } && ${sudo}nft list ruleset >/dev/null 2>&1; then
   printf nftables
 elif command -v iptables >/dev/null 2>&1 && ${sudo}iptables -S >/dev/null 2>&1; then
   printf iptables
+elif command -v nft >/dev/null 2>&1 && ${sudo}nft list ruleset >/dev/null 2>&1; then
+  printf nftables
 elif command -v ufw >/dev/null 2>&1 || command -v firewall-cmd >/dev/null 2>&1; then
   printf none
 else
@@ -236,9 +241,20 @@ export function portStateFunction(sudo = ''): string {
       ;;
     nftables)
       rules=$(${sudo}nft list ruleset 2>/dev/null)
-      if printf '%s\n' "$rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' (drop|reject)( |$)'; then printf closed
-      elif printf '%s\n' "$rules" | grep -qE 'policy (drop|reject)'; then printf closed
-      elif printf '%s\n' "$rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' accept( |$)'; then printf open
+      input_rules=$(printf '%s\n' "$rules" | awk '
+        /^[[:space:]]*chain[[:space:]]+/ { block=$0 ORS; in_chain=1; is_input=0; next }
+        in_chain {
+          block=block $0 ORS
+          if ($0 ~ /hook[[:space:]]+input([[:space:]]|;)/) is_input=1
+          if ($0 ~ /^[[:space:]]*}/) {
+            if (is_input) printf "%s", block
+            block=""; in_chain=0; is_input=0
+          }
+        }
+      ')
+      if printf '%s\n' "$input_rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' (drop|reject)( |$)'; then printf closed
+      elif printf '%s\n' "$input_rules" | grep -qE 'policy (drop|reject)'; then printf closed
+      elif printf '%s\n' "$input_rules" | grep -E "$proto dport" | grep -E "(^|[^0-9])$port([^0-9]|$)" | grep -qE ' accept( |$)'; then printf open
       else printf open; fi
       ;;
     iptables)

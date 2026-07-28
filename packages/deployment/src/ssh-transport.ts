@@ -33,6 +33,8 @@ export interface SshOperationOptions {
   readonly label: string;
   readonly signal?: AbortSignal | undefined;
   readonly connectTimeoutMs?: number | undefined;
+  /** Number of attempts for transient failures that happen before SSH authentication. */
+  readonly connectionAttempts?: number | undefined;
 }
 
 export interface SshExecOptions {
@@ -106,21 +108,69 @@ export function sshConnectionConfig(
  * `action` receives the live client, so a caller needing several commands pays
  * for a single handshake instead of one per command.
  */
-export function withSshConnection<T>(
+export async function withSshConnection<T>(
   target: DeploymentTarget,
   options: SshOperationOptions,
   action: (client: Client) => Promise<T>,
 ): Promise<Result<T, DeploymentError>> {
+  const attempts = Math.max(1, Math.trunc(options.connectionAttempts ?? 1));
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const outcome = await connectionAttempt(target, options, action);
+    if (outcome.result.ok || !outcome.retryable) return outcome.result;
+    if (attempt === attempts)
+      return err(
+        new DeploymentError(
+          `${options.label} SSH handshake timed out after ${attempts} attempts. The VPS did not complete a connection on port ${target.port}.`,
+          { cause: outcome.result.error },
+        ),
+      );
+    if (!(await waitBeforeRetry(400 * attempt, options.signal)))
+      return err(new DeploymentError(`${options.label} operation cancelled`));
+  }
+  return err(new DeploymentError(`${options.label} SSH connection failed`));
+}
+
+interface ConnectionAttempt<T> {
+  readonly result: Result<T, DeploymentError>;
+  readonly retryable: boolean;
+}
+
+function connectionAttempt<T>(
+  target: DeploymentTarget,
+  options: SshOperationOptions,
+  action: (client: Client) => Promise<T>,
+): Promise<ConnectionAttempt<T>> {
   const { label, signal, connectTimeoutMs } = options;
   return new Promise((resolve) => {
     const client = new Client();
     let settled = false;
-    const finish = (result: Result<T, DeploymentError>): void => {
+    let authenticated = false;
+    const finish = (result: Result<T, DeploymentError>, retryable = false): void => {
       if (settled) return;
       settled = true;
       signal?.removeEventListener('abort', abort);
-      client.end();
-      resolve(result);
+      // A following operation must not race the previous socket shutdown. On
+      // some SSH servers rapid overlapping handshakes are throttled or dropped.
+      // Wait for ssh2 to close, with a bounded fallback for broken sockets.
+      let closed = false;
+      const resolveOnce = (): void => {
+        if (closed) return;
+        closed = true;
+        clearTimeout(closeTimer);
+        resolve({ result, retryable });
+      };
+      const closeTimer = setTimeout(() => {
+        client.destroy();
+        resolveOnce();
+      }, 1_500);
+      closeTimer.unref?.();
+      client.once('close', resolveOnce);
+      try {
+        client.end();
+      } catch {
+        client.destroy();
+        resolveOnce();
+      }
     };
     const abort = (): void => finish(err(new DeploymentError(`${label} operation cancelled`)));
     if (signal?.aborted) return abort();
@@ -130,9 +180,11 @@ export function withSshConnection<T>(
         err(
           new DeploymentError(`${label} SSH connection or host-key verification failed`, { cause }),
         ),
+        !authenticated && isTransientSshHandshakeFailure(cause),
       ),
     );
     client.once('ready', () => {
+      authenticated = true;
       void action(client)
         .then((value) => finish(ok(value)))
         .catch((cause) =>
@@ -158,6 +210,37 @@ export function withSshConnection<T>(
         ),
       );
     }
+  });
+}
+
+export function isTransientSshHandshakeFailure(cause: unknown): boolean {
+  const error = cause as { code?: unknown; message?: unknown };
+  const code = typeof error?.code === 'string' ? error.code.toUpperCase() : '';
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  return (
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'EPIPE' ||
+    message.includes('timed out while waiting for handshake') ||
+    message.includes('connection reset') ||
+    message.includes('connection lost before handshake')
+  );
+}
+
+function waitBeforeRetry(delayMs: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      resolve(ready);
+    };
+    const abort = (): void => finish(false);
+    const timer = setTimeout(() => finish(true), delayMs);
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
