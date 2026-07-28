@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enforceOwnerOnlyPath } from './owner-only-file.js';
+import { enforceOwnerOnlyPath, removeOwnerOnlyTree } from './owner-only-file.js';
 
 describe('enforceOwnerOnlyPath', () => {
   it('replaces inherited Windows ACLs with the current user only', async () => {
@@ -16,7 +16,8 @@ describe('enforceOwnerOnlyPath', () => {
     });
 
     expect(run).toHaveBeenNthCalledWith(1, 'whoami.exe', []);
-    expect(run).toHaveBeenNthCalledWith(2, 'icacls.exe', [
+    expect(run).toHaveBeenNthCalledWith(2, 'icacls.exe', ['C:\\keys\\cloudforge-key', '/reset']);
+    expect(run).toHaveBeenNthCalledWith(3, 'icacls.exe', [
       'C:\\keys\\cloudforge-key',
       '/inheritance:r',
       '/grant:r',
@@ -38,6 +39,55 @@ describe('enforceOwnerOnlyPath', () => {
         chmod: vi.fn(),
       }),
     ).rejects.toThrow('access denied');
+  });
+
+  it('makes directory owner grants inheritable', async () => {
+    const run = vi.fn().mockResolvedValue({ stdout: 'WORKSTATION\\alice\n' });
+
+    await enforceOwnerOnlyPath(
+      'C:\\keys',
+      0o700,
+      { platform: 'win32', run, chmod: vi.fn() },
+      'directory',
+    );
+
+    expect(run).toHaveBeenLastCalledWith('icacls.exe', [
+      'C:\\keys',
+      '/inheritance:r',
+      '/grant:r',
+      'WORKSTATION\\alice:(OI)(CI)(F)',
+    ]);
+  });
+
+  it('repairs a stale Windows tree ACL and retries deletion', async () => {
+    const permissionError = Object.assign(new Error('access denied'), { code: 'EPERM' });
+    const removeTree = vi
+      .fn()
+      .mockRejectedValueOnce(permissionError)
+      .mockResolvedValueOnce(undefined);
+    const run = vi.fn().mockResolvedValue({ stdout: 'WORKSTATION\\alice\n' });
+
+    await removeOwnerOnlyTree('C:\\runtime-keys', {
+      platform: 'win32',
+      run,
+      chmod: vi.fn(),
+      removeTree,
+    });
+
+    expect(removeTree).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenNthCalledWith(2, 'icacls.exe', [
+      'C:\\runtime-keys',
+      '/reset',
+      '/T',
+      '/C',
+    ]);
+    expect(run).toHaveBeenNthCalledWith(3, 'icacls.exe', [
+      'C:\\runtime-keys',
+      '/grant:r',
+      'WORKSTATION\\alice:(F)',
+      '/T',
+      '/C',
+    ]);
   });
 
   it('uses POSIX owner-only modes outside Windows', async () => {

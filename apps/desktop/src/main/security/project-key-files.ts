@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { enforceOwnerOnlyPath } from './owner-only-file.js';
+import { enforceOwnerOnlyPath, removeOwnerOnlyTree } from './owner-only-file.js';
 
 const materialized = new Map<string, Set<string>>();
 
@@ -29,7 +29,7 @@ export async function materializeProjectSshKey(input: {
 }): Promise<string> {
   const directory = projectDirectory(input.projectId);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await enforceOwnerOnlyPath(directory, 0o700);
+  await enforceOwnerOnlyPath(directory, 0o700, undefined, 'directory');
   const safeName = safeSegment(input.suggestedName);
   const path = join(directory, `${safeName}-${safeSegment(input.credentialId)}`);
   await writeFile(path, input.privateKey, { encoding: 'utf8', mode: 0o600 });
@@ -49,7 +49,7 @@ export async function removeMaterializedProjectKeys(projectId: string): Promise<
   materialized.delete(projectId);
   // Remove the whole project directory so files left by an interrupted write
   // cannot survive a normal lock/switch.
-  await rm(projectDirectory(projectId), { recursive: true, force: true });
+  await removeOwnerOnlyTree(projectDirectory(projectId));
 }
 
 export async function removeMaterializedCredential(
@@ -68,5 +68,5 @@ export async function removeMaterializedCredential(
 /** Remove transient key material left behind by an unclean application exit. */
 export async function clearMaterializedProjectKeyRoot(): Promise<void> {
   materialized.clear();
-  await rm(keyRoot(), { recursive: true, force: true });
+  await removeOwnerOnlyTree(keyRoot());
 }

@@ -159,7 +159,18 @@ export async function initContainer(): Promise<AppContainer> {
   // Private keys exported explicitly by the user are never stored here.
   // This directory contains only transient SSH command material and is safe
   // to clear after a crash or forced shutdown.
-  await clearMaterializedProjectKeyRoot();
+  try {
+    await clearMaterializedProjectKeyRoot();
+  } catch (error) {
+    // Transient files from a previous crash must be cleaned whenever possible,
+    // but an antivirus/file-system lock must not permanently brick startup.
+    // Project unlock still hardens every newly materialized key and project
+    // lock remains fail-closed if its own key cleanup cannot complete.
+    log().warn(
+      { err: error, event: 'runtime-keys.cleanup-failed' },
+      'Could not remove stale transient SSH keys during startup',
+    );
+  }
   const dbPath = join(app.getPath('userData'), 'cloudforge.db');
   const db: Db = createPrismaClient(toSqliteUrl(dbPath));
   await db.$connect();
@@ -785,7 +796,14 @@ export async function initContainer(): Promise<AppContainer> {
       clearInterval(sslRenewalTimer);
       clearInterval(cloudflareSyncTimer);
       sshTerminalService.closeAll();
-      await clearMaterializedProjectKeyRoot();
+      try {
+        await clearMaterializedProjectKeyRoot();
+      } catch (error) {
+        log().warn(
+          { err: error, event: 'runtime-keys.cleanup-failed' },
+          'Could not remove transient SSH keys during shutdown',
+        );
+      }
       await db.$disconnect();
       container = null;
     },
