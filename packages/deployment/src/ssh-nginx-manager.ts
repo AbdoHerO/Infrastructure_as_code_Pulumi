@@ -27,6 +27,7 @@ import { managedSiteFilePath, siteFilePaths } from './nginx-site-file.js';
 import { nginxExecPreamble, reloadScript, restoreScript } from './nginx-exec-script.js';
 
 const COMMAND_TIMEOUT_MS = 120_000;
+const CONNECTION_ATTEMPTS = 3;
 const BACKUP_DIR = '/var/lib/cloudforge/nginx/backups';
 const LABEL = 'Nginx';
 
@@ -36,7 +37,15 @@ function withConnection<T>(
   signal: AbortSignal | undefined,
   action: (client: Client) => Promise<T>,
 ): Promise<Result<T, DeploymentError>> {
-  return withSshConnection(target, { label: LABEL, ...(signal ? { signal } : {}) }, action);
+  return withSshConnection(
+    target,
+    {
+      label: LABEL,
+      connectionAttempts: CONNECTION_ATTEMPTS,
+      ...(signal ? { signal } : {}),
+    },
+    action,
+  );
 }
 
 function execute(
