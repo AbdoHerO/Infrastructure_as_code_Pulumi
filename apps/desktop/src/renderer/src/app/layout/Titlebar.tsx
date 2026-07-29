@@ -1,10 +1,11 @@
 import { CircleHelp, LockKeyhole, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button } from '@cloudforge/ui';
+import { Button, toast } from '@cloudforge/ui';
 import type { ThemeMode } from '@cloudforge/shared';
 import { useThemeStore } from '../theme/theme-store.js';
 import { useCommandPalette } from '../command/command-store.js';
 import { useWorkspace } from '../../features/projects/WorkspaceContext.js';
+import { IpcCallError } from '../../lib/ipc.js';
 
 const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
   light: 'dark',
@@ -27,6 +28,17 @@ export function Titlebar(): JSX.Element {
   const openPalette = useCommandPalette((s) => s.setOpen);
   const { session, lock } = useWorkspace();
   const ModeIcon = MODE_ICON[mode];
+  const lockWorkspace = async (): Promise<void> => {
+    try {
+      await lock();
+    } catch (error) {
+      toast.error(
+        error instanceof IpcCallError
+          ? error.message
+          : 'Could not lock the project. Wait for active operations to finish and try again.',
+      );
+    }
+  };
 
   return (
     <header className="drag-region border-border/60 bg-background/80 flex h-12 shrink-0 items-center justify-between border-b px-4 backdrop-blur">
@@ -49,7 +61,7 @@ export function Titlebar(): JSX.Element {
             size="sm"
             className="mr-2 max-w-56 gap-2"
             title="Lock this project and choose another workspace"
-            onClick={() => void lock()}
+            onClick={() => void lockWorkspace()}
           >
             <span
               className="size-2 shrink-0 rounded-full"

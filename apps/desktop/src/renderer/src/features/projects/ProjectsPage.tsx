@@ -161,6 +161,18 @@ export function ProjectsPage(): JSX.Element {
     }
   };
 
+  const lockWorkspace = async (): Promise<void> => {
+    try {
+      await lock();
+    } catch (error) {
+      toast.error(
+        error instanceof IpcCallError
+          ? error.message
+          : 'Could not lock the project. Wait for active operations to finish and try again.',
+      );
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -171,7 +183,7 @@ export function ProjectsPage(): JSX.Element {
             <Button variant="outline" onClick={() => setDuplicateOpen(true)}>
               <Copy className="size-4" /> Duplicate
             </Button>
-            <Button variant="outline" onClick={() => void lock()}>
+            <Button variant="outline" onClick={() => void lockWorkspace()}>
               <LockKeyhole className="size-4" /> Lock / switch
             </Button>
           </>

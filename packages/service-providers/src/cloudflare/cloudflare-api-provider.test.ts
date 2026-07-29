@@ -106,7 +106,6 @@ describe('CloudflareApiProvider', () => {
       '/zones/zone-1/dns_records?per_page=500': [
         {
           id: 'record-1',
-          zone_id: 'zone-1',
           type: 'A',
           name: 'app.example.com',
           content: '203.0.113.10',
@@ -120,6 +119,7 @@ describe('CloudflareApiProvider', () => {
     const records = await provider.dnsRecords('zone-1');
     expect(zones.ok && zones.value[0]?.plan).toBe('Free');
     expect(records.ok && records.value[0]?.content).toBe('203.0.113.10');
+    expect(records.ok && records.value[0]?.zoneId).toBe('zone-1');
     expect(JSON.stringify(api.calls)).not.toContain('token');
   });
 

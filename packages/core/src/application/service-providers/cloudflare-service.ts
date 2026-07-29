@@ -90,9 +90,21 @@ export class CloudflareService {
     if (!records.ok || !this.runtime) return records;
     const synchronized = await this.runtime.replaceDnsRecords(
       zone.value,
-      records.value.filter(isCloudForgeDnsRecord).map(toRuntimeDnsRecord),
+      records.value
+        .filter(isCloudForgeDnsRecord)
+        .map((record) => toRuntimeDnsRecord(record, zone.value)),
     );
-    return synchronized.ok ? records : synchronized;
+    if (!synchronized.ok) {
+      // Reading Cloudflare and projecting its owned records into Runtime are
+      // separate operations. A malformed legacy Runtime row must not hide
+      // valid provider data from the DNS manager; writes remain fail-closed.
+      await this.record(
+        'cloudflare.runtime_sync.failed',
+        'Loaded Cloudflare DNS records but could not synchronize the Runtime Plan',
+        { zoneId: zone.value, error: synchronized.error.message },
+      );
+    }
+    return records;
   }
 
   async createDnsRecord(
@@ -121,7 +133,9 @@ export class CloudflareService {
       provider.createDnsRecord(zone.value, valid.value),
     );
     if (result.ok && this.runtime && isCloudForgeDnsRecord(result.value)) {
-      const synchronized = await this.runtime.upsertDnsRecord(toRuntimeDnsRecord(result.value));
+      const synchronized = await this.runtime.upsertDnsRecord(
+        toRuntimeDnsRecord(result.value, zone.value),
+      );
       if (!synchronized.ok) return synchronized;
     }
     await this.record(
@@ -163,7 +177,7 @@ export class CloudflareService {
     );
     if (result.ok && this.runtime) {
       const synchronized = isCloudForgeDnsRecord(result.value)
-        ? await this.runtime.upsertDnsRecord(toRuntimeDnsRecord(result.value))
+        ? await this.runtime.upsertDnsRecord(toRuntimeDnsRecord(result.value, zone.value))
         : await this.runtime.removeDnsRecord(record.value);
       if (!synchronized.ok) return synchronized;
     }
@@ -221,6 +235,23 @@ export class CloudflareService {
       selected.some((record) => !['A', 'AAAA', 'CNAME'].includes(record.type))
     )
       return err(new ValidationError('Only A, AAAA and CNAME records can be proxied'));
+    if (action.kind === 'address') {
+      if (selected.some((record) => !['A', 'AAAA'].includes(record.type)))
+        return err(new ValidationError('Only A and AAAA records can have their address changed'));
+      for (const record of selected) {
+        const valid = validateDnsRecord({
+          type: record.type,
+          name: record.name,
+          content: action.address,
+          ttl: record.ttl,
+          proxied: record.proxied,
+          comment: record.comment,
+          tags: record.tags,
+          priority: record.priority,
+        });
+        if (!valid.ok) return valid;
+      }
+    }
 
     for (const record of selected) {
       const result =
@@ -229,7 +260,7 @@ export class CloudflareService {
           : await this.updateDnsRecord(credentialId, zone.value, record.id, {
               type: record.type,
               name: record.name,
-              content: record.content,
+              content: action.kind === 'address' ? action.address.trim() : record.content,
               ttl: action.kind === 'ttl' ? action.ttl : record.ttl,
               proxied: action.kind === 'proxy' ? action.enabled : record.proxied,
               comment: record.comment,
@@ -551,11 +582,17 @@ function isCloudForgeDnsRecord(record: CloudflareDnsRecord): boolean {
   return record.comment.includes('Managed by CloudForge');
 }
 
-function toRuntimeDnsRecord(record: CloudflareDnsRecord): RuntimeDnsRecordSync {
+function toRuntimeDnsRecord(
+  record: CloudflareDnsRecord,
+  authoritativeZoneId: string,
+): RuntimeDnsRecordSync {
   return {
     sourceId: record.id,
     recordId: record.id,
-    zoneId: record.zoneId,
+    // Cloudflare's DNS-record response does not consistently include
+    // `zone_id`. The caller already selected the zone, so use that stable
+    // boundary rather than persisting an undefined zone into Runtime.
+    zoneId: authoritativeZoneId,
     domain: record.name.replace(/\.$/, '').toLowerCase(),
     type: record.type,
     content: record.content,

@@ -36,7 +36,7 @@ interface RawZone {
 }
 interface RawRecord {
   id: string;
-  zone_id: string;
+  zone_id?: string;
   type: CloudflareDnsRecord['type'];
   name: string;
   content: string;
@@ -294,7 +294,7 @@ export class CloudflareApiProvider implements CloudflareProvider {
     const records = await this.api.request<readonly RawRecord[]>(
       `${route('zones', zoneId, 'dns_records')}?per_page=500`,
     );
-    return records.ok ? ok(records.value.map(mapRecord)) : records;
+    return records.ok ? ok(records.value.map((record) => mapRecord(record, zoneId))) : records;
   }
   async createDnsRecord(
     zoneId: string,
@@ -304,7 +304,7 @@ export class CloudflareApiProvider implements CloudflareProvider {
       route('zones', zoneId, 'dns_records'),
       json('POST', dnsBody(input)),
     );
-    return result.ok ? ok(mapRecord(result.value)) : result;
+    return result.ok ? ok(mapRecord(result.value, zoneId)) : result;
   }
   async updateDnsRecord(
     zoneId: string,
@@ -315,7 +315,7 @@ export class CloudflareApiProvider implements CloudflareProvider {
       route('zones', zoneId, 'dns_records', recordId),
       json('PUT', dnsBody(input)),
     );
-    return result.ok ? ok(mapRecord(result.value)) : result;
+    return result.ok ? ok(mapRecord(result.value, zoneId)) : result;
   }
   deleteDnsRecord(zoneId: string, recordId: string): Promise<Result<void, ServiceProviderError>> {
     return this.api.request<void>(route('zones', zoneId, 'dns_records', recordId), {
@@ -828,10 +828,10 @@ function mapZone(value: RawZone): CloudflareZone {
     accountName: value.account?.name ?? '',
   };
 }
-function mapRecord(value: RawRecord): CloudflareDnsRecord {
+function mapRecord(value: RawRecord, authoritativeZoneId: string): CloudflareDnsRecord {
   return {
     id: value.id,
-    zoneId: value.zone_id,
+    zoneId: value.zone_id || authoritativeZoneId,
     type: value.type,
     name: value.name,
     content: value.content,

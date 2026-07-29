@@ -48,9 +48,29 @@ export class NginxService {
   ): Promise<Result<NginxOperationOutcome, NginxServiceError>> {
     const valid = validateManagedNginxSite(site);
     if (!valid.ok) return valid;
-    const result = await this.withTarget(targetId, (target) =>
-      this.nginx.applySite(target, valid.value, renderManagedNginxSite(valid.value), onEvent),
-    );
+    const result = await this.withTarget(targetId, async (target) => {
+      if (valid.value.ssl) {
+        const certificatePath =
+          valid.value.certificatePath ?? `/etc/letsencrypt/live/${valid.value.domain}`;
+        const certificate = await this.nginx.certificateFilesExist(target, certificatePath);
+        if (!certificate.ok) return certificate;
+        if (!certificate.value) {
+          return err(
+            new ValidationError(
+              `SSL certificate files are not installed for ${valid.value.domain} on this VPS. ` +
+                'Save the site with SSL and Redirect HTTP disabled, issue its certificate in SSL & Domains, then enable HTTPS. ' +
+                `Expected fullchain.pem and privkey.pem under ${certificatePath}.`,
+            ),
+          );
+        }
+      }
+      return this.nginx.applySite(
+        target,
+        valid.value,
+        renderManagedNginxSite(valid.value),
+        onEvent,
+      );
+    });
     if (result.ok) {
       const synchronized = await this.synchronizeRoutes(targetId);
       if (!synchronized.ok) return synchronized;
@@ -161,7 +181,7 @@ export class NginxService {
 
   private async withTarget<T>(
     targetId: string,
-    action: (target: DeploymentTarget) => Promise<Result<T, DeploymentError>>,
+    action: (target: DeploymentTarget) => Promise<Result<T, NginxServiceError>>,
   ): Promise<Result<T, NginxServiceError>> {
     if (!targetId.trim()) return err(new ValidationError('Select a VPS target'));
     const resolved = await this.targets.resolve(targetId);

@@ -54,7 +54,7 @@ import {
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
-import { invoke, subscribe } from '../../lib/ipc.js';
+import { invoke, IpcCallError, subscribe } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import {
   cloudflareKey,
@@ -626,6 +626,7 @@ function Dns({
   const [sort, setSort] = useState<'name' | 'type' | 'modified'>('name');
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [batchTtl, setBatchTtl] = useState(300);
+  const [batchAddress, setBatchAddress] = useState('');
   const [automaticDomain, setAutomaticDomain] = useState('');
   const [automaticIp, setAutomaticIp] = useState('');
   const automaticDns = useMutation({
@@ -649,10 +650,15 @@ function Dns({
   const batch = useMutation({
     mutationFn: (action: CloudflareDnsBatchAction) =>
       invoke('cloudflare:batchDnsRecords', { credentialId, zoneId, action }),
-    onSuccess: ({ changed }) => {
+    onSuccess: ({ changed }, action) => {
       setSelected([]);
+      if (action.kind === 'address') setBatchAddress('');
       void records.refetch();
-      toast.success(`Updated ${changed} DNS record(s)`);
+      toast.success(
+        action.kind === 'address'
+          ? `Repointed ${changed} DNS address record(s)`
+          : `Updated ${changed} DNS record(s)`,
+      );
     },
     onError: (error) => toast.error(error.message),
   });
@@ -695,18 +701,45 @@ function Dns({
         ? right.modifiedAt.localeCompare(left.modifiedAt)
         : String(left[sort]).localeCompare(String(right[sort])),
     );
+  const selectedRecords = (records.data ?? []).filter((record) => selected.includes(record.id));
+  const addressType = batchAddress.trim().includes(':') ? 'AAAA' : 'A';
+  const selectedAddressRecords = selectedRecords.filter((record) => record.type === addressType);
+  const skippedAddressRecords = selectedRecords.length - selectedAddressRecords.length;
+  const runtimeIssues = dnsRuntimeIssues(records.error);
+  const isRuntimeValidationError = runtimeIssues.length > 0;
   if (!zoneId) return <NeedZone />;
   return (
     <div className="space-y-4">
       {records.isError ? (
         <Card className="border-red-300 bg-red-50/50">
           <CardHeader>
-            <CardTitle className="text-base">DNS access unavailable</CardTitle>
+            <CardTitle className="text-base">
+              {isRuntimeValidationError
+                ? 'Runtime DNS synchronization needs attention'
+                : 'DNS access unavailable'}
+            </CardTitle>
             <CardDescription>{records.error.message}</CardDescription>
           </CardHeader>
           <CardContent className="text-sm">
-            Grant this token Zone → DNS → Read to list records and Zone → DNS → Edit to create,
-            update, or delete them.
+            {isRuntimeValidationError ? (
+              <div className="space-y-1">
+                {runtimeIssues.map((issue) => (
+                  <p key={`${issue.id}:${issue.resource}`}>
+                    {issue.resource ? `${issue.resource}: ` : ''}
+                    {issue.message}
+                  </p>
+                ))}
+                <p className="text-muted-foreground">
+                  Your Cloudflare connection is working. Refresh after CloudForge reconciles the
+                  duplicated or stale Runtime Plan entry.
+                </p>
+              </div>
+            ) : (
+              <>
+                Grant this token Zone → DNS → Read to list records and Zone → DNS → Edit to create,
+                update, or delete them.
+              </>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -955,6 +988,46 @@ function Dns({
               onClick={() => batch.mutate({ kind: 'ttl', recordIds: selected, ttl: batchTtl })}
             >
               Set TTL
+            </Button>
+            <Input
+              className="w-40"
+              aria-label="New address for selected DNS records"
+              placeholder="New IPv4 or IPv6"
+              value={batchAddress}
+              onChange={(event) => setBatchAddress(event.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                batch.isPending || !batchAddress.trim() || selectedAddressRecords.length === 0
+              }
+              onClick={() => {
+                const address = batchAddress.trim();
+                void confirm({
+                  title: `Repoint ${selectedAddressRecords.length} DNS record(s)?`,
+                  description: `Change the selected ${addressType} record(s) to ${address}. This moves their traffic to the new address.${
+                    skippedAddressRecords > 0
+                      ? ` ${skippedAddressRecords} selected non-${addressType} record(s) will remain unchanged.`
+                      : ''
+                  }`,
+                  confirmLabel: 'Update addresses',
+                }).then((confirmed) => {
+                  if (
+                    confirmed &&
+                    selectedAddressRecords.length > 0 &&
+                    address === batchAddress.trim()
+                  ) {
+                    batch.mutate({
+                      kind: 'address',
+                      recordIds: selectedAddressRecords.map((record) => record.id),
+                      address,
+                    });
+                  }
+                });
+              }}
+            >
+              Set address
             </Button>
             <Button
               size="sm"
@@ -1800,6 +1873,27 @@ function dnsContentPlaceholder(type: CloudflareDnsType): string {
     SVCB: '1 target.example.com alpn="h2"',
   };
   return placeholders[type];
+}
+
+interface RuntimeValidationIssue {
+  readonly id: string;
+  readonly resource?: string;
+  readonly message: string;
+}
+
+function dnsRuntimeIssues(error: Error | null): readonly RuntimeValidationIssue[] {
+  if (!(error instanceof IpcCallError) || error.code !== 'VALIDATION') return [];
+  const issues = error.serialized.context?.issues;
+  if (!Array.isArray(issues)) return [];
+  return issues.filter(
+    (issue): issue is RuntimeValidationIssue =>
+      typeof issue === 'object' &&
+      issue !== null &&
+      typeof Reflect.get(issue, 'id') === 'string' &&
+      typeof Reflect.get(issue, 'message') === 'string' &&
+      (Reflect.get(issue, 'resource') === undefined ||
+        typeof Reflect.get(issue, 'resource') === 'string'),
+  );
 }
 function Control({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (

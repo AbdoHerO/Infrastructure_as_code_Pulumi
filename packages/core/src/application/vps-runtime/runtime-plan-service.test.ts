@@ -1357,5 +1357,210 @@ describe('RuntimePlanService', () => {
         status: 'missing',
       });
     });
+
+    it('reconciles a legacy DNS source id by the stable Cloudflare record id', async () => {
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET])),
+        findTargetIdByAddress: vi.fn(() => Promise.resolve(TARGET)),
+      };
+      const service = new RuntimePlanService(
+        { load: ctx.load, save: ctx.save, delete: ctx.remove },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      const record = {
+        sourceId: 'legacy-source-id',
+        recordId: 'cloudflare-record-id',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        content: '203.0.113.10',
+        ttl: 300,
+        proxied: true,
+        status: 'active' as const,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+      await service.upsertDnsRecord(record);
+
+      const synchronized = await service.replaceDnsRecords('zone-1', [
+        { ...record, sourceId: 'cloudflare-record-id' },
+      ]);
+
+      expect(synchronized).toEqual(ok(undefined));
+      const loaded = await service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.plan.dnsRecords).toHaveLength(1);
+      expect(loaded.value.plan.dnsRecords[0]).toMatchObject({
+        recordId: 'cloudflare-record-id',
+        source: { resourceId: 'cloudflare-record-id' },
+        status: 'active',
+      });
+    });
+
+    it('heals duplicate legacy and current runtime DNS rows during refresh', async () => {
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET])),
+        findTargetIdByAddress: vi.fn(() => Promise.resolve(TARGET)),
+      };
+      const service = new RuntimePlanService(
+        { load: ctx.load, save: ctx.save, delete: ctx.remove },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      const record = {
+        sourceId: 'legacy-source-id',
+        recordId: 'cloudflare-record-id',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        content: '203.0.113.10',
+        ttl: 300,
+        proxied: true,
+        status: 'active' as const,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+      await service.upsertDnsRecord(record);
+      const stored = ctx.rows.get(TARGET);
+      if (!stored) throw new Error('Expected a runtime plan');
+      const legacyRecord = stored.dnsRecords[0];
+      if (!legacyRecord) throw new Error('Expected a runtime DNS record');
+      ctx.rows.set(TARGET, {
+        ...stored,
+        dnsRecords: [
+          ...stored.dnsRecords,
+          {
+            ...legacyRecord,
+            source: {
+              ...legacyRecord.source,
+              resourceId: 'cloudflare-record-id',
+            },
+          },
+        ],
+      });
+
+      const synchronized = await service.replaceDnsRecords('zone-1', [
+        { ...record, sourceId: 'cloudflare-record-id' },
+      ]);
+
+      expect(synchronized).toEqual(ok(undefined));
+      const loaded = await service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.issues).toEqual([]);
+      expect(loaded.value.plan.dnsRecords).toHaveLength(1);
+      expect(loaded.value.plan.dnsRecords[0]).toMatchObject({
+        domain: 'app.example.com',
+        recordId: 'cloudflare-record-id',
+        source: { resourceId: 'cloudflare-record-id' },
+      });
+    });
+
+    it('repairs a legacy Cloudflare runtime row whose zone id was not persisted', async () => {
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET])),
+        findTargetIdByAddress: vi.fn(() => Promise.resolve(TARGET)),
+      };
+      const service = new RuntimePlanService(
+        { load: ctx.load, save: ctx.save, delete: ctx.remove },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      const record = {
+        sourceId: 'cloudflare-record-id',
+        recordId: 'cloudflare-record-id',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        content: '203.0.113.10',
+        ttl: 300,
+        proxied: true,
+        status: 'active' as const,
+        ownership: 'cloudforge-managed' as const,
+        observedAt: NOW.toISOString(),
+      };
+      await service.upsertDnsRecord(record);
+      const stored = ctx.rows.get(TARGET);
+      if (!stored) throw new Error('Expected a runtime plan');
+      const legacyRecord = stored.dnsRecords[0];
+      if (!legacyRecord) throw new Error('Expected a runtime DNS record');
+      ctx.rows.set(TARGET, {
+        ...stored,
+        dnsRecords: [
+          {
+            ...legacyRecord,
+            zoneId: undefined as unknown as string,
+          },
+        ],
+      });
+
+      const synchronized = await service.replaceDnsRecords('zone-1', [record]);
+
+      expect(synchronized).toEqual(ok(undefined));
+      const loaded = await service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.issues).toEqual([]);
+      expect(loaded.value.plan.dnsRecords).toHaveLength(1);
+      expect(loaded.value.plan.dnsRecords[0]).toMatchObject({
+        zoneId: 'zone-1',
+        recordId: 'cloudflare-record-id',
+      });
+    });
+
+    it('removes a legacy DNS entry using the stable Cloudflare record id', async () => {
+      const catalog = {
+        targetIds: vi.fn(() => Promise.resolve([TARGET])),
+        findTargetIdByAddress: vi.fn(() => Promise.resolve(TARGET)),
+      };
+      const service = new RuntimePlanService(
+        { load: ctx.load, save: ctx.save, delete: ctx.remove },
+        { resolve: ctx.resolve },
+        { inspect: ctx.inspect },
+        { recordSafe: ctx.recordSafe } as unknown as ActivityService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalog,
+      );
+      await service.upsertDnsRecord({
+        sourceId: 'legacy-source-id',
+        recordId: 'cloudflare-record-id',
+        zoneId: 'zone-1',
+        domain: 'app.example.com',
+        type: 'A',
+        content: '203.0.113.10',
+        ttl: 300,
+        proxied: true,
+        status: 'active',
+        ownership: 'cloudforge-managed',
+        observedAt: NOW.toISOString(),
+      });
+
+      const removed = await service.removeDnsRecord('cloudflare-record-id');
+
+      expect(removed).toEqual(ok(undefined));
+      const loaded = await service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      expect(loaded.value.plan.dnsRecords).toHaveLength(0);
+    });
   });
 });

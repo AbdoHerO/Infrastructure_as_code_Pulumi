@@ -841,7 +841,11 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
       dnsRecords: [
         ...plan.dnsRecords.filter(
           (item) =>
-            !(item.source.module === 'cloudflare' && item.source.resourceId === record.sourceId),
+            !(
+              item.source.module === 'cloudflare' &&
+              (item.source.resourceId === record.sourceId ||
+                (item.zoneId === record.zoneId && item.recordId === record.recordId))
+            ),
         ),
         {
           domain: record.domain,
@@ -871,7 +875,11 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         ...plan,
         dnsRecords: plan.dnsRecords.filter(
           (item) =>
-            !(item.source.module === 'cloudflare' && item.source.resourceId === record.sourceId),
+            !(
+              item.source.module === 'cloudflare' &&
+              (item.source.resourceId === record.sourceId ||
+                (item.zoneId === record.zoneId && item.recordId === record.recordId))
+            ),
         ),
       }));
       if (!removed.ok) return removed;
@@ -889,7 +897,10 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         ...plan,
         dnsRecords: plan.dnsRecords.filter(
           (record) =>
-            !(record.source.module === 'cloudflare' && record.source.resourceId === sourceId),
+            !(
+              record.source.module === 'cloudflare' &&
+              (record.source.resourceId === sourceId || record.recordId === sourceId)
+            ),
         ),
       }));
       if (!removed.ok) return removed;
@@ -912,15 +923,30 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
       })),
     );
     const observedBySource = new Map(observed.map((item) => [item.record.sourceId, item]));
+    const observedByRecord = new Map(
+      observed.map((item) => [`${item.record.zoneId}:${item.record.recordId}`, item]),
+    );
+    const belongsToRefreshedZone = (record: RuntimeDnsRecord): boolean =>
+      record.source.module === 'cloudflare' &&
+      (record.zoneId === zoneId || observedBySource.has(record.source.resourceId));
     const observedAt = new Date().toISOString();
 
     for (const targetId of targetIds) {
       const synchronized = await this.mutateTopology(targetId, (plan) => {
-        const previous = plan.dnsRecords.filter(
-          (record) => record.source.module === 'cloudflare' && record.zoneId === zoneId,
-        );
+        // Older plans may have persisted a provider record without `zoneId`
+        // because Cloudflare omitted `zone_id` from a response. Its immutable
+        // provider/source id still proves that it belongs to this refresh.
+        const previous = plan.dnsRecords.filter(belongsToRefreshedZone);
         const drifted: RuntimeDnsRecord[] = previous.flatMap<RuntimeDnsRecord>((record) => {
-          const live = observedBySource.get(record.source.resourceId);
+          // `zoneId + recordId` is the provider identity. Older plans could
+          // contain a stale CloudForge source id for an otherwise valid DNS
+          // record. Matching only the source id preserved that legacy row as
+          // missing and then appended the live row, which made the plan
+          // invalid with a duplicate DNS record during an ordinary refresh or
+          // batch edit.
+          const live =
+            observedBySource.get(record.source.resourceId) ??
+            observedByRecord.get(`${record.zoneId}:${record.recordId}`);
           if (!live) return [{ ...record, status: 'missing' as const, observedAt }];
           if (live.targetId === targetId) return [];
           return [
@@ -939,9 +965,7 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         return {
           ...plan,
           dnsRecords: [
-            ...plan.dnsRecords.filter(
-              (record) => !(record.source.module === 'cloudflare' && record.zoneId === zoneId),
-            ),
+            ...plan.dnsRecords.filter((record) => !belongsToRefreshedZone(record)),
             ...drifted,
             ...current,
           ],

@@ -65,7 +65,8 @@ export interface CloudflareDnsRecordInput {
 export type CloudflareDnsBatchAction =
   | { readonly kind: 'delete'; readonly recordIds: readonly string[] }
   | { readonly kind: 'proxy'; readonly recordIds: readonly string[]; readonly enabled: boolean }
-  | { readonly kind: 'ttl'; readonly recordIds: readonly string[]; readonly ttl: number };
+  | { readonly kind: 'ttl'; readonly recordIds: readonly string[]; readonly ttl: number }
+  | { readonly kind: 'address'; readonly recordIds: readonly string[]; readonly address: string };
 
 export interface CloudflareZoneSettings {
   readonly sslMode: 'off' | 'flexible' | 'full' | 'strict';

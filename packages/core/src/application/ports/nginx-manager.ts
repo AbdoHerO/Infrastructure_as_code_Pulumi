@@ -91,6 +91,10 @@ export type NginxEventSink = (event: NginxEvent) => void;
 export interface NginxManager {
   inspect(target: DeploymentTarget): Promise<Result<NginxOverview, DeploymentError>>;
   listSites(target: DeploymentTarget): Promise<Result<ManagedNginxSite[], DeploymentError>>;
+  certificateFilesExist(
+    target: DeploymentTarget,
+    certificatePath: string,
+  ): Promise<Result<boolean, DeploymentError>>;
   applySite(
     target: DeploymentTarget,
     site: ManagedNginxSite,

@@ -160,6 +160,48 @@ describe('NginxService', () => {
     ]);
   });
 
+  it('refuses to write an SSL site before its certificate files exist on the VPS', async () => {
+    const certificateFilesExist = vi.fn().mockResolvedValue(ok(false));
+    const applySite = vi.fn();
+    const service = new NginxService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { certificateFilesExist, applySite } as unknown as NginxManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.saveSite('target-1', {
+      ...site,
+      ssl: true,
+      httpRedirect: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.message).toContain(
+      'Save the site with SSL and Redirect HTTP disabled',
+    );
+    expect(certificateFilesExist).toHaveBeenCalledWith(
+      target,
+      '/etc/letsencrypt/live/app.example.com',
+    );
+    expect(applySite).not.toHaveBeenCalled();
+  });
+
+  it('writes an SSL site after its certificate files are present', async () => {
+    const certificateFilesExist = vi.fn().mockResolvedValue(ok(true));
+    const applySite = vi.fn().mockResolvedValue(ok({ summary: 'done', backupId: 'backup' }));
+    const listSites = vi.fn().mockResolvedValue(ok([]));
+    const service = new NginxService(
+      { resolve: vi.fn().mockResolvedValue(ok(target)) },
+      { certificateFilesExist, applySite, listSites } as unknown as NginxManager,
+      { recordSafe: vi.fn() } as unknown as ActivityService,
+    );
+
+    const result = await service.saveSite('target-1', { ...site, ssl: true });
+
+    expect(result.ok).toBe(true);
+    expect(applySite).toHaveBeenCalledOnce();
+  });
+
   it('resynchronizes Runtime routes after restoring a backup', async () => {
     const restore = vi.fn().mockResolvedValue(ok({ summary: 'restored', backupId: 'backup-1' }));
     const listSites = vi.fn().mockResolvedValue(ok([{ ...site, managed: true }]));

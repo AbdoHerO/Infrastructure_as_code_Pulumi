@@ -169,6 +169,22 @@ printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$installation" "$ve
     });
   }
 
+  certificateFilesExist(
+    target: DeploymentTarget,
+    certificatePath: string,
+  ): Promise<Result<boolean, DeploymentError>> {
+    const basePath = certificatePath.replace(/\/+$/, '');
+    return withConnection(target, undefined, async (client) => {
+      const { stdout } = await execute(
+        client,
+        privileged(
+          `if [ -s ${quote(`${basePath}/fullchain.pem`)} ] && [ -s ${quote(`${basePath}/privkey.pem`)} ]; then printf 'present'; else printf 'missing'; fi`,
+        ),
+      );
+      return stdout.trim() === 'present';
+    });
+  }
+
   applySite(
     target: DeploymentTarget,
     site: ManagedNginxSite,
