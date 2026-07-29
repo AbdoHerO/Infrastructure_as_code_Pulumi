@@ -828,10 +828,19 @@ function mapZone(value: RawZone): CloudflareZone {
     accountName: value.account?.name ?? '',
   };
 }
+/**
+ * Cloudflare may omit `zone_id` or return it empty depending on the endpoint, so
+ * an absent *and* a blank value both fall back to the zone the request was made
+ * against. Nullish coalescing is deliberately not used here: it would keep `''`
+ * and leave the record without a resolvable zone identity.
+ */
+function zoneIdOr(value: string | undefined, authoritativeZoneId: string): string {
+  return value === undefined || value === '' ? authoritativeZoneId : value;
+}
 function mapRecord(value: RawRecord, authoritativeZoneId: string): CloudflareDnsRecord {
   return {
     id: value.id,
-    zoneId: value.zone_id || authoritativeZoneId,
+    zoneId: zoneIdOr(value.zone_id, authoritativeZoneId),
     type: value.type,
     name: value.name,
     content: value.content,
