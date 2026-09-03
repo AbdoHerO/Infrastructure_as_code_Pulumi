@@ -123,6 +123,17 @@ export function registerAnsibleHandlers(): void {
   registerHandler('ansible:cancel', ({ streamId }) =>
     projectOperations.cancel(`ansible:${streamId}`),
   );
+  registerHandler('ansible:networks', async (request) =>
+    orThrow(await getContainer().ansibleManager.listNetworks(await resolveSshTarget(request))),
+  );
+  registerHandler('ansible:createNetwork', async (request) =>
+    orThrow(
+      await getContainer().ansibleManager.createNetwork(
+        await resolveSshTarget(request),
+        request.name,
+      ),
+    ),
+  );
   registerHandler('ansible:nginxSites', async (request) =>
     orThrow(await getContainer().ansibleManager.listNginxSites(await resolveSshTarget(request))),
   );

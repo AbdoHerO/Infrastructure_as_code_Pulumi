@@ -12,6 +12,7 @@ import type {
   AnsibleProfile,
   AnsibleProfileState,
   AnsibleStatus,
+  DockerNetworkSummary,
   NginxSite,
   VpsPreflightReport,
   VpsTargetDto,
@@ -42,6 +43,12 @@ interface AnsibleActions {
   run: UseMutationResult<AnsibleOutcome, Error, RunRequest>;
   jenkinsAction: UseMutationResult<AnsibleOutcome, Error, JenkinsActionRequest>;
   access: UseMutationResult<AnsibleAccessDetails | null, Error, RunRequest>;
+  networks: UseMutationResult<DockerNetworkSummary[], Error, SshTargetRequest>;
+  createNetwork: UseMutationResult<
+    DockerNetworkSummary,
+    Error,
+    SshTargetRequest & { name: string }
+  >;
   sites: UseMutationResult<NginxSite[], Error, SshTargetRequest>;
   upsert: UseMutationResult<AnsibleOutcome, Error, UpsertRequest>;
   remove: UseMutationResult<AnsibleOutcome, Error, RemoveRequest>;
@@ -134,6 +141,13 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
   const access = useMutation({
     mutationFn: (request: RunRequest) => invoke('ansible:access', request),
   });
+  const networks = useMutation({
+    mutationFn: (target: SshTargetRequest) => invoke('ansible:networks', target),
+  });
+  const createNetwork = useMutation({
+    mutationFn: (request: SshTargetRequest & { name: string }) =>
+      invoke('ansible:createNetwork', request),
+  });
   const sites = useMutation({
     mutationFn: (target: SshTargetRequest) => invoke('ansible:nginxSites', target),
   });
@@ -156,6 +170,8 @@ export function useAnsibleActions(streamId: string): AnsibleActions {
     run,
     jenkinsAction,
     access,
+    networks,
+    createNetwork,
     sites,
     upsert,
     remove,

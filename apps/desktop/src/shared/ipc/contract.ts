@@ -3,6 +3,7 @@ import type {
   ActivityDto,
   AnsibleEvent,
   AnsibleAccessDetails,
+  DockerNetworkSummary,
   AnsibleOutcome,
   AnsibleProfile,
   AnsibleProfileState,
@@ -541,6 +542,11 @@ export interface IpcContract {
     response: AnsibleAccessDetails | null;
   };
   'ansible:cancel': { request: { streamId: string }; response: void };
+  'ansible:networks': { request: SshTargetRequest; response: DockerNetworkSummary[] };
+  'ansible:createNetwork': {
+    request: SshTargetRequest & { name: string };
+    response: DockerNetworkSummary;
+  };
   'ansible:nginxSites': { request: SshTargetRequest; response: NginxSite[] };
   'ansible:nginxUpsert': {
     request: SshTargetRequest & { site: NginxSite; streamId: string };
@@ -921,6 +927,8 @@ export const IPC_CHANNELS = [
   'ansible:cancel',
   'ansible:nginxSites',
   'ansible:nginxUpsert',
+  'ansible:networks',
+  'ansible:createNetwork',
   'ansible:nginxRemove',
   'nginx:inspect',
   'nginx:listSites',

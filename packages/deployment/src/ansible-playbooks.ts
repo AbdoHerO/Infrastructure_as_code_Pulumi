@@ -152,6 +152,85 @@ export const ANSIBLE_PROFILES: readonly AnsibleProfile[] = [
       providesReverseProxy: true,
     },
   },
+  {
+    id: 'postgres',
+    name: 'PostgreSQL',
+    description:
+      'Run PostgreSQL as a labelled Docker container on a shared network, reachable by container name.',
+    variables: [
+      {
+        key: 'container_name',
+        label: 'Container name',
+        type: 'string',
+        required: true,
+        defaultValue: 'cloudforge-postgres',
+        description:
+          'Applications on the same network reach the database at this name, e.g. postgresql://user@<name>:5432/db.',
+      },
+      {
+        key: 'network_name',
+        label: 'Docker network',
+        type: 'string',
+        required: true,
+        defaultValue: 'global_network',
+        description:
+          'Shared user-defined network. Container-name DNS does not work on the default bridge, so this is required. Created if missing.',
+      },
+      {
+        key: 'database_name',
+        label: 'Database name',
+        type: 'string',
+        required: true,
+        defaultValue: 'app',
+      },
+      {
+        key: 'database_user',
+        label: 'Database user',
+        type: 'string',
+        required: true,
+        defaultValue: 'postgres',
+        description: 'Owns the database and holds CREATEDB so applications can create their own.',
+      },
+      {
+        key: 'database_password',
+        label: 'Database password',
+        type: 'string',
+        required: true,
+        secret: true,
+      },
+      {
+        key: 'service_port',
+        label: 'Host port',
+        type: 'number',
+        required: true,
+        defaultValue: 5432,
+        description:
+          'Used only when the database is published on 127.0.0.1. Inside the network it is always reached on 5432.',
+      },
+      {
+        key: 'image',
+        label: 'Image',
+        type: 'string',
+        required: true,
+        defaultValue: 'postgres:17-alpine',
+      },
+      {
+        key: 'publish_loopback',
+        label: 'Publish on 127.0.0.1',
+        type: 'boolean',
+        required: true,
+        defaultValue: false,
+        description:
+          'Off by default. Applications reach the database over the shared network, so no host port is needed. Enable only for local psql or an SSH tunnel — never for internet access.',
+      },
+    ],
+    // Deliberately no ports. The database is reached over the Docker network, and
+    // when `publish_loopback` is on it binds to 127.0.0.1 — which no firewall rule
+    // can expose and none should be asked for. Publishing a database to 0.0.0.0 is
+    // not offered at all: Docker's published ports bypass the INPUT chain, so a
+    // host firewall would not protect it and the exposure would be silent.
+    runtime: { ports: [] },
+  },
 ] as const;
 
 const HEADER = `---
@@ -504,12 +583,117 @@ const NGINX = `${HEADER}
 ${hostFirewallTask('Nginx HTTP', '80')}
 `;
 
+/**
+ * PostgreSQL as a labelled container on a shared user-defined network.
+ *
+ * Two decisions worth stating, because both are load-bearing:
+ *
+ * 1. The network is created if missing, with CloudForge's ownership labels. Docker
+ *    labels are immutable after creation, so a network made by hand can never be
+ *    owned by CloudForge — only adopted into a plan. Creating it here is the one
+ *    moment ownership can be established.
+ * 2. The container carries `com.cloudforge.profile=postgres`, so the state probe
+ *    can find it whatever the user named it. Matching on a fixed name — as the
+ *    dockhand and portainer probes do — would break the moment the name is a
+ *    variable.
+ *
+ * The password is written to a root-only env file because the container needs it
+ * at start. That file is also what makes the credentials readable again later.
+ */
+const POSTGRES = `${HEADER}
+    - name: Verify Docker Compose
+      ansible.builtin.command: docker compose version
+      changed_when: false
+    - name: Ensure the shared Docker network exists
+      ansible.builtin.command: >-
+        docker network create
+        --label com.cloudforge.managed=true
+        --label com.cloudforge.resource=network
+        "{{ network_name }}"
+      register: network_result
+      changed_when: network_result.rc == 0
+      failed_when: >-
+        network_result.rc != 0 and 'already exists' not in network_result.stderr
+    - name: Create PostgreSQL directory
+      ansible.builtin.file:
+        path: "/opt/cloudforge/apps/postgres/{{ container_name }}"
+        state: directory
+        mode: '0750'
+    - name: Write PostgreSQL environment file
+      ansible.builtin.copy:
+        dest: "/opt/cloudforge/apps/postgres/{{ container_name }}/.env"
+        mode: '0600'
+        content: |
+          POSTGRES_DB={{ database_name }}
+          POSTGRES_USER={{ database_user }}
+          POSTGRES_PASSWORD={{ database_password }}
+          CONTAINER_NAME={{ container_name }}
+          NETWORK_NAME={{ network_name }}
+          SERVICE_PORT={{ service_port }}
+          IMAGE={{ image }}
+    - name: Write PostgreSQL Compose definition
+      ansible.builtin.copy:
+        dest: "/opt/cloudforge/apps/postgres/{{ container_name }}/compose.yaml"
+        mode: '0640'
+        content: |
+          services:
+            postgres:
+              image: "\${IMAGE}"
+              container_name: "\${CONTAINER_NAME}"
+              restart: unless-stopped
+              environment:
+                POSTGRES_DB: "\${POSTGRES_DB}"
+                POSTGRES_USER: "\${POSTGRES_USER}"
+                POSTGRES_PASSWORD: "\${POSTGRES_PASSWORD}"
+              labels:
+                com.cloudforge.managed: "true"
+                com.cloudforge.profile: "postgres"
+                com.cloudforge.resource: "container"
+              # Rendered as a YAML flow sequence on one line: a multi-line Jinja
+              # block here would have to start at column 0, which ends the block
+              # scalar and silently truncates everything after it.
+              ports: {{ ['127.0.0.1:' ~ service_port ~ ':5432'] if publish_loopback | bool else [] }}
+              networks:
+                - shared
+              volumes:
+                - data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER} -d \${POSTGRES_DB}"]
+                interval: 10s
+                timeout: 5s
+                retries: 12
+                start_period: 20s
+          networks:
+            shared:
+              name: "\${NETWORK_NAME}"
+              external: true
+          volumes:
+            data:
+              name: "\${CONTAINER_NAME}_data"
+    - name: Start PostgreSQL
+      ansible.builtin.command: docker compose up -d --remove-orphans
+      args:
+        chdir: "/opt/cloudforge/apps/postgres/{{ container_name }}"
+      register: compose_result
+      changed_when: "'Started' in compose_result.stdout or 'Created' in compose_result.stdout or 'Recreated' in compose_result.stdout"
+    - name: Wait for PostgreSQL to accept connections
+      ansible.builtin.command: >-
+        docker exec "{{ container_name }}"
+        pg_isready -U "{{ database_user }}" -d "{{ database_name }}"
+      register: ready_result
+      until: ready_result.rc == 0
+      retries: 24
+      delay: 5
+      changed_when: false
+`;
+
 const PLAYBOOKS: Readonly<Record<AnsibleProfileId, string>> = {
   docker: DOCKER,
   dockhand: DOCKHAND,
   portainer: PORTAINER,
   jenkins: JENKINS,
   nginx: NGINX,
+  postgres: POSTGRES,
 };
 
 export function getPlaybook(id: AnsibleProfileId): string {

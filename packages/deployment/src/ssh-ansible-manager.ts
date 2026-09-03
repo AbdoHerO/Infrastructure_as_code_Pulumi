@@ -12,6 +12,7 @@ import type {
   AnsibleRunOptions,
   AnsibleStatus,
   DeploymentTarget,
+  DockerNetworkSummary,
   JenkinsServiceAction,
   ManagedNginxSite,
   NginxSite,
@@ -267,11 +268,12 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
     profileId: AnsibleProfileId,
     variables: Readonly<Record<string, unknown>>,
   ): Promise<Result<AnsibleAccessDetails | null, DeploymentError>> {
-    if (profileId !== 'jenkins') return ok(null);
+    if (profileId !== 'jenkins' && profileId !== 'postgres') return ok(null);
     const profile = ANSIBLE_PROFILES.find((item) => item.id === profileId);
     if (!profile) return err(new DeploymentError(`Unknown Ansible profile: ${profileId}`));
     const validated = validateVariables(profile, variables);
     if (!validated.ok) return validated;
+    if (profileId === 'postgres') return this.postgresAccess(target, validated.value);
     const port = profilePort(profileId, validated.value) ?? 8080;
     const result = await withConnection(target, undefined, (client) =>
       execute(
@@ -292,6 +294,108 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
         ? 'Use this one-time password to unlock Jenkins, then create the first administrator account.'
         : 'The initial password is unavailable. Jenkins may already have completed its setup wizard.',
     });
+  }
+
+  /**
+   * Read a managed PostgreSQL instance's credentials back from the VPS.
+   *
+   * The values come from the root-only env file the playbook wrote, not from the
+   * variables the caller passed, so they describe what is actually running rather
+   * than what was last typed into a form. A container renamed or reconfigured
+   * outside CloudForge therefore reports its real settings.
+   *
+   * The connection host is the container name, not the VPS address: the port is
+   * not published, so the database is reachable only from the shared Docker
+   * network. Handing back `host:5432` would produce a connection string that
+   * cannot work.
+   */
+  private async postgresAccess(
+    target: DeploymentTarget,
+    variables: Readonly<Record<string, unknown>>,
+  ): Promise<Result<AnsibleAccessDetails | null, DeploymentError>> {
+    const container = scalarText(variables.container_name).trim();
+    if (!SAFE_DOCKER_NAME.test(container))
+      return err(new DeploymentError(`Unsafe PostgreSQL container name: ${container}`));
+    const envPath = `/opt/cloudforge/apps/postgres/${container}/.env`;
+    const result = await withConnection(target, undefined, (client) =>
+      execute(client, privilegedScript(`if [ -r '${envPath}' ]; then cat '${envPath}'; fi`)),
+    );
+    if (!result.ok) return result;
+    const env = parseEnvFile(result.value.stdout);
+    const password = env.POSTGRES_PASSWORD ?? null;
+    const database = env.POSTGRES_DB ?? scalarText(variables.database_name);
+    const user = env.POSTGRES_USER ?? scalarText(variables.database_user);
+    const network = env.NETWORK_NAME ?? scalarText(variables.network_name);
+    const port = Number(env.SERVICE_PORT ?? scalarText(variables.service_port)) || 5432;
+    const url = password
+      ? `postgresql://${user}:${password}@${container}:5432/${database}?schema=public`
+      : `postgresql://${user}:<password>@${container}:5432/${database}?schema=public`;
+    return ok({
+      profileId: 'postgres',
+      url: `${container}:5432`,
+      secretLabel: 'Database password',
+      secret: password,
+      instructions: password
+        ? `Reachable as "${container}" from any container on the "${network}" network. The port is not published to the host, so this database is not reachable from the internet.`
+        : `No environment file was found at ${envPath}. Run the PostgreSQL playbook for this container name, or check that it was created by CloudForge.`,
+      fields: [
+        { label: 'Container / host', value: container },
+        { label: 'Network', value: network },
+        { label: 'Port', value: String(port) },
+        { label: 'Database', value: database },
+        { label: 'User', value: user },
+        { label: 'Password', value: password ?? '', secret: true },
+        { label: 'Connection string', value: url, secret: true, multiline: true },
+      ],
+    });
+  }
+
+  async listNetworks(
+    target: DeploymentTarget,
+  ): Promise<Result<DockerNetworkSummary[], DeploymentError>> {
+    const result = await withConnection(target, undefined, (client) =>
+      execute(client, privilegedScript(NETWORK_LIST_SCRIPT)),
+    );
+    if (!result.ok) return result;
+    try {
+      return ok(parseNetworkSummaries(result.value.stdout));
+    } catch (cause) {
+      return err(new DeploymentError('Could not parse the Docker network list', { cause }));
+    }
+  }
+
+  async createNetwork(
+    target: DeploymentTarget,
+    name: string,
+    options: AnsibleRunOptions = {},
+  ): Promise<Result<DockerNetworkSummary, DeploymentError>> {
+    const trimmed = name.trim();
+    if (!SAFE_DOCKER_NAME.test(trimmed))
+      return err(
+        new DeploymentError(
+          `"${trimmed}" is not a valid Docker network name. Use letters, digits, underscore, dot or hyphen.`,
+        ),
+      );
+    const created = await withConnection(target, options.signal, (client) =>
+      execute(
+        client,
+        privilegedScript(
+          `docker network inspect '${trimmed}' >/dev/null 2>&1 && { echo 'CF_EXISTS'; exit 0; }
+docker network create --label com.cloudforge.managed=true --label com.cloudforge.resource=network '${trimmed}' >/dev/null`,
+        ),
+        undefined,
+        options.signal,
+      ),
+    );
+    if (!created.ok) return created;
+    if (created.value.stdout.includes('CF_EXISTS'))
+      return err(new DeploymentError(`A Docker network named "${trimmed}" already exists.`));
+    const listed = await this.listNetworks(target);
+    if (!listed.ok) return listed;
+    const summary = listed.value.find((network) => network.name === trimmed);
+    return summary
+      ? ok(summary)
+      : err(new DeploymentError(`Network "${trimmed}" was created but could not be read back.`));
   }
 
   /**
@@ -495,6 +599,19 @@ if $S docker inspect portainer >/dev/null 2>&1; then
   emit portainer true "$portainer_running" "$portainer_image" "\${portainer_port:--}" unknown 'Portainer container'
 else emit portainer false false '' - unknown 'Portainer container is absent'; fi
 
+pg_id="$($S docker ps -aq --filter label=com.cloudforge.profile=postgres 2>/dev/null | head -n1)"
+if [ -n "$pg_id" ]; then
+  pg_name="$($S docker inspect -f '{{.Name}}' "$pg_id" 2>/dev/null | sed 's#^/##')"
+  pg_running=false; [ "$($S docker inspect -f '{{.State.Running}}' "$pg_id" 2>/dev/null)" = true ] && pg_running=true
+  pg_image="$($S docker inspect -f '{{.Config.Image}}' "$pg_id" 2>/dev/null || true)"
+  pg_port="$($S docker inspect -f '{{with (index .NetworkSettings.Ports "5432/tcp")}}{{(index . 0).HostPort}}{{end}}' "$pg_id" 2>/dev/null || true)"
+  pg_net="$($S docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$pg_id" 2>/dev/null | awk '{print $1}')"
+  pg_env="$($S docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$pg_id" 2>/dev/null || true)"
+  pg_db="$(printf '%s\\n' "$pg_env" | sed -n 's/^POSTGRES_DB=//p' | head -n1)"
+  pg_user="$(printf '%s\\n' "$pg_env" | sed -n 's/^POSTGRES_USER=//p' | head -n1)"
+  emit postgres true "$pg_running" "$pg_image" "\${pg_port:--}" unknown 'PostgreSQL container' "container_name=$pg_name;network_name=$pg_net;database_name=$pg_db;database_user=$pg_user"
+else emit postgres false false '' - unknown 'PostgreSQL container is absent'; fi
+
 if command -v jenkins >/dev/null 2>&1 || $S test -f /usr/share/java/jenkins.war; then
   jenkins_running=false; $S systemctl is-active --quiet jenkins && jenkins_running=true
   jenkins_port="$($S sed -n 's/.*JENKINS_PORT=\\([0-9][0-9]*\\).*/\\1/p' /etc/systemd/system/jenkins.service.d/cloudforge.conf 2>/dev/null | head -n1)"; jenkins_port="\${jenkins_port:-8080}"
@@ -562,6 +679,72 @@ export function parseProfileStates(output: string): readonly AnsibleProfileState
     });
 }
 
+/**
+ * Docker's own name rule, applied before any value reaches a shell command.
+ * Anything outside it is a misconfiguration, not a name to try quoting around.
+ */
+const SAFE_DOCKER_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+
+/**
+ * One line per network, tab-separated, then its attached container names.
+ *
+ * `docker network ls --format` cannot report containers or labels, so each
+ * network is inspected. Networks are few and this runs on demand, not on a timer.
+ */
+const NETWORK_LIST_SCRIPT = `for id in $(docker network ls -q); do
+  docker network inspect "$id" --format 'CF_NET|{{.Name}}|{{.Id}}|{{.Driver}}|{{.Scope}}|{{.Internal}}|{{range .IPAM.Config}}{{.Subnet}}{{end}}|{{index .Labels "com.cloudforge.managed"}}|{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true
+done`;
+
+export function parseNetworkSummaries(output: string): DockerNetworkSummary[] {
+  return output
+    .split('\n')
+    .filter((line) => line.startsWith('CF_NET|'))
+    .map((line) => {
+      const [, name, id, driver, scope, internal, subnet, managed, containers] = line.split('|');
+      return {
+        name: (name ?? '').trim(),
+        id: (id ?? '').trim().slice(0, 12),
+        driver: (driver ?? '').trim(),
+        scope: (scope ?? '').trim(),
+        internal: internal?.trim() === 'true',
+        subnet: subnet?.trim() ? subnet.trim() : null,
+        containers: (containers ?? '')
+          .trim()
+          .split(/\s+/)
+          .filter((entry) => entry.length > 0),
+        cloudforgeManaged: managed?.trim() === 'true',
+      } satisfies DockerNetworkSummary;
+    })
+    .filter((network) => network.name.length > 0);
+}
+
+/**
+ * Render a profile variable as text.
+ *
+ * Variables cross IPC as `unknown`, and `String(someObject)` would quietly
+ * produce "[object Object]" — a value that then reaches a shell command or a
+ * connection string looking like a real setting. Anything that is not a scalar
+ * is treated as absent instead.
+ */
+function scalarText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+/** Parse `KEY=value` lines. Values may contain `=`; keys may not. */
+function parseEnvFile(output: string): Readonly<Record<string, string>> {
+  const env: Record<string, string> = {};
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator < 1) continue;
+    env[trimmed.slice(0, separator)] = trimmed.slice(separator + 1);
+  }
+  return env;
+}
+
 function parseProfileConfiguration(value: string): Readonly<Record<string, string>> {
   const configuration: Record<string, string> = {};
   for (const entry of value.split(';')) {
@@ -589,6 +772,11 @@ async function postCheck(
     portainer: `${privileged} $S docker inspect -f '{{.State.Status}}' portainer | grep -qx running`,
     jenkins: `${privileged} $S systemctl is-active jenkins; command -v ss >/dev/null && ss -ltnH | awk '{print $4}' | grep -Eq '(^|:)${profilePort(profileId, variables) ?? 8080}$'`,
     nginx: `${privileged} $S nginx -t; $S systemctl is-active nginx`,
+    // Located by label rather than by name: the container name is a variable, so
+    // a fixed name would check the wrong container the moment a user changes it.
+    // `pg_isready` proves the server accepts connections, not merely that the
+    // process is up — a Postgres still replaying WAL is running but unusable.
+    postgres: `${privileged} id="$($S docker ps -q --filter label=com.cloudforge.profile=postgres | head -n1)"; [ -n "$id" ] || { echo 'No CloudForge PostgreSQL container is running' >&2; exit 1; }; $S docker exec "$id" pg_isready`,
   };
   const result = await withConnection(target, signal, (client) =>
     execute(client, commands[profileId], onEvent, signal),

@@ -83,6 +83,7 @@ export function AnsiblePage(): JSX.Element {
   const [upstreamPort, setUpstreamPort] = useState(3000);
   const [websocket, setWebsocket] = useState(false);
   const [showAccessSecret, setShowAccessSecret] = useState(false);
+  const [newNetworkName, setNewNetworkName] = useState('');
 
   const target: SshTargetRequest = { host, port, username, sshCredentialId, hostKeySha256 };
   const connected = Boolean(host && username && sshCredentialId && hostKeySha256);
@@ -188,7 +189,7 @@ export function AnsiblePage(): JSX.Element {
         onSuccess: ({ summary }) => {
           toast.success(summary);
           actions.profileStates.mutate(target);
-          if (profile.id === 'jenkins') loadProfileAccess();
+          if (profile.id === 'jenkins' || profile.id === 'postgres') loadProfileAccess();
         },
         onError: fail,
       },
@@ -226,6 +227,24 @@ export function AnsiblePage(): JSX.Element {
       {
         onSuccess: (details) => {
           if (!details) toast.info('This playbook does not expose generated access credentials');
+        },
+        onError: fail,
+      },
+    );
+  };
+  const loadNetworks = (): void => {
+    actions.networks.mutate(target, { onError: fail });
+  };
+  const addNetwork = (): void => {
+    const name = newNetworkName.trim();
+    if (!name) return;
+    actions.createNetwork.mutate(
+      { ...target, name },
+      {
+        onSuccess: (network) => {
+          toast.success(`Network "${network.name}" created`);
+          setNewNetworkName('');
+          loadNetworks();
         },
         onError: fail,
       },
@@ -724,13 +743,97 @@ export function AnsiblePage(): JSX.Element {
                     </Button>
                   </div>
                 ) : null}
-                {profile?.id === 'jenkins' ? (
+                {profile?.id === 'docker' ? (
                   <div className="space-y-3 rounded-lg border p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="font-medium">Jenkins access</p>
+                        <p className="font-medium">Docker networks</p>
                         <p className="text-muted-foreground text-xs">
-                          Read the initial unlock password securely from this VPS.
+                          Containers resolve each other by name only on a user-defined network, not
+                          on the default bridge.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!connected || actions.networks.isPending}
+                        onClick={loadNetworks}
+                      >
+                        {actions.networks.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        {actions.networks.data ? 'Refresh networks' : 'Load networks'}
+                      </Button>
+                    </div>
+                    {actions.networks.data ? (
+                      <div className="space-y-2">
+                        {actions.networks.data.length === 0 ? (
+                          <p className="text-muted-foreground text-xs">No networks found.</p>
+                        ) : (
+                          actions.networks.data.map((network) => (
+                            <div
+                              key={network.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-medium">{network.name}</p>
+                                <p className="text-muted-foreground text-xs">
+                                  {network.driver}
+                                  {network.subnet ? ` · ${network.subnet}` : ''} ·{' '}
+                                  {network.containers.length} container
+                                  {network.containers.length === 1 ? '' : 's'}
+                                </p>
+                              </div>
+                              <Badge variant={network.cloudforgeManaged ? 'default' : 'secondary'}>
+                                {network.cloudforgeManaged ? 'CloudForge' : 'Unmanaged'}
+                              </Badge>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="grow space-y-1">
+                        <Label htmlFor="new-network">New network name</Label>
+                        <Input
+                          id="new-network"
+                          value={newNetworkName}
+                          placeholder="global_network"
+                          onChange={(event) => setNewNetworkName(event.target.value)}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        disabled={
+                          !connected || !newNetworkName.trim() || actions.createNetwork.isPending
+                        }
+                        onClick={addNetwork}
+                      >
+                        {actions.createNetwork.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : null}
+                        Create network
+                      </Button>
+                    </div>
+                    <p className="text-muted-foreground text-xs">
+                      A new network is empty, so creating one cannot disturb a running container.
+                      CloudForge labels what it creates — Docker labels are immutable afterwards, so
+                      this is the only moment ownership can be established. Removing a network stays
+                      in VPS Runtime, behind preview and apply.
+                    </p>
+                  </div>
+                ) : null}
+                {profile?.id === 'jenkins' || profile?.id === 'postgres' ? (
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium">{profile.name} access</p>
+                        <p className="text-muted-foreground text-xs">
+                          {profile.id === 'postgres'
+                            ? 'Read the live connection details back from this VPS.'
+                            : 'Read the initial unlock password securely from this VPS.'}
                         </p>
                       </div>
                       <Button
@@ -750,26 +853,50 @@ export function AnsiblePage(): JSX.Element {
                     {actions.access.data ? (
                       <div className="space-y-3">
                         <AccessValue
-                          label="Jenkins URL"
+                          label={profile.id === 'postgres' ? 'Host' : 'Jenkins URL'}
                           value={actions.access.data.url}
-                          onCopy={() => copyText(actions.access.data!.url, 'Jenkins URL')}
+                          onCopy={() => copyText(actions.access.data!.url, 'Address')}
                         />
-                        <AccessValue
-                          label={actions.access.data.secretLabel}
-                          value={actions.access.data.secret ?? 'Not available'}
-                          secret={Boolean(actions.access.data.secret)}
-                          revealed={showAccessSecret}
-                          onToggle={() => setShowAccessSecret((current) => !current)}
-                          {...(actions.access.data.secret
-                            ? {
-                                onCopy: () =>
-                                  copyText(
-                                    actions.access.data!.secret!,
-                                    actions.access.data!.secretLabel,
-                                  ),
-                              }
-                            : {})}
-                        />
+                        {/*
+                          Multi-value profiles report their own labelled fields. A
+                          database needs host, port, database, user, password and the
+                          connection string built from them — one `secret` cannot carry
+                          that, and a caller cannot assemble the URL without knowing the
+                          profile's conventions.
+                        */}
+                        {(actions.access.data.fields ?? [])
+                          .filter((field) => field.value.length > 0)
+                          .map((field) => (
+                            <AccessValue
+                              key={field.label}
+                              label={field.label}
+                              value={field.value}
+                              secret={Boolean(field.secret)}
+                              revealed={showAccessSecret}
+                              onToggle={() => setShowAccessSecret((current) => !current)}
+                              onCopy={() => copyText(field.value, field.label)}
+                            />
+                          ))}
+                        {/* Fields, when a profile reports them, already describe the
+                            secret. Rendering both would show the same password twice. */}
+                        {actions.access.data.fields?.length ? null : (
+                          <AccessValue
+                            label={actions.access.data.secretLabel}
+                            value={actions.access.data.secret ?? 'Not available'}
+                            secret={Boolean(actions.access.data.secret)}
+                            revealed={showAccessSecret}
+                            onToggle={() => setShowAccessSecret((current) => !current)}
+                            {...(actions.access.data.secret
+                              ? {
+                                  onCopy: () =>
+                                    copyText(
+                                      actions.access.data!.secret!,
+                                      actions.access.data!.secretLabel,
+                                    ),
+                                }
+                              : {})}
+                          />
+                        )}
                         <p className="text-muted-foreground text-xs">
                           {actions.access.data.instructions} This value is kept only in memory and
                           is cleared when you change the target or profile.

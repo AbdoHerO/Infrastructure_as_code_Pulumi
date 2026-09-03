@@ -16,7 +16,7 @@ import {
 
 describe('generic Ansible catalog', () => {
   it('has one safe local playbook for every unique profile', () => {
-    expect(new Set(ANSIBLE_PROFILES.map((profile) => profile.id)).size).toBe(5);
+    expect(new Set(ANSIBLE_PROFILES.map((profile) => profile.id)).size).toBe(6);
     for (const profile of ANSIBLE_PROFILES) {
       const playbook = getPlaybook(profile.id);
       expect(playbook).toContain('hosts: localhost');
@@ -38,6 +38,43 @@ describe('generic Ansible catalog', () => {
     expect(getPlaybook('jenkins')).not.toContain('ansible_os_family');
     expect(getPlaybook('dockhand')).not.toContain('{{ port }}');
     expect(getPlaybook('nginx')).not.toContain('server_name');
+  });
+
+  it('keeps PostgreSQL reachable by container name and off the public internet', () => {
+    const playbook = getPlaybook('postgres');
+    // Container-name DNS only resolves on a user-defined network, so the profile
+    // must guarantee one exists rather than assume it.
+    expect(playbook).toContain('Ensure the shared Docker network exists');
+    expect(playbook).toContain('docker network create');
+    expect(playbook).toContain("'already exists' not in network_result.stderr");
+    // Labelled at creation: Docker labels are immutable afterwards, so a resource
+    // created without them can never be owned by CloudForge, only adopted.
+    expect(playbook).toContain('com.cloudforge.managed=true');
+    expect(playbook).toContain('com.cloudforge.profile: "postgres"');
+    // Every deployment-specific value stays a variable.
+    expect(playbook).toContain('container_name: "${CONTAINER_NAME}"');
+    expect(playbook).toContain('POSTGRES_DB: "${POSTGRES_DB}"');
+    // A published port, when the user asks for one at all, is loopback-only.
+    // Docker's published ports bypass the INPUT chain, so binding 0.0.0.0 would
+    // expose the database no matter what the host firewall says.
+    expect(playbook).toContain("['127.0.0.1:' ~ service_port ~ ':5432']");
+    expect(playbook).toContain('if publish_loopback | bool else []');
+    expect(playbook).not.toContain('0.0.0.0:');
+    // A bare "<port>:5432" mapping would bind every interface.
+    expect(playbook).not.toMatch(/\n\s+-\s+"?\{\{ service_port \}\}:5432/);
+  });
+
+  it('never writes a PostgreSQL password into a world-readable file', () => {
+    const playbook = getPlaybook('postgres');
+    const envTask = playbook.slice(playbook.indexOf('Write PostgreSQL environment file'));
+    expect(envTask).toContain("mode: '0600'");
+    expect(envTask.slice(0, envTask.indexOf('Write PostgreSQL Compose definition'))).toContain(
+      'POSTGRES_PASSWORD={{ database_password }}',
+    );
+    // The compose file is read by the daemon, not the container, and must not
+    // carry the plaintext password itself — it interpolates from the env file.
+    const composeTask = playbook.slice(playbook.indexOf('Write PostgreSQL Compose definition'));
+    expect(composeTask).not.toContain('{{ database_password }}');
   });
 
   it('verifies and repairs Docker bridge networking after firewalld startup races', () => {

@@ -1,7 +1,8 @@
 import type { DeploymentError, Result } from '@cloudforge/shared';
 import type { DeploymentTarget } from './deployer.js';
 
-export type AnsibleProfileId = 'docker' | 'dockhand' | 'portainer' | 'jenkins' | 'nginx';
+export type AnsibleProfileId =
+  'docker' | 'dockhand' | 'portainer' | 'jenkins' | 'nginx' | 'postgres';
 export type AnsibleVariableType = 'string' | 'number' | 'boolean';
 
 export interface AnsibleVariableSpec {
@@ -138,12 +139,53 @@ export interface AnsibleOutcome {
 export type JenkinsServiceAction = 'verify' | 'restart';
 
 /** Sensitive, short-lived access information read from a managed service. */
+/**
+ * One named value in a profile's access details.
+ *
+ * Jenkins needs exactly one secret, so `AnsibleAccessDetails.secret` was enough.
+ * A database needs several related values — host, port, database, user, password
+ * and the connection string built from them — and a caller cannot reconstruct the
+ * connection string itself without knowing the profile's conventions. Optional,
+ * so a profile that reports only a URL and one secret behaves exactly as before.
+ */
+export interface AnsibleAccessField {
+  readonly label: string;
+  readonly value: string;
+  /** Masked in the UI until explicitly revealed, and never logged. */
+  readonly secret?: boolean;
+  /** Rendered as a copyable block rather than an inline value. */
+  readonly multiline?: boolean;
+}
+
 export interface AnsibleAccessDetails {
   readonly profileId: AnsibleProfileId;
   readonly url: string;
   readonly secretLabel: string;
   readonly secret: string | null;
   readonly instructions: string;
+  readonly fields?: readonly AnsibleAccessField[];
+}
+
+/**
+ * A Docker network as observed on the VPS.
+ *
+ * Container-name DNS only resolves on user-defined networks, so a profile that
+ * expects to be reached by name (a database, a queue) is unusable without one.
+ * Listing them is read-only; creating one is additive and cannot disturb a
+ * running container, which is why it is safe here. Removal deliberately stays in
+ * VPS Runtime, behind preview/apply — it can break every container attached.
+ */
+export interface DockerNetworkSummary {
+  readonly name: string;
+  readonly id: string;
+  readonly driver: string;
+  readonly scope: string;
+  readonly internal: boolean;
+  readonly subnet: string | null;
+  /** Names of containers currently attached. */
+  readonly containers: readonly string[];
+  /** True when the network carries CloudForge's ownership label. */
+  readonly cloudforgeManaged: boolean;
 }
 
 export interface NginxSite {
@@ -197,6 +239,21 @@ export interface AnsibleManager {
     profileId: AnsibleProfileId,
     variables: Readonly<Record<string, unknown>>,
   ): Promise<Result<AnsibleAccessDetails | null, DeploymentError>>;
+  /** Read-only inventory of Docker networks, including ones CloudForge did not create. */
+  listNetworks(target: DeploymentTarget): Promise<Result<DockerNetworkSummary[], DeploymentError>>;
+  /**
+   * Create an empty, CloudForge-labelled bridge network.
+   *
+   * Additive only: a new network has no containers attached, so creating one
+   * cannot disrupt anything already running. It is labelled at creation because
+   * Docker labels are immutable afterwards — a network created without them can
+   * never be owned by CloudForge, only adopted into a plan.
+   */
+  createNetwork(
+    target: DeploymentTarget,
+    name: string,
+    options?: AnsibleRunOptions,
+  ): Promise<Result<DockerNetworkSummary, DeploymentError>>;
   listNginxSites(target: DeploymentTarget): Promise<Result<NginxSite[], DeploymentError>>;
   upsertNginxSite(
     target: DeploymentTarget,
