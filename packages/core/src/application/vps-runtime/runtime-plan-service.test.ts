@@ -28,7 +28,11 @@ import type { FirewallRequirement } from './firewall-requirements.js';
 import type { RuntimeOperation } from './runtime-operations.js';
 import { RUNTIME_LABELS } from './runtime-ownership.js';
 import { RuntimePlanService } from './runtime-plan-service.js';
-import { emptyRuntimePlan, type VpsRuntimePlan } from './vps-runtime-plan.js';
+import {
+  emptyRuntimePlan,
+  validateRuntimePlan,
+  type VpsRuntimePlan,
+} from './vps-runtime-plan.js';
 
 const TARGET = '3f1c2b8e-9a4d-4e5f-8b7a-1c2d3e4f5a6b';
 const NOW = new Date('2026-02-02T10:00:00.000Z');
@@ -1137,6 +1141,61 @@ describe('RuntimePlanService', () => {
         serviceName: plan.services[0]?.name,
         servicePort: 8001,
       });
+    });
+
+    it('relinks a surviving route when the application owning its upstream is removed', async () => {
+      /*
+       * Deleting a Jenkins pipeline does not delete the Nginx site still
+       * serving its domain, so the route outlives the service it pointed at.
+       * Removal used to leave the route naming the deleted service, which
+       * failed `route.service` validation and refused the deletion outright —
+       * the pipeline became undeletable from the UI.
+       */
+      await ctx.service.upsertApplication({
+        targetId: TARGET,
+        sourceId: 'pipeline-1',
+        name: 'backend',
+        displayName: 'Backend',
+        composeProject: 'backend',
+        deploymentMode: 'scm',
+        hostPort: 8001,
+        applicationPort: 8001,
+        exposure: 'host-loopback',
+        ownership: 'cloudforge-managed',
+      });
+      await ctx.service.upsertRoute(TARGET, {
+        sourceId: 'site:/',
+        domain: 'app.example.com',
+        path: '/',
+        upstreamHost: '127.0.0.1',
+        upstreamPort: 8001,
+        websocket: false,
+        tls: true,
+        httpRedirect: true,
+        ownership: 'cloudforge-managed',
+      });
+
+      const removed = await ctx.service.removeApplication(TARGET, 'pipeline-1');
+      expect(removed.ok).toBe(true);
+
+      const loaded = await ctx.service.get(TARGET);
+      if (!loaded.ok) throw loaded.error;
+      const plan = loaded.value.plan;
+
+      // The route survives, still describing the same domain and port.
+      expect(plan.routes).toHaveLength(1);
+      expect(plan.routes[0]).toMatchObject({ domain: 'app.example.com', servicePort: 8001 });
+
+      // It now names a service that actually exists — a route-owned endpoint
+      // rather than the Jenkins service that has gone.
+      const named = plan.services.find((service) => service.name === plan.routes[0]?.serviceName);
+      expect(named).toBeDefined();
+      expect(named?.source?.module).toBe('nginx');
+
+      // And the plan it produced is one the validator accepts, which is the
+      // property the deletion actually depended on.
+      const issues = validateRuntimePlan(plan).filter((issue) => issue.severity === 'error');
+      expect(issues).toEqual([]);
     });
 
     it('tracks certificate status and marks a disappeared certificate as missing', async () => {

@@ -714,9 +714,34 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
         applications,
         services: plan.services.filter((service) => !removedServices.has(service.name)),
       };
-      for (const route of next.routes.filter((item) => removedServices.has(item.serviceName))) {
-        next = ensureRouteEndpoint(next, route);
+
+      /*
+       * A route outlives the pipeline that produced its upstream: deleting a
+       * Jenkins job does not delete the Nginx site still serving that domain.
+       * `ensureRouteEndpoint` mints a route-owned replacement upstream, but it
+       * cannot know which route to attach it to — so the route has to be
+       * relinked here, exactly as `upsertRuntimeRoute` does after calling it.
+       *
+       * Leaving that out failed twice over: the route kept naming the service
+       * that had just been deleted, so the plan failed `route.service`
+       * validation and the deletion was refused outright; and had it saved,
+       * `cleanupTopology` would have collected the new endpoint straight back
+       * out, because nothing referenced it.
+       */
+      for (const orphan of plan.routes.filter((route) => removedServices.has(route.serviceName))) {
+        next = ensureRouteEndpoint(next, orphan);
+        const endpoint = findHostEndpoint(next, orphan.servicePort, orphan.upstreamHost);
+        if (!endpoint) continue;
+        next = {
+          ...next,
+          routes: next.routes.map((route) =>
+            route.domain === orphan.domain && route.path === orphan.path
+              ? { ...route, applicationName: endpoint.applicationName, serviceName: endpoint.name }
+              : route,
+          ),
+        };
       }
+
       return cleanupTopology(next);
     });
   }
@@ -1124,13 +1149,21 @@ function isLoopbackHost(host: string | undefined): boolean {
   return host === undefined || host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
 
-function ensureRouteEndpoint(
+/**
+ * The host service an Nginx route proxies to, if the plan already describes it.
+ *
+ * Shared by the three places that need the answer — creating an endpoint,
+ * linking a route to one, and relinking a route whose endpoint was removed.
+ * They held three copies of this predicate, and a route relinked by a rule
+ * subtly different from the one that placed it is how a plan ends up naming a
+ * service that is not there.
+ */
+function findHostEndpoint(
   plan: VpsRuntimePlan,
-  route: RuntimeRouteSync | VpsRuntimePlan['routes'][number],
-): VpsRuntimePlan {
-  const upstreamHost = 'upstreamHost' in route ? route.upstreamHost : undefined;
-  const upstreamPort = 'upstreamPort' in route ? route.upstreamPort : route.servicePort;
-  const matching = plan.services.find(
+  upstreamPort: number,
+  upstreamHost: string | undefined,
+): VpsRuntimePlan['services'][number] | undefined {
+  return plan.services.find(
     (service) =>
       service.runtimeKind === 'host' &&
       service.ports.some(
@@ -1139,7 +1172,15 @@ function ensureRouteEndpoint(
           (isLoopbackHost(upstreamHost) || port.bindAddress === upstreamHost),
       ),
   );
-  if (matching) return plan;
+}
+
+function ensureRouteEndpoint(
+  plan: VpsRuntimePlan,
+  route: RuntimeRouteSync | VpsRuntimePlan['routes'][number],
+): VpsRuntimePlan {
+  const upstreamHost = 'upstreamHost' in route ? route.upstreamHost : undefined;
+  const upstreamPort = 'upstreamPort' in route ? route.upstreamPort : route.servicePort;
+  if (findHostEndpoint(plan, upstreamPort, upstreamHost)) return plan;
 
   const domain = route.domain.toLowerCase();
   const applicationName = uniqueSlug(plan, `route-${domain}`);
@@ -1193,15 +1234,9 @@ function ensureRouteEndpoint(
 function upsertRuntimeRoute(plan: VpsRuntimePlan, input: RuntimeRouteSync): VpsRuntimePlan {
   const next = ensureRouteEndpoint(plan, input);
   const target =
-    next.services.find(
-      (service) =>
-        service.runtimeKind === 'host' &&
-        service.ports.some(
-          (port) =>
-            port.hostPort === input.upstreamPort &&
-            (isLoopbackHost(input.upstreamHost) || port.bindAddress === input.upstreamHost),
-        ),
-    ) ??
+    findHostEndpoint(next, input.upstreamPort, input.upstreamHost) ??
+    // A containerised upstream: no host port binding to match on, so fall back
+    // to the port alone.
     next.services.find((service) =>
       service.ports.some((port) => port.hostPort === input.upstreamPort),
     );
