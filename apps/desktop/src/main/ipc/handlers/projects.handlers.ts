@@ -40,6 +40,17 @@ export function registerProjectHandlers(): void {
     orThrow(await getContainer().projectSessionService.changePasskey(currentPasskey, newPasskey)),
   );
 
+  registerHandler('projects:removePasskey', async ({ currentPasskey, confirmationName }) => {
+    const session = getContainer().projectSessionService;
+    orThrow(await session.removePasskey(currentPasskey, confirmationName));
+    // Audited loudly: this is the one action that leaves a workspace with no
+    // gate at all, and the activity feed is where that should be visible later.
+    getContainer().activityService.recordSafe({
+      type: 'project.passkey.removed',
+      message: `Removed the passkey for "${confirmationName}" — this workspace now opens without one`,
+    });
+  });
+
   registerHandler('projects:get', async ({ id }) => {
     requireCurrentProject(id);
     return orThrow(await getContainer().projectService.get(id));

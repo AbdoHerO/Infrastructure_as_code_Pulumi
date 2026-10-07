@@ -52,6 +52,8 @@ export function ProjectsPage(): JSX.Element {
   const [newPasskey, setNewPasskey] = useState('');
   const [confirmPasskey, setConfirmPasskey] = useState('');
   const [changingPasskey, setChangingPasskey] = useState(false);
+  const [removePasskeyOpen, setRemovePasskeyOpen] = useState(false);
+  const [removingPasskey, setRemovingPasskey] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
@@ -116,6 +118,21 @@ export function ProjectsPage(): JSX.Element {
       toast.error(error instanceof IpcCallError ? error.message : 'Failed to change passkey');
     } finally {
       setChangingPasskey(false);
+    }
+  };
+
+  const removePasskey = async (confirmationName: string, passkey: string): Promise<void> => {
+    setRemovingPasskey(true);
+    try {
+      await invoke('projects:removePasskey', { currentPasskey: passkey, confirmationName });
+      setRemovePasskeyOpen(false);
+      setCurrentPasskey('');
+      await refreshSession();
+      toast.success('Passkey removed — this workspace now opens without one');
+    } catch (error) {
+      toast.error(error instanceof IpcCallError ? error.message : 'Failed to remove the passkey');
+    } finally {
+      setRemovingPasskey(false);
     }
   };
 
@@ -323,6 +340,19 @@ export function ProjectsPage(): JSX.Element {
                 )}
                 Update passkey
               </Button>
+              {project.hasPasskey ? (
+                <p className="text-muted-foreground border-t pt-3 text-xs">
+                  Removing the passkey leaves this workspace open to anyone using this computer.
+                  Secrets stay encrypted, but nothing asks before showing them.{' '}
+                  <button
+                    type="button"
+                    className="text-destructive underline underline-offset-2"
+                    onClick={() => setRemovePasskeyOpen(true)}
+                  >
+                    Remove passkey
+                  </button>
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -351,6 +381,19 @@ export function ProjectsPage(): JSX.Element {
         onOpenChange={setDeleteOpen}
         onConfirm={(confirmation) =>
           void remove(confirmation?.typedName ?? '', confirmation?.passkey ?? '')
+        }
+      />
+      <NameConfirmationDialog
+        open={removePasskeyOpen}
+        title="Remove this project's passkey?"
+        description={`“${project.name}” will open without asking for anything. Credentials stay encrypted at rest, but anyone who can use this computer can open the workspace and reveal them. You can set a new passkey at any time.`}
+        expectedName={project.name}
+        confirmLabel="Remove passkey"
+        requirePasskey
+        pending={removingPasskey}
+        onOpenChange={setRemovePasskeyOpen}
+        onConfirm={(confirmation) =>
+          void removePasskey(confirmation?.typedName ?? '', confirmation?.passkey ?? '')
         }
       />
       <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>

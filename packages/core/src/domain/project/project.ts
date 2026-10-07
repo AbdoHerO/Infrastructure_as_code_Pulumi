@@ -181,6 +181,25 @@ export class Project extends Entity<ProjectId> {
     };
   }
 
+  /**
+   * Drop the passkey, leaving the workspace unprotected.
+   *
+   * The resulting state is exactly the one a freshly created or migrated
+   * project arrives in — no digest, no salt, version back to the default — so
+   * nothing downstream has to learn a new shape. Hash and salt are cleared
+   * together: a hash left without its salt cannot be verified against anything,
+   * and would still read as "protected" to a check that looks at only one.
+   */
+  clearPasskey(now: Date = new Date()): void {
+    this.props = {
+      ...this.props,
+      passkeyHash: null,
+      passkeySalt: null,
+      passkeyVersion: 1,
+      updatedAt: toIsoDateString(now),
+    };
+  }
+
   /** Record a successful workspace unlock. */
   markOpened(now: Date = new Date()): void {
     const timestamp = toIsoDateString(now);

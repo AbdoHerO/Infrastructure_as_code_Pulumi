@@ -1,5 +1,6 @@
 import {
   AppError,
+  ConflictError,
   err,
   type EncryptionError,
   NotFoundError,
@@ -23,7 +24,12 @@ export interface ProjectSessionDto {
 }
 
 export type ProjectSessionError =
-  ValidationError | UnauthorizedError | NotFoundError | EncryptionError | PersistenceError;
+  | ValidationError
+  | UnauthorizedError
+  | ConflictError
+  | NotFoundError
+  | EncryptionError
+  | PersistenceError;
 
 export interface ProjectSessionLifecycle {
   beforeDeactivate(lease: ProjectSessionLease): Promise<void>;
@@ -170,6 +176,50 @@ export class ProjectSessionService {
       const digest = await this.hasher.hash(newPasskey);
       if (!digest.ok) return digest;
       project.value.setPasskey(digest.value);
+      return this.projects.save(project.value);
+    });
+  }
+
+  /**
+   * Drop the active project's passkey, leaving the workspace unprotected.
+   *
+   * Deliberately a separate operation rather than `changePasskey('')`: an empty
+   * field is how a security control gets switched off by accident, and the
+   * length check that rejects it is the only thing standing in the way. Turning
+   * the gate off should be something you asked for, so this requires the
+   * current passkey and the project's exact name — the same confirmation the
+   * app already demands before deleting a project.
+   *
+   * The workspace stays open afterwards. Removing the lock is not a reason to
+   * close the door, and clearing the session here would only look like a
+   * failure.
+   */
+  async removePasskey(
+    currentPasskey: string,
+    confirmationName: string,
+  ): Promise<Result<void, ProjectSessionError>> {
+    return this.exclusive(async () => {
+      const lease = this.context.current();
+      if (!lease) return err(new UnauthorizedError('Unlock a project to continue'));
+      const project = await this.load(lease.projectId);
+      if (!project.ok) return project;
+      const snapshot = project.value.toSnapshot();
+
+      if (confirmationName.trim() !== snapshot.name) {
+        return err(new ValidationError('Type the exact project name to confirm'));
+      }
+
+      // A project with no passkey is already in the requested state. Saying so
+      // is better than reporting success on work that never happened.
+      if (!snapshot.passkeyHash || !snapshot.passkeySalt) {
+        return err(new ConflictError('This project has no passkey to remove'));
+      }
+
+      const verified = await this.hasher.verify(currentPasskey, passkeyFrom(snapshot));
+      if (!verified.ok) return verified;
+      if (!verified.value) return err(new UnauthorizedError('Incorrect project passkey'));
+
+      project.value.clearPasskey();
       return this.projects.save(project.value);
     });
   }

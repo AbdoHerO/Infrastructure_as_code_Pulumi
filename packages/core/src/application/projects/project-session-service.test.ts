@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ok, type PersistenceError, type Result, UnauthorizedError } from '@cloudforge/shared';
+import {
+  ok,
+  type PersistenceError,
+  type Result,
+  UnauthorizedError,
+  ValidationError,
+} from '@cloudforge/shared';
 import { Project, type ProjectId, type ProjectPasskey } from '../../domain/project/project.js';
 import type { ProjectPasskeyHasher } from '../ports/project-passkey-hasher.js';
 import type { ProjectRepository } from '../ports/project-repository.js';
@@ -176,6 +182,42 @@ describe('ProjectSessionService', () => {
     const changed = await service.changePasskey('current-passkey', 'replacement-passkey');
     expect(changed).toEqual({ ok: true, value: undefined });
     expect(project.toSnapshot().passkeyHash).toBe('hash:replacement-passkey');
+  });
+
+  it('removes a passkey only with the passkey and the exact project name', async () => {
+    const projects = new MemoryProjects();
+    const project = makeProject('Protected', 'current-passkey');
+    projects.values.set(project.id, project);
+    const context = new InMemoryProjectContext();
+    const service = new ProjectSessionService(projects, passkeys, context);
+    await service.unlock(project.id, 'current-passkey');
+
+    // Both gates are real, and neither alone is enough.
+    const wrongName = await service.removePasskey('current-passkey', 'Protecte');
+    expect(wrongName.ok).toBe(false);
+    if (!wrongName.ok) expect(wrongName.error).toBeInstanceOf(ValidationError);
+
+    const wrongPasskey = await service.removePasskey('wrong-passkey', 'Protected');
+    expect(wrongPasskey.ok).toBe(false);
+    if (!wrongPasskey.ok) expect(wrongPasskey.error).toBeInstanceOf(UnauthorizedError);
+
+    // Still protected after both refusals — a failed attempt must not weaken it.
+    expect(project.toSnapshot().passkeyHash).toBe('hash:current-passkey');
+
+    const removed = await service.removePasskey('current-passkey', 'Protected');
+    expect(removed).toEqual({ ok: true, value: undefined });
+
+    // Hash and salt go together: a hash without its salt verifies against
+    // nothing yet still reads as "protected" to a check that looks at one.
+    expect(project.toSnapshot().passkeyHash).toBeNull();
+    expect(project.toSnapshot().passkeySalt).toBeNull();
+
+    // The workspace stays open. Removing the lock is not a reason to shut the door.
+    expect(context.current()?.projectId).toBe(project.id);
+
+    // And the project can now be unlocked without one.
+    await service.lock();
+    expect((await service.unlock(project.id, '')).ok).toBe(true);
   });
 
   it('requires the current passkey before portable export', async () => {

@@ -131,6 +131,17 @@ export interface IpcContract {
     request: { currentPasskey: string; newPasskey: string };
     response: void;
   };
+  /**
+   * Remove the passkey entirely, leaving the workspace unprotected.
+   *
+   * Separate from `changePasskey` on purpose: an empty new passkey is how a
+   * security control gets switched off by accident, so turning the gate off is
+   * its own channel, carrying the project name as explicit confirmation.
+   */
+  'projects:removePasskey': {
+    request: { currentPasskey: string; confirmationName: string };
+    response: void;
+  };
 
   'credentials:list': { request: void; response: CredentialSummaryDto[] };
   'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
@@ -812,6 +823,7 @@ export const IPC_CHANNELS = [
   'projects:unlock',
   'projects:lock',
   'projects:changePasskey',
+  'projects:removePasskey',
   'credentials:list',
   'credentials:create',
   'credentials:update',
