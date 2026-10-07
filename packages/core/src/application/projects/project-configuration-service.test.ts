@@ -35,7 +35,24 @@ const initialPlan: InfrastructurePlan = {
   resources: [],
 };
 
+/** One deployed resource, so a stack that carries it is genuinely managed. */
+const MANAGED_STACK = {
+  ref: { project: 'store-stack', stack: 'development' },
+  resources: [{ name: 'server', type: 'oci:Core/instance:Instance', provider: 'oracle' }],
+};
+
 async function fixture(hasManagedResources: boolean): Promise<{
+  projectId: string;
+  subject: ProjectConfigurationService;
+  savedPlans: InfrastructurePlan[];
+}> {
+  // A resource, not an empty list: the guard is about deployed infrastructure,
+  // and a fixture whose "managed" stack held nothing described the bug rather
+  // than the rule.
+  return fixtureWithStacks(hasManagedResources ? [MANAGED_STACK] : []);
+}
+
+async function fixtureWithStacks(stacks: readonly unknown[]): Promise<{
   projectId: string;
   subject: ProjectConfigurationService;
   savedPlans: InfrastructurePlan[];
@@ -49,15 +66,7 @@ async function fixture(hasManagedResources: boolean): Promise<{
   if (!created.ok) throw created.error;
   const savedPlans: InfrastructurePlan[] = [];
   const infrastructure = {
-    listManagedStacks: vi
-      .fn()
-      .mockResolvedValue(
-        ok(
-          hasManagedResources
-            ? [{ ref: { project: 'store-stack', stack: 'development' }, resources: [] }]
-            : [],
-        ),
-      ),
+    listManagedStacks: vi.fn().mockResolvedValue(ok(stacks)),
     getPlan: vi.fn().mockResolvedValue(ok(initialPlan)),
     savePlan: vi.fn().mockImplementation((_id: string, plan: InfrastructurePlan) => {
       savedPlans.push(plan);
@@ -94,6 +103,21 @@ describe('ProjectConfigurationService', () => {
     const result = await subject.update(projectId, { region: 'eu-frankfurt-1' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('CONFLICT');
+  });
+
+  it('permits identity changes when the stack exists but holds no resources', async () => {
+    /*
+     * A destroy empties the checkpoint and leaves it on disk, and a preview
+     * that was never applied writes one holding nothing. Treating either as
+     * managed infrastructure locked the project's name, region and provider
+     * and told the user to destroy a stack they had already destroyed — a
+     * dead end with no way to comply.
+     */
+    const { projectId, subject } = await fixtureWithStacks([
+      { ref: { project: 'store-stack', stack: 'development' }, resources: [] },
+    ]);
+    const result = await subject.update(projectId, { region: 'eu-frankfurt-1' });
+    expect(result.ok).toBe(true);
   });
 
   it('still permits descriptive edits on a provisioned project', async () => {

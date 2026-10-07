@@ -50,8 +50,21 @@ export class ProjectConfigurationService {
       const stacks = await this.infrastructure.listManagedStacks();
       if (!stacks.ok) return stacks;
       const currentRef = this.stackReference(current.value);
+      /*
+       * A stack with no resources is not managed infrastructure.
+       *
+       * The checkpoint file outlives what it described: a destroy empties the
+       * stack but leaves it on disk, and a preview that was never applied
+       * creates one holding nothing at all. Testing only for the stack's
+       * existence therefore locked the name, region and provider of a project
+       * with nothing deployed, telling the user to "destroy the stack first"
+       * when they already had — with no way to comply and no way out.
+       */
       hasManagedResources = stacks.value.some(
-        (stack) => stack.ref.project === currentRef.project && stack.ref.stack === currentRef.stack,
+        (stack) =>
+          stack.ref.project === currentRef.project &&
+          stack.ref.stack === currentRef.stack &&
+          stack.resources.length > 0,
       );
       if (hasManagedResources) {
         return {

@@ -83,9 +83,16 @@ export function registerProjectHandlers(): void {
           }
           const ref = projectStackReference(project);
           const stacks = orThrow(await getContainer().infrastructureService.listManagedStacks());
+          // Resources, not merely a stack. A destroy empties the checkpoint but
+          // leaves it on disk, and a preview that was never applied writes one
+          // holding nothing — either would otherwise make the project
+          // permanently undeletable, demanding a destroy that has already run.
           if (
             stacks.some(
-              (managed) => managed.ref.project === ref.project && managed.ref.stack === ref.stack,
+              (managed) =>
+                managed.ref.project === ref.project &&
+                managed.ref.stack === ref.stack &&
+                managed.resources.length > 0,
             )
           ) {
             throw new ConflictError(

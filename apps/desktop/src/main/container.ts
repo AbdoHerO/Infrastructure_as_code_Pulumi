@@ -435,10 +435,27 @@ export async function initContainer(): Promise<AppContainer> {
 
     sslRenewalRunning = true;
     lastSslCheck.set(project.projectId, Date.now());
+    /*
+     * Registered as abortable, which here means "wait for me", not "refuse".
+     *
+     * A non-abortable operation is a blocker: `deactivate` throws rather than
+     * let late state reach another workspace, which is right for a Pulumi apply
+     * the user started and can see. This is a timer. Registering it the same
+     * way meant that every minute, for as long as a renewal sweep took, Lock
+     * and Switch failed with "Wait for the active operation to finish" naming
+     * an operation the user never started and cannot find — and succeeded again
+     * seconds later, which is worse than a consistent failure.
+     *
+     * `renewDue()` takes no signal, so the abort is a no-op and `deactivate`
+     * falls through to awaiting completion. That is the documented teardown
+     * contract — wait for or cancel registered work — and it keeps the
+     * guarantee that matters: the context is not cleared until the sweep has
+     * finished, so nothing it writes can land in the next workspace.
+     */
     const operation = projectOperations.begin(
       `ssl-renewal:${project.sessionId}`,
       project.projectId,
-      false,
+      true,
     );
     try {
       await sslService.renewDue();
