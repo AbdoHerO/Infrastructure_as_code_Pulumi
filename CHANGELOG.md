@@ -5,6 +5,21 @@ All notable changes to CloudForge are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-10-08
+
+### Security
+
+- Electron 43.7.9 and patched transitive packages (undici, @grpc/grpc-js,
+  brace-expansion, tar, js-yaml, ip-address, postcss-selector-parser,
+  http-cache-semantics 4.3.0): the production audit reports no high advisory.
+  http-cache-semantics' max-stale advisory has no published fix; it is reached
+  only through Pulumi's private download cache, which is not shared between users.
+
+### Note
+
+- v0.4.2 was tagged but not published (the release audit stopped it); 0.4.3
+  contains everything listed under 0.4.2.
+
 ## [0.4.2] — 2026-10-08
 
 ### Added
