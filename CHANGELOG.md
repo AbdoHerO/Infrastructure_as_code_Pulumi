@@ -5,6 +5,26 @@ All notable changes to CloudForge are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-10-08
+
+### Added
+
+- Firewall page: a **VPS firewall** section under the cloud security list. It
+  reads the server's own firewall (ufw, firewalld, nftables or iptables) over
+  SSH for the saved target matching the instance, shows which ports each of the
+  two firewalls lets through (80 and 443 marked reachable only when both do),
+  and opens a single port — one click for HTTPS (443) or HTTP (80) — without an
+  Nginx domain or runtime route. CloudForge's own rules can be closed again; the
+  SSH port CloudForge connects through can never be closed. Every change is in
+  the activity log.
+- A PostgreSQL profile with Docker network management; an explicit "Remove
+  passkey" action for projects.
+
+### Fixed
+
+- A surviving route is relinked when its application is removed; an empty stack
+  is no longer reported as managed infrastructure, and a timer is not a blocker.
+
 ### Added
 
 - Completed Phases 12–19: verified SSH host trust, cancellable/time-bounded
