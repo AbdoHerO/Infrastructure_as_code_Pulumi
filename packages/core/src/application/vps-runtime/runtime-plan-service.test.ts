@@ -28,11 +28,7 @@ import type { FirewallRequirement } from './firewall-requirements.js';
 import type { RuntimeOperation } from './runtime-operations.js';
 import { RUNTIME_LABELS } from './runtime-ownership.js';
 import { RuntimePlanService } from './runtime-plan-service.js';
-import {
-  emptyRuntimePlan,
-  validateRuntimePlan,
-  type VpsRuntimePlan,
-} from './vps-runtime-plan.js';
+import { emptyRuntimePlan, validateRuntimePlan, type VpsRuntimePlan } from './vps-runtime-plan.js';
 
 const TARGET = '3f1c2b8e-9a4d-4e5f-8b7a-1c2d3e4f5a6b';
 const NOW = new Date('2026-02-02T10:00:00.000Z');
