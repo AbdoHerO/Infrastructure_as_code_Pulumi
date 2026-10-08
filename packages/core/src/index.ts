@@ -81,6 +81,7 @@ export * from './application/ssh-keys/ssh-key-service.js';
 export * from './application/vps-targets/vps-target-service.js';
 export * from './application/vps-targets/managed-vps-target-sync-service.js';
 export * from './application/nginx/nginx-service.js';
+export * from './application/host-firewall/host-firewall-service.js';
 export * from './application/ssl/ssl-service.js';
 export * from './application/terminal/ssh-terminal-service.js';
 export * from './application/containers/container-service.js';

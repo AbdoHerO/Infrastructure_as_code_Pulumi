@@ -53,6 +53,7 @@ import type {
   RuntimeApplyOptions,
   RuntimeApplyReport,
   HostFirewallState,
+  HostFirewallPort,
   RuntimeConnectivityReport,
   RuntimeDriftReport,
   RuntimeMode,
@@ -465,6 +466,21 @@ export interface IpcContract {
    * it never closes anything, so it cannot take away access that already works.
    */
   'runtime:openFirewall': { request: { targetId: string }; response: HostFirewallState };
+  /**
+   * The VPS's own firewall, by hand: read it, or open or close named ports on a
+   * saved target. Opening is additive and idempotent; closing removes only the
+   * ports named (on iptables/nftables only CloudForge's marked rule) and never
+   * the SSH port CloudForge is connected through.
+   */
+  'hostFirewall:inspect': { request: { targetId: string }; response: HostFirewallState };
+  'hostFirewall:open': {
+    request: { targetId: string; ports: HostFirewallPort[] };
+    response: HostFirewallState;
+  };
+  'hostFirewall:close': {
+    request: { targetId: string; ports: HostFirewallPort[] };
+    response: HostFirewallState;
+  };
   /** Works out what an apply would do and mints a token authorising exactly that. */
   'runtime:preview': {
     request: { targetId: string; options?: RuntimeApplyOptions };
@@ -916,6 +932,9 @@ export const IPC_CHANNELS = [
   'runtime:release',
   'runtime:connectivity',
   'runtime:openFirewall',
+  'hostFirewall:inspect',
+  'hostFirewall:open',
+  'hostFirewall:close',
   'runtime:preview',
   'runtime:apply',
   'terminal:open',

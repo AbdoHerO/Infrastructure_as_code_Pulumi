@@ -13,6 +13,7 @@ import {
   RuntimePlanService,
   type AnsibleManager,
   NginxService,
+  HostFirewallService,
   SslService,
   type DomainResolver,
   type RemoteTargetResolver,
@@ -117,6 +118,7 @@ export interface AppContainer {
   readonly ansibleManager: AnsibleManager;
   readonly vpsTargetService: VpsTargetService;
   readonly nginxService: NginxService;
+  readonly hostFirewallService: HostFirewallService;
   readonly sslService: SslService;
   readonly sshTerminalService: SshTerminalService;
   readonly cloudflareService: CloudflareService;
@@ -370,6 +372,14 @@ export async function initContainer(): Promise<AppContainer> {
     new SshNginxManager(),
     activityService,
     runtimePlanService,
+  );
+  // The VPS's own firewall, port by port from the Firewall page: for ports no
+  // runtime plan can derive (a hosting layer beside CloudForge, a hand-installed
+  // daemon). Same SSH firewall manager as the runtime plan uses.
+  const hostFirewallService = new HostFirewallService(
+    remoteTargetResolver,
+    new SshHostFirewallManager(),
+    activityService,
   );
   const sshTerminalService = new SshTerminalService(
     remoteTargetResolver,
@@ -693,6 +703,7 @@ export async function initContainer(): Promise<AppContainer> {
     ansibleManager,
     vpsTargetService,
     nginxService,
+    hostFirewallService,
     sslService,
     sshTerminalService,
     cloudflareService,

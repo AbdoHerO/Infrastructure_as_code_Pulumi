@@ -31,6 +31,7 @@ import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
 import { useProviderCredentials } from '../providers/useProviders.js';
+import { HostFirewallCard } from './HostFirewallCard.js';
 
 const TEMPLATES: Record<
   string,
@@ -339,6 +340,7 @@ export function FirewallPage(): JSX.Element {
               </div>
             </CardContent>
           </Card>
+          <HostFirewallCard publicIp={firewall.publicIp} providerRules={firewall.rules} />
           <Card>
             <CardHeader>
               <CardTitle>Change history</CardTitle>
