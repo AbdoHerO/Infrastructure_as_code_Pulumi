@@ -2,7 +2,7 @@
   "name": "cloudforge",
   "version": "0.4.2",
   "private": true,
-  "description": "CloudForge — Modern Infrastructure Platform. Provision. Configure. Deploy. Manage.",
+  "description": "CloudForge \u2014 Modern Infrastructure Platform. Provision. Configure. Deploy. Manage.",
   "author": "CloudForge",
   "license": "UNLICENSED",
   "engines": {
@@ -12,7 +12,15 @@
   "packageManager": "pnpm@9.12.0",
   "pnpm": {
     "overrides": {
-      "brace-expansion@5.0.7": "5.0.8"
+      "brace-expansion@>=5.0.0 <5.0.9": "^5.0.9",
+      "@grpc/grpc-js@>=1.14.0 <1.14.5": "^1.14.5",
+      "undici@>=7.0.0 <7.29.0": "^7.29.0",
+      "tar@>=7.0.0 <7.5.21": "^7.5.21",
+      "js-yaml@>=4.0.0 <4.3.1": "^4.3.1",
+      "ip-address@>=10.0.0 <10.3.1": "^10.3.1",
+      "http-cache-semantics@>=4.0.0 <4.3.0": "^4.3.0",
+      "undici@>=6.0.0 <6.28.1": "^6.28.1",
+      "postcss-selector-parser@>=7.0.0 <7.1.6": "^7.1.6"
     }
   },
   "type": "module",
