@@ -176,10 +176,7 @@ services:
   });
 
   it('offers the top-level name, and ignores a container_name with a variable', () => {
-    const analysis = analyzeCompose(
-      `name: shop\n${compose('    container_name: app-$ENV')}`,
-      '',
-    );
+    const analysis = analyzeCompose(`name: shop\n${compose('    container_name: app-$ENV')}`, '');
     expect(analysis.name).toBe('shop');
     expect(analysis.services[0]?.containerName).toBeNull();
   });
