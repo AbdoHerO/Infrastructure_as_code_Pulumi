@@ -14,6 +14,7 @@ import {
   type AnsibleManager,
   NginxService,
   HostFirewallService,
+  HostAccessService,
   SslService,
   type DomainResolver,
   type RemoteTargetResolver,
@@ -44,6 +45,7 @@ import {
   SshContainerManager,
   AnsibleNativeServiceRequirements,
   SshHostFirewallManager,
+  SshHostAccessManager,
   SshRuntimeApplier,
   SshRuntimeInspector,
   SshDeployer,
@@ -119,6 +121,7 @@ export interface AppContainer {
   readonly vpsTargetService: VpsTargetService;
   readonly nginxService: NginxService;
   readonly hostFirewallService: HostFirewallService;
+  readonly hostAccessService: HostAccessService;
   readonly sslService: SslService;
   readonly sshTerminalService: SshTerminalService;
   readonly cloudflareService: CloudflareService;
@@ -379,6 +382,13 @@ export async function initContainer(): Promise<AppContainer> {
   const hostFirewallService = new HostFirewallService(
     remoteTargetResolver,
     new SshHostFirewallManager(),
+    activityService,
+  );
+  // SSH access for other people (a client, a colleague), from the SSH Keys page:
+  // their own account and public key on a saved target, never CloudForge's key.
+  const hostAccessService = new HostAccessService(
+    remoteTargetResolver,
+    new SshHostAccessManager(),
     activityService,
   );
   const sshTerminalService = new SshTerminalService(
@@ -704,6 +714,7 @@ export async function initContainer(): Promise<AppContainer> {
     vpsTargetService,
     nginxService,
     hostFirewallService,
+    hostAccessService,
     sslService,
     sshTerminalService,
     cloudflareService,

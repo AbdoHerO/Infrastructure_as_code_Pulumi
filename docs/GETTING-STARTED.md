@@ -207,6 +207,8 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 - **Templates** — browse infrastructure & deployment blueprints.
 - **SSH Keys** — generate/import Ed25519 or RSA pairs, inspect and copy public
   keys/fingerprints, explicitly reveal private material, and delete credentials.
+  **SSH access for other people** gives a client or colleague their own account
+  and key on a saved server, with connection instructions ready to send.
 - **Containers** — use verified SSH transport to list/control containers, read
   logs/stats, and deploy Compose projects without exposing the Docker TCP socket.
 - **Ansible** — save and verify any Linux VPS, inspect real readiness, confirm

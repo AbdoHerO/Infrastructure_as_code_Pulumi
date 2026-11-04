@@ -54,6 +54,7 @@ import type {
   RuntimeApplyReport,
   HostFirewallState,
   HostFirewallPort,
+  HostAccessState,
   RuntimeConnectivityReport,
   RuntimeDriftReport,
   RuntimeMode,
@@ -480,6 +481,20 @@ export interface IpcContract {
   'hostFirewall:close': {
     request: { targetId: string; ports: HostFirewallPort[] };
     response: HostFirewallState;
+  };
+  /**
+   * SSH access for other people on a saved target: their own account and public
+   * key (never CloudForge's), optionally with sudo. Only accounts CloudForge
+   * created are ever changed or removed; its own login account is refused.
+   */
+  'hostAccess:inspect': { request: { targetId: string }; response: HostAccessState };
+  'hostAccess:grant': {
+    request: { targetId: string; username: string; publicKey: string; sudo: boolean };
+    response: HostAccessState;
+  };
+  'hostAccess:revoke': {
+    request: { targetId: string; username: string };
+    response: HostAccessState;
   };
   /** Works out what an apply would do and mints a token authorising exactly that. */
   'runtime:preview': {
@@ -935,6 +950,9 @@ export const IPC_CHANNELS = [
   'hostFirewall:inspect',
   'hostFirewall:open',
   'hostFirewall:close',
+  'hostAccess:inspect',
+  'hostAccess:grant',
+  'hostAccess:revoke',
   'runtime:preview',
   'runtime:apply',
   'terminal:open',

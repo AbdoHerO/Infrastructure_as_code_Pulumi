@@ -15,6 +15,7 @@ obtain it**.
 - [Credentials at a glance](#credentials-at-a-glance)
 - [Oracle Cloud (OCI)](#oracle-cloud-oci) ← detailed
 - [SSH keys (for deployments)](#ssh-keys-for-deployments) ← detailed
+- [SSH access for other people](#ssh-access-for-other-people)
 - [Other providers & services](#other-providers--services)
 - [In-app settings](#in-app-settings)
 - [Developer & release configuration](#developer--release-configuration)
@@ -232,6 +233,40 @@ The Ansible page can persist the verified destination as a **VPS target**. Its
 preflight is read-only; **Prepare VPS** lists and confirms prerequisite packages
 before installing the isolated runtime. A current Ready result is required for
 each selected profile.
+
+## SSH access for other people
+
+To let a client or a colleague connect to one of your servers over SSH, never
+send them CloudForge's private key: it is CloudForge's access, it may open other
+servers too, and you could not take their access away without breaking
+CloudForge's. Give them **their own account and key** instead, from
+**SSH Keys → SSH access for other people**:
+
+1. **Choose the server** (a saved VPS target, see Ansible → Targets). The table
+   lists who already has access given by CloudForge.
+2. **Ask for their public key.** _Copy the request_ gives a message (English or
+   French) telling them to run `ssh-keygen -t ed25519` and send back only the
+   `.pub` file — one line starting with `ssh-ed25519`.
+3. **Give access.** Enter an account name (for example `alex`), paste their
+   public key, choose whether they get administrator rights (`sudo`), and
+   confirm. CloudForge creates the account on the server (key-only login, no
+   password), installs the key and, with sudo, a rule checked by `visudo`.
+   Adding a second key to the same account works the same way.
+4. **Send the instructions.** CloudForge shows the command
+   (`ssh alex@<address>`), the server's fingerprint to check at the first
+   connection, and a message ready to copy, in English or French. _Instructions_
+   in the table shows them again at any time.
+
+**Remove** deletes the account, its home folder and its sudo rule, and closes the
+person's open sessions; CloudForge's own access is not touched.
+
+Safety rules: only accounts CloudForge created (marked `CloudForge access` in
+`/etc/passwd`) are ever changed or removed; an existing account such as `ubuntu`
+or `root`, and the account CloudForge connects with, are refused. A pasted
+private key is refused with a warning. CloudForge never edits the SSH server's
+configuration; if an `AllowUsers` / `AllowGroups` list or `PubkeyAuthentication
+no` would stop the person from logging in, the page says so. Every change is in
+the activity log (the account and key type, never the key itself).
 
 ---
 

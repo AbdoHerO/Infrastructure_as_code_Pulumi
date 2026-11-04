@@ -29,6 +29,7 @@ import {
   useImportSshKey,
   useSshKeys,
 } from './useSshKeys.js';
+import { ServerAccessCard } from './ServerAccessCard.js';
 
 export function SshKeysPage(): JSX.Element {
   const keys = useSshKeys();
@@ -79,6 +80,8 @@ export function SshKeysPage(): JSX.Element {
           </CardContent>
         </Card>
       )}
+
+      <ServerAccessCard />
 
       <KeyDialog mode={dialog} onClose={() => setDialog(null)} />
       <NameConfirmationDialog
