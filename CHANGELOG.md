@@ -5,6 +5,44 @@ All notable changes to CloudForge are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-10-26
+
+### Added
+
+- **WordPress** page: deploy a WordPress site on a saved server and domain in one
+  step. The latest official images (WordPress, MariaDB LTS, WP-CLI) run as one
+  Docker Compose stack per site, visible in Containers and Dockhand; CloudForge
+  installs WordPress (title, admin account, HTTPS-aware site URL, 64 MB uploads),
+  creates the Cloudflare DNS record (optional), publishes the domain with Nginx
+  and requests a Let’s Encrypt certificate. Each site can be checked, updated
+  (images and WordPress core), redeployed, removed (data kept) or deleted. The
+  database and admin passwords are generated, stored as an encrypted secret and
+  never placed in a script, a command line or a log. The domain is picked from
+  the Cloudflare account's domains (the domain itself or a new subdomain) and
+  is blocked when another site, a Jenkins pipeline, an Nginx site on the
+  server or a Cloudflare record pointing elsewhere already uses it.
+- SSH Keys page: **SSH access for other people**. Give a client or a colleague
+  their own account on a saved server from their public key, with or without
+  sudo, and get the connection instructions (command, server fingerprint and a
+  message to send, in English or French). A ready-made message asks the person
+  for their public key. Remove deletes the account and closes their sessions.
+  Only accounts CloudForge created are ever changed; existing accounts, `root`
+  and CloudForge's own login are refused; private keys are refused with a
+  warning; the SSH server's configuration is only read, and blocking settings
+  (`AllowUsers`, `AllowGroups`, public-key login off) are reported.
+
+### Fixed
+
+- Export project and Restore failed with "Foreign key constraint violated" on
+  installations upgraded from the single-workspace version: deleting the other
+  projects from the backup copy tripped the ownership triggers, and tables
+  without a cascade could keep other projects' rows. Both now delete each
+  project's rows explicitly, like project deletion already did.
+- macOS: CloudForge opened from Finder or the Dock now finds a Pulumi CLI
+  installed with Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`) or with
+  Pulumi's installer (`~/.pulumi/bin`); such apps only get the system's minimal
+  PATH.
+
 ## [0.4.3] — 2026-10-08
 
 ### Security
