@@ -21,6 +21,7 @@ import { registerCloudflareHandlers } from './handlers/cloudflare.handlers.js';
 import { registerJenkinsHandlers } from './handlers/jenkins.handlers.js';
 import { registerHostFirewallHandlers } from './handlers/host-firewall.handlers.js';
 import { registerHostAccessHandlers } from './handlers/host-access.handlers.js';
+import { registerWordPressHandlers } from './handlers/wordpress.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -50,4 +51,5 @@ export function registerIpcHandlers(): void {
   registerJenkinsHandlers();
   registerHostFirewallHandlers();
   registerHostAccessHandlers();
+  registerWordPressHandlers();
 }

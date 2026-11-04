@@ -55,6 +55,12 @@ import type {
   HostFirewallState,
   HostFirewallPort,
   HostAccessState,
+  WordPressDomainCheck,
+  WordPressDomainQuery,
+  WordPressEvent,
+  WordPressRuntimeStatus,
+  WordPressSiteInput,
+  WordPressSiteRecord,
   RuntimeConnectivityReport,
   RuntimeDriftReport,
   RuntimeMode,
@@ -488,6 +494,22 @@ export interface IpcContract {
    * created are ever changed or removed; its own login account is refused.
    */
   'hostAccess:inspect': { request: { targetId: string }; response: HostAccessState };
+  'wordpress:list': { request: void; response: WordPressSiteRecord[] };
+  'wordpress:checkDomain': { request: WordPressDomainQuery; response: WordPressDomainCheck };
+  'wordpress:create': {
+    request: { site: WordPressSiteInput; streamId: string };
+    response: { site: WordPressSiteRecord; adminPassword: string };
+  };
+  'wordpress:redeploy': {
+    request: { id: string; streamId: string };
+    response: WordPressSiteRecord;
+  };
+  'wordpress:update': { request: { id: string; streamId: string }; response: WordPressSiteRecord };
+  'wordpress:status': { request: { id: string }; response: WordPressRuntimeStatus };
+  'wordpress:remove': {
+    request: { id: string; deleteData: boolean; streamId: string };
+    response: void;
+  };
   'hostAccess:grant': {
     request: { targetId: string; username: string; publicKey: string; sudo: boolean };
     response: HostAccessState;
@@ -724,6 +746,7 @@ export interface IpcEventContract {
   'nginx:log': { streamId: string; event: NginxEvent };
   'runtime:log': { streamId: string; event: RuntimeApplyEvent };
   'ssl:log': { streamId: string; event: CertificateEvent };
+  'wordpress:log': { streamId: string; event: WordPressEvent };
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
   'cloudflare:changed': {
@@ -751,6 +774,7 @@ export const IPC_EVENT_CHANNELS = [
   'nginx:log',
   'runtime:log',
   'ssl:log',
+  'wordpress:log',
   'updates:state',
   'vpsTargets:changed',
   'cloudflare:changed',
@@ -951,6 +975,13 @@ export const IPC_CHANNELS = [
   'hostFirewall:open',
   'hostFirewall:close',
   'hostAccess:inspect',
+  'wordpress:list',
+  'wordpress:checkDomain',
+  'wordpress:create',
+  'wordpress:redeploy',
+  'wordpress:update',
+  'wordpress:status',
+  'wordpress:remove',
   'hostAccess:grant',
   'hostAccess:revoke',
   'runtime:preview',

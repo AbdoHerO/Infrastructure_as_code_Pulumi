@@ -223,6 +223,9 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 - **Jenkins Pipelines** — create per-VPS application jobs, use private GitHub
   repositories, synchronize application ports, run builds, and automate
   Cloudflare/Nginx domain routing. See [Jenkins Pipelines](JENKINS-PIPELINES.md).
+- **WordPress** — deploy the latest WordPress and MariaDB in Docker on a domain,
+  with Cloudflare DNS, Nginx and HTTPS, then check, update, redeploy or remove
+  each site. See [WordPress sites](WORDPRESS.md).
 - **SSH Terminal** — open an interactive fingerprint-verified shell using the
   same encrypted target credential without copying private keys into React.
 

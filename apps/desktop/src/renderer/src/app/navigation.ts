@@ -23,6 +23,7 @@ import {
   LockKeyhole,
   CloudCog,
   GitBranch,
+  Newspaper,
 } from 'lucide-react';
 
 /** A single navigable module in the sidebar. */
@@ -64,6 +65,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'SSL & Domains', path: '/ssl', icon: LockKeyhole },
       { label: 'Cloudflare', path: '/cloudflare', icon: CloudCog },
       { label: 'Jenkins Pipelines', path: '/jenkins', icon: GitBranch },
+      { label: 'WordPress', path: '/wordpress', icon: Newspaper },
       { label: 'SSH Terminal', path: '/terminal', icon: SquareTerminal },
     ],
   },

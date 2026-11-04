@@ -181,6 +181,9 @@ same stream.
 | `ansible:targets`                  | Persist reusable fingerprint-pinned VPS destinations        |
 | `hostAccess:inspect`               | Accounts CloudForge created for other people's SSH access   |
 | `hostAccess:grant/revoke`          | Give (account, public key, optional sudo) or remove access  |
+| `wordpress:list/status`            | WordPress sites of the project and their containers         |
+| `wordpress:create`                 | Deploy a site; returns the admin password once              |
+| `wordpress:redeploy/update/remove` | Re-run all steps, update images and core, remove            |
 | `ansible:profiles/status`          | Catalog and managed remote Ansible runtime state            |
 | `ansible:preflight/repair`         | Readiness facts, blockers and confirmed prerequisite repair |
 | `ansible:bootstrap/run`            | Install runtime and run a gated, streamed generic profile   |

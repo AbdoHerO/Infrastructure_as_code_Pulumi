@@ -15,6 +15,7 @@ import {
   NginxService,
   HostFirewallService,
   HostAccessService,
+  WordPressService,
   SslService,
   type DomainResolver,
   type RemoteTargetResolver,
@@ -46,6 +47,7 @@ import {
   AnsibleNativeServiceRequirements,
   SshHostFirewallManager,
   SshHostAccessManager,
+  SshWordPressManager,
   SshRuntimeApplier,
   SshRuntimeInspector,
   SshDeployer,
@@ -64,6 +66,7 @@ import {
   PrismaCredentialRepository,
   PrismaDeploymentRepository,
   PrismaPlanStore,
+  PrismaWordPressSiteStore,
   PrismaRuntimePlanStore,
   PrismaPluginRepository,
   PrismaProjectRepository,
@@ -122,6 +125,7 @@ export interface AppContainer {
   readonly nginxService: NginxService;
   readonly hostFirewallService: HostFirewallService;
   readonly hostAccessService: HostAccessService;
+  readonly wordpressService: WordPressService;
   readonly sslService: SslService;
   readonly sshTerminalService: SshTerminalService;
   readonly cloudflareService: CloudflareService;
@@ -422,8 +426,9 @@ export async function initContainer(): Promise<AppContainer> {
     domainResolver,
     activityService,
   );
+  const jenkinsPipelineRepository = new PrismaJenkinsPipelineRepository(db, projectContext);
   const jenkinsPipelineService = new JenkinsPipelineService(
-    new PrismaJenkinsPipelineRepository(db, projectContext),
+    jenkinsPipelineRepository,
     vpsTargetService,
     credentialService,
     new JenkinsHttpManager(),
@@ -442,6 +447,35 @@ export async function initContainer(): Promise<AppContainer> {
     cloudflareDnsAutomationService,
     cloudflareService,
     runtimePlanService,
+  );
+  // WordPress sites from the WordPress page: one Docker Compose project per site,
+  // published through the same Cloudflare DNS, Nginx and certificate services.
+  const wordpressService = new WordPressService(
+    new PrismaWordPressSiteStore(db, projectContext),
+    remoteTargetResolver,
+    new SshWordPressManager(),
+    credentialService,
+    activityService,
+    nginxService,
+    cloudflareDnsAutomationService,
+    sslService,
+    cloudflareService,
+    {
+      // Read straight from the repository: JenkinsPipelineService.list() also
+      // synchronizes the runtime plan, which a domain check must not do.
+      async owners(domain) {
+        const pipelines = await jenkinsPipelineRepository.list();
+        if (!pipelines.ok) return pipelines;
+        return ok(
+          pipelines.value
+            .filter(
+              (pipeline) =>
+                pipeline.configureDomain && pipeline.domain.trim().toLowerCase() === domain,
+            )
+            .map((pipeline) => `Jenkins pipeline ${pipeline.name}`),
+        );
+      },
+    },
   );
   const lastSslCheck = new Map<string, number>();
   let sslRenewalRunning = false;
@@ -715,6 +749,7 @@ export async function initContainer(): Promise<AppContainer> {
     nginxService,
     hostFirewallService,
     hostAccessService,
+    wordpressService,
     sslService,
     sshTerminalService,
     cloudflareService,

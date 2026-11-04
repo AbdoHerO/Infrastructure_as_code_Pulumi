@@ -16,6 +16,7 @@ export * from './host-firewall-script.js';
 export { AnsibleNativeServiceRequirements } from './ansible-native-service-requirements.js';
 export { SshHostFirewallManager } from './ssh-host-firewall-manager.js';
 export { SshHostAccessManager } from './ssh-host-access-manager.js';
+export { SshWordPressManager } from './ssh-wordpress-manager.js';
 export { SshRuntimeApplier, commandFor } from './ssh-runtime-applier.js';
 export { SshRuntimeInspector } from './ssh-runtime-inspector.js';
 export {

@@ -23,6 +23,7 @@ import { DocumentationPage } from '../features/documentation/DocumentationPage.j
 import { TerminalPage } from '../features/terminal/TerminalPage.js';
 import { CloudflarePage } from '../features/cloudflare/CloudflarePage.js';
 import { JenkinsPage } from '../features/jenkins/JenkinsPage.js';
+import { WordPressPage } from '../features/wordpress/WordPressPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -48,6 +49,7 @@ export const router = createHashRouter([
       { path: 'terminal', element: <TerminalPage /> },
       { path: 'cloudflare', element: <CloudflarePage /> },
       { path: 'jenkins', element: <JenkinsPage /> },
+      { path: 'wordpress', element: <WordPressPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

@@ -103,7 +103,8 @@ export const DEPLOYMENT_TEMPLATES: readonly DeploymentTemplate[] = [
   {
     id: 'wordpress',
     name: 'WordPress',
-    description: 'WordPress + MySQL via Docker Compose.',
+    description:
+      'Bare WordPress container on port 80, without a database or domain. For a real site use the WordPress page.',
     build: () => [
       ...dockerBase(),
       step(
