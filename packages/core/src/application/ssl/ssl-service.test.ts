@@ -304,6 +304,7 @@ describe('SslService', () => {
         ),
       } as never,
       {
+        listSites: vi.fn().mockResolvedValue(ok([{ domain: config.domain }])),
         reload: vi.fn().mockResolvedValue(err(new DeploymentError('reload failed'))),
       } as never,
       undefined,
@@ -322,5 +323,31 @@ describe('SslService', () => {
           entry.metadata.domain === config.domain,
       ),
     ).toBe(true);
+  });
+
+  it('stops renewing a certificate whose Nginx site was removed', async () => {
+    const renew = vi.fn();
+    const update = vi.fn().mockResolvedValue(ok(undefined));
+    const settings = ok({
+      ...DEFAULT_SETTINGS,
+      ssl: {
+        ...DEFAULT_SETTINGS.ssl,
+        autoRenew: true,
+        managed: [{ targetId: 'target', ...config }],
+      },
+    });
+    const service = new SslService(
+      { resolve: vi.fn().mockResolvedValue(ok({ host: '203.0.113.10' })) },
+      { resolve: vi.fn() },
+      { list: vi.fn().mockResolvedValue(ok([])), renew } as never,
+      { recordSafe: vi.fn() } as never,
+      { get: vi.fn().mockResolvedValue(settings), update } as never,
+      { listSites: vi.fn().mockResolvedValue(ok([])) } as never,
+    );
+
+    await service.renewDue();
+
+    expect(renew).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith({ ssl: { managed: [] } });
   });
 });

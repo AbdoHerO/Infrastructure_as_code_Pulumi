@@ -23,6 +23,7 @@ import {
   LockKeyhole,
   CloudCog,
   GitBranch,
+  Layers,
   Newspaper,
 } from 'lucide-react';
 
@@ -66,6 +67,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Cloudflare', path: '/cloudflare', icon: CloudCog },
       { label: 'Jenkins Pipelines', path: '/jenkins', icon: GitBranch },
       { label: 'WordPress', path: '/wordpress', icon: Newspaper },
+      { label: 'Docker Stacks', path: '/stacks', icon: Layers },
       { label: 'SSH Terminal', path: '/terminal', icon: SquareTerminal },
     ],
   },

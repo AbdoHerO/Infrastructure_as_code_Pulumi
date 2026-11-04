@@ -55,8 +55,13 @@ import type {
   HostFirewallState,
   HostFirewallPort,
   HostAccessState,
-  WordPressDomainCheck,
-  WordPressDomainQuery,
+  ComposeAnalysis,
+  DomainCheck,
+  DomainQuery,
+  StackEvent,
+  StackInput,
+  StackRecord,
+  StackRuntimeStatus,
   WordPressEvent,
   WordPressRuntimeStatus,
   WordPressSiteInput,
@@ -495,7 +500,37 @@ export interface IpcContract {
    */
   'hostAccess:inspect': { request: { targetId: string }; response: HostAccessState };
   'wordpress:list': { request: void; response: WordPressSiteRecord[] };
-  'wordpress:checkDomain': { request: WordPressDomainQuery; response: WordPressDomainCheck };
+  'domains:check': { request: DomainQuery; response: DomainCheck };
+  'stacks:list': { request: void; response: StackRecord[] };
+  'stacks:analyze': {
+    request: { composeYaml: string; environment: string };
+    response: ComposeAnalysis;
+  };
+  'stacks:chooseFolder': {
+    request: void;
+    response: {
+      folderName: string;
+      composeFileName: string;
+      composeYaml: string;
+      environment: string;
+      hasEnvironment: boolean;
+    } | null;
+  };
+  'stacks:create': { request: { stack: StackInput; streamId: string }; response: StackRecord };
+  'stacks:reveal': {
+    request: { id: string };
+    response: { composeYaml: string; environment: string };
+  };
+  'stacks:update': {
+    request: { id: string; composeYaml: string; environment: string; streamId: string };
+    response: StackRecord;
+  };
+  'stacks:redeploy': { request: { id: string; streamId: string }; response: StackRecord };
+  'stacks:status': { request: { id: string }; response: StackRuntimeStatus };
+  'stacks:remove': {
+    request: { id: string; deleteData: boolean; streamId: string };
+    response: { warnings: string[] };
+  };
   'wordpress:create': {
     request: { site: WordPressSiteInput; streamId: string };
     response: { site: WordPressSiteRecord; adminPassword: string };
@@ -747,6 +782,7 @@ export interface IpcEventContract {
   'runtime:log': { streamId: string; event: RuntimeApplyEvent };
   'ssl:log': { streamId: string; event: CertificateEvent };
   'wordpress:log': { streamId: string; event: WordPressEvent };
+  'stacks:log': { streamId: string; event: StackEvent };
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
   'cloudflare:changed': {
@@ -775,6 +811,7 @@ export const IPC_EVENT_CHANNELS = [
   'runtime:log',
   'ssl:log',
   'wordpress:log',
+  'stacks:log',
   'updates:state',
   'vpsTargets:changed',
   'cloudflare:changed',
@@ -976,7 +1013,16 @@ export const IPC_CHANNELS = [
   'hostFirewall:close',
   'hostAccess:inspect',
   'wordpress:list',
-  'wordpress:checkDomain',
+  'domains:check',
+  'stacks:list',
+  'stacks:analyze',
+  'stacks:chooseFolder',
+  'stacks:create',
+  'stacks:reveal',
+  'stacks:update',
+  'stacks:redeploy',
+  'stacks:status',
+  'stacks:remove',
   'wordpress:create',
   'wordpress:redeploy',
   'wordpress:update',

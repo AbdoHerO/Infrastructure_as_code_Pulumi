@@ -226,6 +226,9 @@ Instance public/private IPs are surfaced as stack outputs after Apply.
 - **WordPress** — deploy the latest WordPress and MariaDB in Docker on a domain,
   with Cloudflare DNS, Nginx and HTTPS, then check, update, redeploy or remove
   each site. See [WordPress sites](WORDPRESS.md).
+- **Docker Stacks** — deploy any Docker Compose stack on a domain or subdomain,
+  with its Cloudflare record, Nginx site and HTTPS certificate, blocked when the
+  domain is already used. See [Docker stacks](DOCKER-STACKS.md).
 - **SSH Terminal** — open an interactive fingerprint-verified shell using the
   same encrypted target credential without copying private keys into React.
 

@@ -30,6 +30,7 @@ backup/restore and the packaged update workflow are implemented.
 | [Cloudflare](CLOUDFLARE.md)                                                 | Account, zones, DNS, SSL/TLS, cache, analytics, security and edge-service integration                             |
 | [Jenkins Pipelines](JENKINS-PIPELINES.md)                                   | Per-VPS Jenkins folders, private Git checkout, parameterized builds, domain automation, and status                |
 | [WordPress sites](WORDPRESS.md)                                             | Latest WordPress + MariaDB in Docker on a domain, with Cloudflare DNS, Nginx, HTTPS, updates and removal          |
+| [Docker stacks](DOCKER-STACKS.md)                                           | Any Docker Compose stack on a domain, with Cloudflare DNS, Nginx, HTTPS and blocked domains                       |
 | [Infrastructure updates](INFRASTRUCTURE-UPDATES.md)                         | Pulumi identity, update/replace behavior, destructive previews, and mandatory preview approval                    |
 | [Configuration & Credentials](CONFIGURATION.md)                             | Every credential/key you must provide (Oracle, SSH, …) and **how to get it**                                      |
 | [Overview](OVERVIEW.md)                                                     | What CloudForge is, core concepts, glossary, end-to-end user workflows                                            |

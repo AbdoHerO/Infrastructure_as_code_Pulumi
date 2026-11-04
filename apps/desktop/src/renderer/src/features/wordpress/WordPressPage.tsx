@@ -1,22 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Copy,
-  ExternalLink,
-  Globe,
-  RefreshCw,
-  Rocket,
-  Trash2,
-  Wrench,
-  XCircle,
-} from 'lucide-react';
+import { AlertTriangle, Copy, Globe, RefreshCw, Rocket, Trash2, Wrench } from 'lucide-react';
 import {
   nextWordPressPort,
   validateWordPressSite,
   wordpressSiteUrl,
-  type WordPressDomainCheck,
   type WordPressRuntimeStatus,
   type WordPressSiteRecord,
 } from '@cloudforge/core';
@@ -41,16 +29,18 @@ import {
   TableRow,
   toast,
 } from '@cloudforge/ui';
+import {
+  DomainPicker,
+  NO_DOMAIN,
+  SiteLink,
+  type DomainSelection,
+} from '../../components/DomainPicker.js';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
-import { useCredentials } from '../secrets/useCredentials.js';
 
 const SITES_KEY = ['wordpress', 'sites'] as const;
-/** One or more DNS labels in front of the Cloudflare domain: `blog`, `shop.eu`. */
-const SUBDOMAIN =
-  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 async function copy(value: string, label: string): Promise<void> {
   try {
@@ -75,91 +65,22 @@ function statusBadge(site: WordPressSiteRecord): JSX.Element {
   );
 }
 
-function DomainAvailability({
-  domain,
-  check,
-  checking,
-}: {
-  domain: string;
-  check: WordPressDomainCheck | null;
-  checking: boolean;
-}): JSX.Element {
-  if (checking || !check)
-    return (
-      <p className="text-muted-foreground flex items-center gap-2 text-sm">
-        <RefreshCw className="size-4 animate-spin" /> Checking whether {domain} is free…
-      </p>
-    );
-  if (!check.available)
-    return (
-      <div className="border-destructive/40 bg-destructive/5 rounded-md border p-3 text-sm">
-        <p className="text-destructive flex items-center gap-2 font-medium">
-          <XCircle className="size-4" /> {domain} is already in use. Choose another subdomain.
-        </p>
-        <ul className="text-muted-foreground mt-1 list-disc pl-6">
-          {check.conflicts.map((conflict) => (
-            <li key={conflict}>{conflict}</li>
-          ))}
-        </ul>
-      </div>
-    );
-  return (
-    <div className="text-sm">
-      <p className="text-success flex items-center gap-2 font-medium">
-        <CheckCircle2 className="size-4" /> {domain} is free
-      </p>
-      {check.notes.map((note) => (
-        <p key={note} className="text-muted-foreground pl-6">
-          {note}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-/** A URL the operating-system browser may open: the app only lets HTTPS leave. */
-function SiteLink({ url, label }: { url: string; label: string }): JSX.Element {
-  return url.startsWith('https://') ? (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary inline-flex items-center gap-1 hover:underline"
-    >
-      {label} <ExternalLink className="size-3" />
-    </a>
-  ) : (
-    <span>{label}</span>
-  );
-}
-
 export function WordPressPage(): JSX.Element {
   const confirm = useConfirmation();
   const client = useQueryClient();
   const targets = useVpsTargets();
-  const credentials = useCredentials();
-  const cloudflareCredentials = useMemo(
-    () => credentials.data?.filter((credential) => credential.kind === 'cloudflare') ?? [],
-    [credentials.data],
-  );
   const sites = useQuery({
     queryKey: SITES_KEY,
     queryFn: () => invoke('wordpress:list', undefined),
   });
 
   const [targetId, setTargetId] = useState('');
-  const [zoneId, setZoneId] = useState('');
-  const [domainMode, setDomainMode] = useState<'subdomain' | 'root'>('subdomain');
-  const [subdomain, setSubdomain] = useState('');
-  const [manualDomain, setManualDomain] = useState('');
-  const [domainCheck, setDomainCheck] = useState<WordPressDomainCheck | null>(null);
-  const [checkingDomain, setCheckingDomain] = useState(false);
+  const [selection, setSelection] = useState<DomainSelection>(NO_DOMAIN);
   const [siteTitle, setSiteTitle] = useState('');
   const [adminUser, setAdminUser] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [hostPort, setHostPort] = useState('');
-  const [cloudflareCredentialId, setCloudflareCredentialId] = useState('');
   const [https, setHttps] = useState(true);
   const [certificateEmail, setCertificateEmail] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
@@ -174,13 +95,6 @@ export function WordPressPage(): JSX.Element {
   useEffect(() => {
     if (!targetId && targets.data?.[0]) setTargetId(targets.data[0].id);
   }, [targetId, targets.data]);
-  // Preselect the first Cloudflare account once; choosing "not on Cloudflare" stays chosen.
-  const [accountPicked, setAccountPicked] = useState(false);
-  useEffect(() => {
-    if (accountPicked || !credentials.data) return;
-    setAccountPicked(true);
-    if (cloudflareCredentials[0]) setCloudflareCredentialId(cloudflareCredentials[0].id);
-  }, [accountPicked, credentials.data, cloudflareCredentials]);
   useEffect(
     () =>
       subscribe('wordpress:log', (payload) => {
@@ -193,65 +107,8 @@ export function WordPressPage(): JSX.Element {
     [streamId],
   );
 
-  const zones = useQuery({
-    queryKey: ['cloudflare', 'zones', cloudflareCredentialId],
-    queryFn: () => invoke('cloudflare:zones', { credentialId: cloudflareCredentialId }),
-    enabled: cloudflareCredentialId !== '',
-  });
-  useEffect(() => {
-    const available = zones.data ?? [];
-    if (available.length > 0 && !available.some((zone) => zone.id === zoneId))
-      setZoneId(available[0]?.id ?? '');
-  }, [zoneId, zones.data]);
-  const zone = zones.data?.find((item) => item.id === zoneId);
-  const subdomainValid = SUBDOMAIN.test(subdomain);
-  const domain = cloudflareCredentialId
-    ? zone
-      ? domainMode === 'root'
-        ? zone.name
-        : subdomainValid
-          ? `${subdomain}.${zone.name}`
-          : ''
-      : ''
-    : manualDomain.trim().toLowerCase();
-
-  // Ask the main process whether anything already uses the domain: another site,
-  // a Jenkins application, Nginx on the server, or a Cloudflare record elsewhere.
-  useEffect(() => {
-    setDomainCheck(null);
-    if (!targetId || !/^[a-z0-9.-]+\.[a-z]{2,63}$/.test(domain)) return;
-    let current = true;
-    const timer = setTimeout(() => {
-      setCheckingDomain(true);
-      invoke('wordpress:checkDomain', {
-        targetId,
-        domain,
-        cloudflareCredentialId: cloudflareCredentialId || null,
-        cloudflareZoneId: cloudflareCredentialId ? zoneId || null : null,
-      })
-        .then((result) => {
-          if (current) setDomainCheck(result);
-        })
-        .catch((error: unknown) => {
-          if (current)
-            setDomainCheck({
-              domain,
-              available: false,
-              conflicts: [`Could not check the domain: ${message(error)}`],
-              notes: [],
-            });
-        })
-        .finally(() => {
-          if (current) setCheckingDomain(false);
-        });
-    }, 600);
-    return () => {
-      current = false;
-      clearTimeout(timer);
-      setCheckingDomain(false);
-    };
-  }, [targetId, domain, cloudflareCredentialId, zoneId, sites.data]);
-  const domainReady = domainCheck?.domain === domain && domainCheck.available && !checkingDomain;
+  const { domain, cloudflareCredentialId } = selection;
+  const domainReady = selection.ready;
 
   const target = targets.data?.find((item) => item.id === targetId);
   const suggestedPort = nextWordPressPort(
@@ -265,8 +122,8 @@ export function WordPressPage(): JSX.Element {
     adminEmail,
     adminPassword,
     hostPort: hostPort.trim() === '' ? null : Number(hostPort),
-    cloudflareCredentialId: cloudflareCredentialId || null,
-    cloudflareZoneId: cloudflareCredentialId ? zoneId || null : null,
+    cloudflareCredentialId,
+    cloudflareZoneId: selection.cloudflareZoneId,
     https,
     certificateEmail,
   };
@@ -437,102 +294,13 @@ export function WordPressPage(): JSX.Element {
                 ))}
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="wp-cloudflare">Cloudflare account</Label>
-              <Select
-                id="wp-cloudflare"
-                value={cloudflareCredentialId}
-                onChange={(event) => setCloudflareCredentialId(event.target.value)}
-              >
-                {cloudflareCredentials.map((credential) => (
-                  <option key={credential.id} value={credential.id}>
-                    {credential.name}
-                  </option>
-                ))}
-                <option value="">Domain not on Cloudflare (I set DNS myself)</option>
-              </Select>
-            </div>
-            {cloudflareCredentialId ? (
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="wp-zone">Domain</Label>
-                <div className="grid gap-3 md:grid-cols-[1fr_auto_1.4fr]">
-                  <Select
-                    id="wp-zone"
-                    value={zoneId}
-                    disabled={zones.isLoading}
-                    onChange={(event) => setZoneId(event.target.value)}
-                  >
-                    {zones.isLoading ? <option value="">Loading your domains…</option> : null}
-                    {!zones.isLoading && (zones.data ?? []).length === 0 ? (
-                      <option value="">No domain in this Cloudflare account</option>
-                    ) : null}
-                    {(zones.data ?? []).map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Select
-                    id="wp-domain-mode"
-                    aria-label="Use the domain or a subdomain"
-                    value={domainMode}
-                    onChange={(event) =>
-                      setDomainMode(event.target.value === 'root' ? 'root' : 'subdomain')
-                    }
-                  >
-                    <option value="subdomain">New subdomain</option>
-                    <option value="root">The domain itself</option>
-                  </Select>
-                  {domainMode === 'subdomain' ? (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="wp-subdomain"
-                        value={subdomain}
-                        placeholder="blog"
-                        autoComplete="off"
-                        onChange={(event) => setSubdomain(event.target.value.trim().toLowerCase())}
-                      />
-                      <span className="text-muted-foreground whitespace-nowrap text-sm">
-                        .{zone?.name ?? 'domain'}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-muted-foreground flex items-center text-sm">
-                      {zone?.name ?? ''}
-                    </div>
-                  )}
-                </div>
-                {zones.isError ? (
-                  <p className="text-destructive text-sm">
-                    Could not load the Cloudflare domains: {message(zones.error)}
-                  </p>
-                ) : null}
-                {domainMode === 'subdomain' && subdomain && !subdomainValid ? (
-                  <p className="text-destructive text-sm">
-                    A subdomain uses letters, digits and hyphens, e.g. blog or shop.eu
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="wp-domain">Domain</Label>
-                <Input
-                  id="wp-domain"
-                  value={manualDomain}
-                  placeholder="blog.example.com"
-                  onChange={(event) => setManualDomain(event.target.value)}
-                />
-              </div>
-            )}
-            {domain ? (
-              <div className="md:col-span-2">
-                <DomainAvailability
-                  domain={domain}
-                  check={domainCheck?.domain === domain ? domainCheck : null}
-                  checking={checkingDomain}
-                />
-              </div>
-            ) : null}
+            <div />
+            <DomainPicker
+              idPrefix="wp"
+              targetId={targetId}
+              onChange={setSelection}
+              refreshKey={sites.data}
+            />
             <div className="space-y-2">
               <Label htmlFor="wp-title">Site title</Label>
               <Input
@@ -585,7 +353,7 @@ export function WordPressPage(): JSX.Element {
             </div>
             <div className="flex items-center gap-3">
               <Switch id="wp-https" checked={https} onCheckedChange={setHttps} />
-              <Label htmlFor="wp-https">HTTPS with a free Let’s Encrypt certificate</Label>
+              <Label htmlFor="wp-https">HTTPS certificate</Label>
             </div>
             {https ? (
               <div className="space-y-2">

@@ -12,6 +12,14 @@ export interface CertificateIssueConfig {
   readonly includeWildcard?: boolean;
   readonly keyAlgorithm?: 'rsa' | 'ecc';
   readonly validityDays?: 7 | 30 | 90 | 365 | 730 | 1095 | 5475;
+  /**
+   * Leave the zone's Cloudflare SSL mode as it is. By default an Origin CA
+   * certificate switches the whole zone to Full (strict), which a caller
+   * publishing one more site on a shared zone must not do on its own.
+   */
+  readonly keepCloudflareSslMode?: boolean;
+  /** Whether Nginx redirects HTTP to HTTPS; defaults to the Cloudflare setting. */
+  readonly httpRedirect?: boolean;
 }
 export interface OriginCertificateSigningRequest {
   readonly csr: string;
@@ -43,12 +51,27 @@ export interface ManagedDnsCoordinator {
     expectedIp: string,
     credentialId?: string,
     zoneId?: string,
+    options?: { readonly proxied?: boolean },
   ): Promise<
     Result<
-      { readonly status: 'pending' | 'propagated' | 'error'; readonly warning: string | null },
+      {
+        readonly status: 'pending' | 'propagated' | 'error';
+        readonly warning: string | null;
+        /** Whether the record goes through the Cloudflare proxy (orange cloud). */
+        readonly proxied?: boolean;
+        /** The zone's Cloudflare SSL mode: off, flexible, full, strict or unknown. */
+        readonly sslMode?: string;
+      },
       unknown
     >
   >;
+  /** Delete the record for this domain, only if CloudForge created it for this address. */
+  withdraw?(
+    domain: string,
+    expectedIp: string,
+    credentialId?: string,
+    zoneId?: string,
+  ): Promise<Result<{ readonly removed: boolean }, unknown>>;
   verify?(
     domain: string,
     expectedIp: string,

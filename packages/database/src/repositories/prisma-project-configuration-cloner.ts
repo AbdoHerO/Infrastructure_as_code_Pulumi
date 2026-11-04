@@ -3,6 +3,8 @@ import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
 import type { ClonedProjectLinks, ProjectConfigurationCloner } from '@cloudforge/core';
 import type { Db } from '../client.js';
 
+const DEPLOYED_RECORDS: ReadonlySet<string> = new Set(['wordpress:sites', 'stacks:list']);
+
 /** Transactional configuration-only project clone. */
 export class PrismaProjectConfigurationCloner implements ProjectConfigurationCloner {
   constructor(private readonly db: Db) {}
@@ -89,7 +91,9 @@ export class PrismaProjectConfigurationCloner implements ProjectConfigurationClo
           });
         }
         for (const item of settings) {
-          if (item.key.startsWith('runtime-plan:')) continue;
+          // Records of what runs on a server: the copy has deployed nothing and must
+          // not be able to redeploy or delete what belongs to the original project.
+          if (item.key.startsWith('runtime-plan:') || DEPLOYED_RECORDS.has(item.key)) continue;
           const key = item.key === `plan:${sourceProjectId}` ? `plan:${targetProjectId}` : item.key;
           await tx.setting.create({
             data: {

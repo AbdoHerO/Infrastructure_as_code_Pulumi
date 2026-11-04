@@ -128,7 +128,7 @@ export function CredentialDialog({
                 setValues({});
               }}
             >
-              {CREDENTIAL_KINDS.map((k) => (
+              {CREDENTIAL_KINDS.filter((k) => k !== 'docker-stack' || k === kind).map((k) => (
                 <option key={k} value={k}>
                   {CREDENTIAL_SCHEMAS[k].label}
                 </option>

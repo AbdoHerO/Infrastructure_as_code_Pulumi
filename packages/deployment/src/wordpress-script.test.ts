@@ -9,7 +9,7 @@ import {
   wordpressDirectory,
   wordpressStatusScript,
 } from './wordpress-script.js';
-import { lineEvents } from './ssh-wordpress-manager.js';
+import { lineEvents } from './line-events.js';
 import { parsesAsShell } from './shell-syntax.test-helper.js';
 
 const PROJECT = 'cloudforge-wp-blog-example-com';

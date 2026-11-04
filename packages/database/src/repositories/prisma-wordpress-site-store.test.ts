@@ -2,9 +2,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { InMemoryProjectContext, type WordPressSiteRecord } from '@cloudforge/core';
+import {
+  InMemoryProjectContext,
+  type StackRecord,
+  type WordPressSiteRecord,
+} from '@cloudforge/core';
 import { createPrismaClient, type Db } from '../client.js';
 import { ensureSchema } from '../schema-bootstrap.js';
+import { PrismaProjectConfigurationCloner } from './prisma-project-configuration-cloner.js';
+import { PrismaStackStore } from './prisma-stack-store.js';
 import { PrismaWordPressSiteStore } from './prisma-wordpress-site-store.js';
 
 const PROJECT_A = '10000000-0000-4000-8000-0000000000a1';
@@ -82,6 +88,36 @@ describe('PrismaWordPressSiteStore', () => {
     expect(afterRemove.ok && afterRemove.value.map((item) => item.id)).toEqual(['a1']);
     const listB = await storeB.list();
     expect(listB.ok && listB.value.map((item) => item.id)).toEqual(['b1']);
+  });
+
+  it('is not copied when a project is duplicated: the copy deployed nothing', async () => {
+    const db = await database();
+    await db.setting.createMany({
+      data: [
+        { projectId: PROJECT_A, key: 'wordpress:sites', value: '[{"id":"site"}]' },
+        { projectId: PROJECT_A, key: 'stacks:list', value: '[{"id":"stack"}]' },
+        { projectId: PROJECT_A, key: 'app.settings', value: '{"kept":true}' },
+      ],
+    });
+    const cloned = await new PrismaProjectConfigurationCloner(db).clone(PROJECT_A, PROJECT_B);
+    expect(cloned.ok).toBe(true);
+    const copied = await db.setting.findMany({
+      where: { projectId: PROJECT_B },
+      select: { key: true },
+    });
+    expect(copied.map((item) => item.key)).toEqual(['app.settings']);
+  });
+
+  it('keeps Docker stacks in their own list, separate from WordPress sites', async () => {
+    const db = await database();
+    const context = new InMemoryProjectContext();
+    context.activate(PROJECT_A);
+    const stacks = new PrismaStackStore(db, context);
+    await stacks.save({ id: 'stack-1', name: 'rustfs' } as StackRecord);
+    await new PrismaWordPressSiteStore(db, context).save(site('a1', 'blog.example.com'));
+
+    const listed = await stacks.list();
+    expect(listed.ok && listed.value.map((item) => item.id)).toEqual(['stack-1']);
   });
 
   it('starts empty', async () => {

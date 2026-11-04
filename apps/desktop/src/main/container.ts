@@ -16,6 +16,8 @@ import {
   HostFirewallService,
   HostAccessService,
   WordPressService,
+  DomainPublisher,
+  StackService,
   SslService,
   type DomainResolver,
   type RemoteTargetResolver,
@@ -48,6 +50,8 @@ import {
   SshHostFirewallManager,
   SshHostAccessManager,
   SshWordPressManager,
+  SshStackManager,
+  YamlComposeAnalyzer,
   SshRuntimeApplier,
   SshRuntimeInspector,
   SshDeployer,
@@ -67,6 +71,7 @@ import {
   PrismaDeploymentRepository,
   PrismaPlanStore,
   PrismaWordPressSiteStore,
+  PrismaStackStore,
   PrismaRuntimePlanStore,
   PrismaPluginRepository,
   PrismaProjectRepository,
@@ -126,6 +131,8 @@ export interface AppContainer {
   readonly hostFirewallService: HostFirewallService;
   readonly hostAccessService: HostAccessService;
   readonly wordpressService: WordPressService;
+  readonly domainPublisher: DomainPublisher;
+  readonly stackService: StackService;
   readonly sslService: SslService;
   readonly sshTerminalService: SshTerminalService;
   readonly cloudflareService: CloudflareService;
@@ -448,14 +455,12 @@ export async function initContainer(): Promise<AppContainer> {
     cloudflareService,
     runtimePlanService,
   );
-  // WordPress sites from the WordPress page: one Docker Compose project per site,
-  // published through the same Cloudflare DNS, Nginx and certificate services.
-  const wordpressService = new WordPressService(
-    new PrismaWordPressSiteStore(db, projectContext),
+  const wordpressSiteStore = new PrismaWordPressSiteStore(db, projectContext);
+  const stackStore = new PrismaStackStore(db, projectContext);
+  // Everything published on a domain goes through this: it refuses a domain that
+  // is already used, then does Cloudflare DNS, Nginx and HTTPS.
+  const domainPublisher = new DomainPublisher(
     remoteTargetResolver,
-    new SshWordPressManager(),
-    credentialService,
-    activityService,
     nginxService,
     cloudflareDnsAutomationService,
     sslService,
@@ -464,18 +469,48 @@ export async function initContainer(): Promise<AppContainer> {
       // Read straight from the repository: JenkinsPipelineService.list() also
       // synchronizes the runtime plan, which a domain check must not do.
       async owners(domain) {
-        const pipelines = await jenkinsPipelineRepository.list();
+        const [pipelines, sites, stacks] = await Promise.all([
+          jenkinsPipelineRepository.list(),
+          wordpressSiteStore.list(),
+          stackStore.list(),
+        ]);
         if (!pipelines.ok) return pipelines;
-        return ok(
-          pipelines.value
+        if (!sites.ok) return sites;
+        if (!stacks.ok) return stacks;
+        return ok([
+          ...pipelines.value
             .filter(
               (pipeline) =>
                 pipeline.configureDomain && pipeline.domain.trim().toLowerCase() === domain,
             )
             .map((pipeline) => `Jenkins pipeline ${pipeline.name}`),
-        );
+          ...sites.value.filter((site) => site.domain === domain).map(() => 'A WordPress site'),
+          ...stacks.value
+            .filter((stack) => stack.routes.some((route) => route.domain === domain))
+            .map((stack) => `Docker stack ${stack.name}`),
+        ]);
       },
     },
+    domainResolver,
+  );
+  // WordPress sites from the WordPress page: one Docker Compose project per site.
+  const wordpressService = new WordPressService(
+    wordpressSiteStore,
+    remoteTargetResolver,
+    new SshWordPressManager(),
+    credentialService,
+    activityService,
+    domainPublisher,
+  );
+  // Any Docker Compose stack from the Docker Stacks page, published on domains.
+  const stackService = new StackService(
+    stackStore,
+    remoteTargetResolver,
+    new SshStackManager(),
+    new YamlComposeAnalyzer(),
+    credentialService,
+    activityService,
+    domainPublisher,
   );
   const lastSslCheck = new Map<string, number>();
   let sslRenewalRunning = false;
@@ -750,6 +785,8 @@ export async function initContainer(): Promise<AppContainer> {
     hostFirewallService,
     hostAccessService,
     wordpressService,
+    domainPublisher,
+    stackService,
     sslService,
     sshTerminalService,
     cloudflareService,

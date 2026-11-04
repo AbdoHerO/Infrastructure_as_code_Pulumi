@@ -24,6 +24,7 @@ import { TerminalPage } from '../features/terminal/TerminalPage.js';
 import { CloudflarePage } from '../features/cloudflare/CloudflarePage.js';
 import { JenkinsPage } from '../features/jenkins/JenkinsPage.js';
 import { WordPressPage } from '../features/wordpress/WordPressPage.js';
+import { DockerStacksPage } from '../features/stacks/DockerStacksPage.js';
 
 /**
  * Central route table. Modules not yet implemented render a {@link PlaceholderPage}
@@ -50,6 +51,7 @@ export const router = createHashRouter([
       { path: 'cloudflare', element: <CloudflarePage /> },
       { path: 'jenkins', element: <JenkinsPage /> },
       { path: 'wordpress', element: <WordPressPage /> },
+      { path: 'stacks', element: <DockerStacksPage /> },
       { path: 'providers', element: <ProvidersPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'secrets', element: <SecretsPage /> },

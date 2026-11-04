@@ -5,6 +5,34 @@ All notable changes to CloudForge are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Docker Stacks** page: deploy any Docker Compose stack on a saved server and
+  publish it on one or more domains. Load the Compose file and `.env` from a
+  folder or paste them; they stay as written, with a generated file adding the
+  local ports. Choose a Cloudflare domain and a subdomain; a domain already used
+  by another application, an Nginx site or a Cloudflare record elsewhere is
+  blocked, and a missing record is created. HTTPS is handled per domain: Cloudflare
+  Origin CA behind the proxy, Let's Encrypt otherwise. External networks and
+  volumes are created when missing and never deleted. The files are stored
+  encrypted and never placed in a script, a command line or a log.
+
+### Changed
+
+- WordPress now handles HTTPS the same way: an Origin certificate behind the
+  Cloudflare proxy, instead of always Let's Encrypt.
+
+### Fixed
+
+- A proxied domain in a Flexible Cloudflare zone no longer gets a redirect to
+  HTTPS on the server, which sent visitors round in an endless loop.
+- Removing or deleting a WordPress site now stops renewing its certificate;
+  renewal also drops certificates whose Nginx site no longer exists.
+- Deleting a WordPress site deletes the DNS record CloudForge created for it.
+- Duplicating a project no longer copies its WordPress site records, which let the
+  copy act on sites that belong to the original.
+- WordPress sites behind the Cloudflare proxy no longer show a false warning.
+
 ## [0.4.4] — 2026-10-26
 
 ### Added

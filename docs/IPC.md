@@ -172,23 +172,27 @@ same stream.
 
 ### SSH keys, containers and backup
 
-| Channel                            | Purpose                                                     |
-| ---------------------------------- | ----------------------------------------------------------- |
-| `sshKeys:*`                        | List, generate, import, reveal and delete SSH keys          |
-| `containers:list/action`           | Inventory and lifecycle over verified SSH                   |
-| `containers:logs/stats`            | Remote logs and resource usage                              |
-| `containers:deployCompose`         | Validate and deploy a Compose project                       |
-| `ansible:targets`                  | Persist reusable fingerprint-pinned VPS destinations        |
-| `hostAccess:inspect`               | Accounts CloudForge created for other people's SSH access   |
-| `hostAccess:grant/revoke`          | Give (account, public key, optional sudo) or remove access  |
-| `wordpress:list/status`            | WordPress sites of the project and their containers         |
-| `wordpress:create`                 | Deploy a site; returns the admin password once              |
-| `wordpress:redeploy/update/remove` | Re-run all steps, update images and core, remove            |
-| `ansible:profiles/status`          | Catalog and managed remote Ansible runtime state            |
-| `ansible:preflight/repair`         | Readiness facts, blockers and confirmed prerequisite repair |
-| `ansible:bootstrap/run`            | Install runtime and run a gated, streamed generic profile   |
-| `ansible:nginx*`                   | Manage validated CloudForge-owned Nginx sites               |
-| `backup:create/restore`            | Export or safely restore database, key and Pulumi data      |
+| Channel                                | Purpose                                                               |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `sshKeys:*`                            | List, generate, import, reveal and delete SSH keys                    |
+| `containers:list/action`               | Inventory and lifecycle over verified SSH                             |
+| `containers:logs/stats`                | Remote logs and resource usage                                        |
+| `containers:deployCompose`             | Validate and deploy a Compose project                                 |
+| `ansible:targets`                      | Persist reusable fingerprint-pinned VPS destinations                  |
+| `hostAccess:inspect`                   | Accounts CloudForge created for other people's SSH access             |
+| `hostAccess:grant/revoke`              | Give (account, public key, optional sudo) or remove access            |
+| `domains:check`                        | Whether a domain is free: applications, Nginx, Cloudflare             |
+| `wordpress:list/status`                | WordPress sites of the project and their containers                   |
+| `wordpress:create`                     | Deploy a site; returns the admin password once                        |
+| `wordpress:redeploy/update/remove`     | Re-run all steps, update images and core, remove                      |
+| `stacks:list/status/analyze`           | Docker stacks, their containers, and reading a Compose file           |
+| `stacks:chooseFolder/reveal`           | Load a Compose file and `.env` from a folder, or a stack's saved ones |
+| `stacks:create/update/redeploy/remove` | Deploy, edit, run again or remove a stack                             |
+| `ansible:profiles/status`              | Catalog and managed remote Ansible runtime state                      |
+| `ansible:preflight/repair`             | Readiness facts, blockers and confirmed prerequisite repair           |
+| `ansible:bootstrap/run`                | Install runtime and run a gated, streamed generic profile             |
+| `ansible:nginx*`                       | Manage validated CloudForge-owned Nginx sites                         |
+| `backup:create/restore`                | Export or safely restore database, key and Pulumi data                |
 
 ### Logs (application log file)
 

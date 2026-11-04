@@ -13,6 +13,7 @@ export const CREDENTIAL_KINDS = [
   'environment-file',
   'ssh',
   'ssh-password',
+  'docker-stack',
 ] as const;
 
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
@@ -170,6 +171,15 @@ export const CREDENTIAL_SCHEMAS: Readonly<Record<CredentialKind, CredentialKindS
     kind: 'ssh-password',
     label: 'SSH Password',
     fields: [field('password', 'Password', { secret: true })],
+  },
+  // Created by the Docker Stacks page, never by hand: both can hold passwords.
+  'docker-stack': {
+    kind: 'docker-stack',
+    label: 'Docker Stack',
+    fields: [
+      field('composeYaml', 'Compose file', { secret: true, multiline: true }),
+      field('environment', '.env file', { secret: true, multiline: true, required: false }),
+    ],
   },
 };
 

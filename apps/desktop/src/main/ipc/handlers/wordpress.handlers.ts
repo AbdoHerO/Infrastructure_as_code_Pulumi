@@ -18,9 +18,6 @@ export function registerWordPressHandlers(): void {
       emitEvent('wordpress:log', { streamId, event });
 
   registerHandler('wordpress:list', async () => orThrow(await service().list()));
-  registerHandler('wordpress:checkDomain', async (query) =>
-    orThrow(await service().checkDomain(query)),
-  );
   registerHandler('wordpress:create', async ({ site, streamId }) =>
     orThrow(await service().create(site, sink(streamId))),
   );

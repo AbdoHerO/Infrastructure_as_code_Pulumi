@@ -1,6 +1,6 @@
 import {
   ConflictError,
-  DeploymentError,
+  type DeploymentError,
   err,
   newUuid,
   NotFoundError,
@@ -14,16 +14,8 @@ import type {
   CredentialService,
   CredentialServiceError,
 } from '../credentials/credential-service.js';
-import type { NginxService } from '../nginx/nginx-service.js';
-import type {
-  CertificateDetails,
-  CertificateEventSink,
-  CertificateIssueConfig,
-  ManagedDnsCoordinator,
-} from '../ports/certificate-manager.js';
-import type { ManagedNginxSite } from '../ports/nginx-manager.js';
+import type { DomainPublisher } from '../domains/domain-publisher.js';
 import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
-import type { CloudflareService } from '../service-providers/cloudflare-service.js';
 import type {
   WordPressEventSink,
   WordPressManager,
@@ -41,19 +33,6 @@ import {
   wordpressSiteUrl,
   type WordPressSiteInput,
 } from './wordpress-site.js';
-
-/** Same locations the SSL page uses, so certificates renew with the rest. */
-export const WORDPRESS_CERTIFICATE_VOLUME = '/opt/cloudforge/certs';
-export const WORDPRESS_WEBROOT_VOLUME = '/opt/cloudforge/www';
-
-/** The part of SslService this feature needs: issue a certificate and switch Nginx to HTTPS. */
-export interface WordPressCertificateIssuer {
-  issue(
-    targetId: string,
-    config: CertificateIssueConfig,
-    onEvent?: CertificateEventSink,
-  ): Promise<Result<CertificateDetails, unknown>>;
-}
 
 export type WordPressServiceError =
   | ValidationError
@@ -75,29 +54,6 @@ export interface CreatedWordPressSite {
   readonly adminPassword: string;
 }
 
-/** Other CloudForge applications that publish a domain, e.g. Jenkins pipelines. */
-export interface WordPressDomainOwners {
-  owners(domain: string): Promise<Result<readonly string[], unknown>>;
-}
-
-export interface WordPressDomainQuery {
-  readonly targetId: string;
-  readonly domain: string;
-  readonly cloudflareCredentialId?: string | null;
-  readonly cloudflareZoneId?: string | null;
-}
-
-export interface WordPressDomainCheck {
-  readonly domain: string;
-  /** False when anything else already uses the domain; the reasons are in `conflicts`. */
-  readonly available: boolean;
-  readonly conflicts: readonly string[];
-  /** Facts that do not block, e.g. DNS already pointing to this server. */
-  readonly notes: readonly string[];
-}
-
-const DOMAIN_RECORD_TYPES = new Set(['A', 'AAAA', 'CNAME']);
-
 export class WordPressService {
   constructor(
     private readonly store: WordPressSiteStore,
@@ -108,81 +64,11 @@ export class WordPressService {
       'create' | 'list' | 'getDecrypted' | 'remove'
     >,
     private readonly activities: Pick<ActivityService, 'recordSafe'>,
-    private readonly nginx?: Pick<NginxService, 'listSites' | 'saveSite' | 'removeSite'>,
-    private readonly managedDns?: ManagedDnsCoordinator,
-    private readonly certificates?: WordPressCertificateIssuer,
-    private readonly cloudflare?: Pick<CloudflareService, 'dnsRecords'>,
-    private readonly otherApps?: WordPressDomainOwners,
+    private readonly domains: Pick<DomainPublisher, 'check' | 'publish' | 'unpublish'>,
   ) {}
 
   list(): Promise<Result<WordPressSiteRecord[], PersistenceError>> {
     return this.store.list();
-  }
-
-  /**
-   * Whether a domain is free for a new site. It is taken when another WordPress
-   * site or CloudForge application uses it, when Nginx on the server already
-   * serves it, or when its Cloudflare record points somewhere other than this
-   * server. A record that already points here is fine.
-   */
-  async checkDomain(
-    query: WordPressDomainQuery,
-  ): Promise<Result<WordPressDomainCheck, WordPressServiceError>> {
-    const domain = query.domain.trim().toLowerCase().replace(/\.$/, '');
-    const conflicts: string[] = [];
-    const notes: string[] = [];
-
-    const sites = await this.store.list();
-    if (!sites.ok) return sites;
-    const site = sites.value.find((item) => item.domain === domain);
-    if (site) conflicts.push(`A WordPress site already uses ${domain}.`);
-
-    if (this.otherApps) {
-      const owners = await this.otherApps.owners(domain);
-      if (!owners.ok) conflicts.push('Could not check the other CloudForge applications.');
-      else for (const owner of owners.value) conflicts.push(`${owner} already uses ${domain}.`);
-    }
-
-    const target = await this.targets.resolve(query.targetId);
-    if (!target.ok) return target;
-
-    if (this.nginx) {
-      const nginxSites = await this.nginx.listSites(query.targetId);
-      if (!nginxSites.ok) {
-        conflicts.push(`Could not read the Nginx sites on the server: ${nginxSites.error.message}`);
-      } else {
-        const served = nginxSites.value.find((item) => item.domain.toLowerCase() === domain);
-        if (served && !site)
-          conflicts.push(
-            served.managed === false
-              ? `Nginx on this server already serves ${domain} (configured outside CloudForge).`
-              : `Nginx on this server already serves ${domain} for another application.`,
-          );
-      }
-    }
-
-    const credentialId = query.cloudflareCredentialId?.trim();
-    const zoneId = query.cloudflareZoneId?.trim();
-    if (this.cloudflare && credentialId && zoneId) {
-      const records = await this.cloudflare.dnsRecords(credentialId, zoneId);
-      if (!records.ok) {
-        conflicts.push(`Could not read the Cloudflare DNS records: ${records.error.message}`);
-      } else {
-        for (const record of records.value) {
-          if (record.name.toLowerCase() !== domain || !DOMAIN_RECORD_TYPES.has(record.type))
-            continue;
-          if (record.type === 'CNAME')
-            conflicts.push(`Cloudflare DNS sends ${domain} to ${record.content} (CNAME).`);
-          else if (record.content !== target.value.host)
-            conflicts.push(
-              `Cloudflare DNS points ${domain} to ${record.content}, another server or service.`,
-            );
-          else notes.push(`Cloudflare DNS already points ${domain} to this server.`);
-        }
-      }
-    }
-
-    return ok({ domain, available: conflicts.length === 0, conflicts, notes });
   }
 
   /**
@@ -209,7 +95,7 @@ export class WordPressService {
       return err(new ConflictError(`Port ${hostPort} is already used by another WordPress site`));
     const target = await this.targets.resolve(valid.value.targetId);
     if (!target.ok) return target;
-    const domainCheck = await this.checkDomain(valid.value);
+    const domainCheck = await this.domains.check(valid.value);
     if (!domainCheck.ok) return domainCheck;
     if (!domainCheck.value.available)
       return err(new ConflictError(domainCheck.value.conflicts.join(' ')));
@@ -369,21 +255,12 @@ export class WordPressService {
       onEvent,
     );
     if (!removed.ok) return removed;
-    if (this.nginx) {
-      const sites = await this.nginx.listSites(site.value.targetId);
-      const nginxSite = sites.ok
-        ? sites.value.find((item) => item.domain === site.value.domain && item.managed !== false)
-        : undefined;
-      if (nginxSite) {
-        const unpublished = await this.nginx.removeSite(site.value.targetId, site.value.domain);
-        if (!unpublished.ok)
-          return err(
-            new DeploymentError('The containers were removed but the Nginx site was not', {
-              cause: unpublished.error,
-            }),
-          );
-      }
-    }
+    const unpublished = await this.domains.unpublish(
+      site.value,
+      { deleteDns: deleteData },
+      onEvent,
+    );
+    if (!unpublished.ok) return unpublished;
     if (deleteData) await this.credentials.remove(site.value.credentialId);
     const deleted = await this.store.remove(id);
     if (!deleted.ok) return deleted;
@@ -433,71 +310,23 @@ export class WordPressService {
     );
     if (!deployed.ok) return this.fail(site, deployed.error);
 
-    const warnings: string[] = [];
-    let dnsReady = !site.cloudflareCredentialId;
-    if (site.cloudflareCredentialId) {
-      if (!this.managedDns) {
-        warnings.push('Cloudflare automation is not available, so DNS was not created.');
-      } else {
-        step(`Pointing ${site.domain} to ${target.value.host} in Cloudflare`);
-        const dns = await this.managedDns.ensure(
-          site.domain,
-          target.value.host,
-          site.cloudflareCredentialId,
-          site.cloudflareZoneId ?? undefined,
-        );
-        if (!dns.ok) {
-          const detail = dns.error instanceof Error ? dns.error.message : 'unknown error';
-          warnings.push(`Cloudflare DNS could not be configured: ${detail}`);
-        } else if (dns.value.status !== 'propagated') {
-          warnings.push(
-            dns.value.warning ??
-              'Cloudflare DNS was created but has not propagated yet. Redeploy in a few minutes to enable HTTPS.',
-          );
-        } else {
-          dnsReady = true;
-          if (dns.value.warning) warnings.push(dns.value.warning);
-        }
-      }
-    }
-
-    if (!this.nginx) {
-      warnings.push('Nginx automation is not available, so the domain was not published.');
-    } else {
-      step(`Publishing ${site.domain} with Nginx`);
-      const published = await this.publish(site);
-      if (!published.ok) return this.fail(site, published.error);
-    }
-
-    if (site.https && this.nginx) {
-      if (!this.certificates) {
-        warnings.push('Certificate automation is not available, so HTTPS was not enabled.');
-      } else if (!dnsReady && site.cloudflareCredentialId) {
-        warnings.push('HTTPS waits for DNS. Redeploy once the domain points to the server.');
-      } else {
-        step(`Requesting the HTTPS certificate for ${site.domain}`);
-        const certificate = await this.certificates.issue(
-          site.targetId,
-          {
-            domain: site.domain,
-            email: site.certificateEmail ?? site.adminEmail,
-            certificateVolume: WORDPRESS_CERTIFICATE_VOLUME,
-            webrootVolume: WORDPRESS_WEBROOT_VOLUME,
-            forceRenewal: false,
-            authority: 'letsencrypt',
-            ...(site.cloudflareCredentialId
-              ? { cloudflareCredentialId: site.cloudflareCredentialId }
-              : {}),
-          },
-          (event) => onEvent?.(event),
-        );
-        if (!certificate.ok) {
-          const detail =
-            certificate.error instanceof Error ? certificate.error.message : 'unknown error';
-          warnings.push(`HTTPS is not enabled yet: ${detail}. Fix the cause, then use Redeploy.`);
-        }
-      }
-    }
+    const published = await this.domains.publish(
+      {
+        targetId: site.targetId,
+        domain: site.domain,
+        hostPort: site.hostPort,
+        cloudflareCredentialId: site.cloudflareCredentialId,
+        cloudflareZoneId: site.cloudflareZoneId,
+        https: site.https,
+        certificateEmail: site.certificateEmail,
+        clientMaxBodySize: '64m',
+        proxyTimeoutSeconds: 300,
+        websocket: false,
+      },
+      onEvent,
+    );
+    if (!published.ok) return this.fail(site, published.error);
+    const warnings = published.value.warnings;
 
     const record: WordPressSiteRecord = {
       ...site,
@@ -515,58 +344,6 @@ export class WordPressService {
         : `WordPress is running with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`,
     );
     return ok(record);
-  }
-
-  /** Point the domain at the site's loopback port, keeping any HTTPS already set up. */
-  private async publish(site: WordPressSiteRecord): Promise<Result<void, WordPressServiceError>> {
-    const nginx = this.nginx;
-    if (!nginx) return ok(undefined);
-    const sites = await nginx.listSites(site.targetId);
-    if (!sites.ok)
-      return err(new DeploymentError('Could not read the Nginx sites', { cause: sites.error }));
-    const existing = sites.value.find((item) => item.domain.toLowerCase() === site.domain);
-    if (existing?.managed === false)
-      return err(
-        new ConflictError(
-          `${site.domain} already has an Nginx site that CloudForge does not manage. Remove it or use another domain.`,
-        ),
-      );
-    // Our own site proxies to this site's port; any other port is another application.
-    if (existing && existing.upstreamPort !== site.hostPort)
-      return err(
-        new ConflictError(
-          `Nginx already serves ${site.domain} for another application (port ${String(existing.upstreamPort)}).`,
-        ),
-      );
-    const now = new Date().toISOString();
-    const upstream = {
-      enabled: true,
-      upstreamKind: 'host' as const,
-      upstreamHost: '127.0.0.1',
-      upstreamPort: site.hostPort,
-      websocket: false,
-      locations: [],
-      proxyTimeoutSeconds: 300,
-      clientMaxBodySize: '64m',
-      lastModified: now,
-    };
-    const next: ManagedNginxSite = existing
-      ? { ...existing, ...upstream }
-      : {
-          domain: site.domain,
-          ...upstream,
-          ssl: false,
-          httpRedirect: false,
-          headers: [],
-          extraDirectives: [],
-          compression: true,
-          cache: false,
-          customSnippets: [],
-        };
-    const saved = await nginx.saveSite(site.targetId, next);
-    if (!saved.ok)
-      return err(new DeploymentError('Nginx could not publish the site', { cause: saved.error }));
-    return ok(undefined);
   }
 
   private async secrets(

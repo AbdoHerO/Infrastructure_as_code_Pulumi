@@ -8,6 +8,7 @@ import type {
   WordPressSiteRecord,
   WordPressSiteStore,
 } from '../ports/wordpress-manager.js';
+import { DomainPublisher } from '../domains/domain-publisher.js';
 import { WordPressService } from './wordpress-service.js';
 
 const target: DeploymentTarget = {
@@ -101,18 +102,16 @@ function setup(
     dnsRecords: vi.fn().mockResolvedValue(ok(options.dnsRecords ?? [])),
   };
   const otherApps = { owners: vi.fn().mockResolvedValue(ok(options.owners ?? [])) };
-  const service = new WordPressService(
-    store,
-    { resolve: vi.fn().mockResolvedValue(ok(target)) },
-    manager,
-    credentials,
-    activities,
+  const targets = { resolve: vi.fn().mockResolvedValue(ok(target)) };
+  const domains = new DomainPublisher(
+    targets,
     nginx,
     managedDns,
     certificates,
     cloudflare,
     otherApps,
   );
+  const service = new WordPressService(store, targets, manager, credentials, activities, domains);
   return {
     service,
     store,
@@ -124,6 +123,7 @@ function setup(
     activities,
     cloudflare,
     otherApps,
+    domains,
   };
 }
 
@@ -175,6 +175,7 @@ describe('WordPressService.create', () => {
       '203.0.113.10',
       'cloudflare-1',
       undefined,
+      {},
     );
     const site = nginx.saveSite.mock.calls[0]![1] as ManagedNginxSite;
     expect(site).toMatchObject({ upstreamHost: '127.0.0.1', upstreamPort: 8300, ssl: false });
@@ -299,67 +300,7 @@ describe('WordPressService redeploy, update and remove', () => {
   });
 });
 
-describe('WordPressService.checkDomain', () => {
-  const query = {
-    targetId: 'target-1',
-    domain: 'blog.example.com',
-    cloudflareCredentialId: 'cloudflare-1',
-    cloudflareZoneId: 'zone-1',
-  };
-
-  it('accepts a new subdomain with no record, and one already pointing to this server', async () => {
-    const empty = await setup().service.checkDomain(query);
-    expect(empty.ok && empty.value).toMatchObject({ available: true, conflicts: [] });
-
-    const here = await setup({
-      dnsRecords: [dnsRecord('blog.example.com', 'A', '203.0.113.10')],
-    }).service.checkDomain(query);
-    expect(here.ok && here.value.available).toBe(true);
-    expect(here.ok && here.value.notes[0]).toContain('already points');
-  });
-
-  it.each([
-    [
-      'an A record to another server',
-      [dnsRecord('blog.example.com', 'A', '198.51.100.7')],
-      'another server',
-    ],
-    [
-      'a CNAME to another service',
-      [dnsRecord('blog.example.com', 'CNAME', 'shops.myshopify.com')],
-      'CNAME',
-    ],
-  ])('blocks %s', async (_name, records, reason) => {
-    const checked = await setup({ dnsRecords: records }).service.checkDomain(query);
-    expect(checked.ok && checked.value.available).toBe(false);
-    expect(checked.ok && checked.value.conflicts.join(' ')).toContain(reason);
-  });
-
-  it('ignores records of other names and non-address types', async () => {
-    const checked = await setup({
-      dnsRecords: [
-        dnsRecord('example.com', 'A', '198.51.100.7'),
-        dnsRecord('blog.example.com', 'TXT', 'v=spf1'),
-        dnsRecord('blog.example.com', 'MX', 'mail.example.com'),
-      ],
-    }).service.checkDomain(query);
-    expect(checked.ok && checked.value.available).toBe(true);
-  });
-
-  it('blocks a domain a Jenkins application or another Nginx site already uses', async () => {
-    const jenkins = await setup({ owners: ['Jenkins pipeline bakery-one'] }).service.checkDomain(
-      query,
-    );
-    expect(jenkins.ok && jenkins.value.conflicts[0]).toContain('Jenkins pipeline bakery-one');
-
-    const nginx = await setup({
-      nginxSites: [
-        { domain: 'blog.example.com', managed: true, upstreamPort: 8010 } as ManagedNginxSite,
-      ],
-    }).service.checkDomain(query);
-    expect(nginx.ok && nginx.value.available).toBe(false);
-  });
-
+describe('WordPressService and taken domains', () => {
   it('refuses to deploy on a taken domain before touching the server', async () => {
     const taken = setup({ dnsRecords: [dnsRecord('blog.example.com', 'A', '198.51.100.7')] });
     const created = await taken.service.create({ ...input, cloudflareZoneId: 'zone-1' });

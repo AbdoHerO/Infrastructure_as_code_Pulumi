@@ -248,6 +248,9 @@ export class SslService {
         });
       }
     }
+    const effectiveRedirect =
+      valid.value.httpRedirect ??
+      (currentSettings?.ok ? currentSettings.value.cloudflare.automaticHttpsRedirect : true);
     if (issued.ok && this.nginx) {
       if (nginxSite) {
         const applied = await this.nginx.saveSite(
@@ -256,9 +259,7 @@ export class SslService {
             ...nginxSite,
             ...(authority === 'letsencrypt' ? { acmeWebroot: valid.value.webrootVolume } : {}),
             ssl: true,
-            httpRedirect: currentSettings?.ok
-              ? currentSettings.value.cloudflare.automaticHttpsRedirect
-              : true,
+            httpRedirect: effectiveRedirect,
             certificatePath: `${valid.value.certificateVolume}/live/${valid.value.domain}`,
             lastModified: new Date().toISOString(),
           },
@@ -267,7 +268,12 @@ export class SslService {
         if (!applied.ok) return applied;
       }
     }
-    if (issued.ok && authority === 'cloudflare-origin-ca' && this.cloudflare) {
+    if (
+      issued.ok &&
+      authority === 'cloudflare-origin-ca' &&
+      this.cloudflare &&
+      !valid.value.keepCloudflareSslMode
+    ) {
       const strict = await this.cloudflare.enableStrictSslForDomain(
         valid.value.cloudflareCredentialId ?? '',
         valid.value.domain,
@@ -288,7 +294,7 @@ export class SslService {
           issued.value,
           authority,
           true,
-          currentSettings?.ok ? currentSettings.value.cloudflare.automaticHttpsRedirect : true,
+          effectiveRedirect,
         ),
       );
       if (!runtime.ok) return runtime;
@@ -354,6 +360,18 @@ export class SslService {
       : target;
   }
 
+  /** Stop renewing a certificate whose site no longer exists. */
+  async forget(targetId: string, domain: string): Promise<void> {
+    if (!this.settings) return;
+    const current = await this.settings.get();
+    if (!current.ok) return;
+    const managed = current.value.ssl.managed.filter(
+      (item) => !(item.targetId === targetId && item.domain === domain),
+    );
+    if (managed.length === current.value.ssl.managed.length) return;
+    await this.settings.update({ ssl: { managed } });
+  }
+
   async renewDue(): Promise<void> {
     if (!this.settings) return;
     const settings = await this.settings.get();
@@ -372,6 +390,15 @@ export class SslService {
         ? listed.value.find((certificate) => certificate.domain === item.domain)
         : undefined;
       if (current && current.daysRemaining > settings.value.ssl.renewBeforeDays) continue;
+      // The site was removed since: nothing serves this certificate any more, and
+      // renewing it would only fail on schedule. Stop tracking it.
+      if (this.nginx) {
+        const served = await this.nginx.listSites(item.targetId);
+        if (served.ok && !served.value.some((site) => site.domain === item.domain)) {
+          await this.forget(item.targetId, item.domain);
+          continue;
+        }
+      }
       const renewed = await this.certificates.renew(target.value, { ...item, forceRenewal: false });
       let reloadSucceeded = true;
       if (renewed.ok && this.nginx) {

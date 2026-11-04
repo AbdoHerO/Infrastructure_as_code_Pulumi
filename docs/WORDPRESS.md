@@ -8,8 +8,9 @@ servers and publishes it on your domain:
 - one Docker Compose project per site, named `cloudforge-wp-<domain>`
   (`blog.example.com` → `cloudforge-wp-blog-example-com`), so the site shows up
   as one stack in **Containers** and in Dockhand;
-- Cloudflare DNS (optional), an Nginx site and a free Let’s Encrypt certificate,
-  through the same services as the Nginx and SSL & Domains pages;
+- Cloudflare DNS (optional), an Nginx site and an HTTPS certificate, through the
+  same services as the Nginx and SSL & Domains pages (see
+  [HTTPS in Docker stacks](DOCKER-STACKS.md#https), which works the same way);
 - WordPress fully installed: site title, admin account and site URL, with PHP
   limits for real use (64 MB uploads, 256 MB memory).
 

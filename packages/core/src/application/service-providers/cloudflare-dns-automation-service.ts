@@ -69,6 +69,7 @@ export class CloudflareDnsAutomationService {
     expectedIp: string,
     credentialId?: string,
     zoneId?: string,
+    options: { readonly proxied?: boolean } = {},
   ): Promise<Result<CloudflareDnsPropagation, CloudflareDnsAutomationFailure>> {
     const context = await this.context(domain, expectedIp, credentialId, zoneId);
     if (!context.ok) return context;
@@ -124,7 +125,7 @@ export class CloudflareDnsAutomationService {
       name: normalized,
       content: expectedIp,
       ttl: config.defaultTtl,
-      proxied: config.defaultProxy,
+      proxied: options.proxied ?? config.defaultProxy,
       comment: 'Managed by CloudForge',
       // DNS record tags are not available on every Cloudflare plan. Keep the
       // management marker in the broadly supported comment field instead.
@@ -150,6 +151,37 @@ export class CloudflareDnsAutomationService {
     return config.waitForPropagation
       ? this.wait(saved.value, expectedIp, config.propagationTimeoutSeconds, sslMode, zoneStatus)
       : ok(this.status(saved.value, expectedIp, [], 'pending', sslMode));
+  }
+
+  /**
+   * Delete the record for a domain when its site is deleted, so the name does
+   * not keep pointing at the server. Only a record CloudForge created for this
+   * address qualifies; anything else stays untouched.
+   */
+  async withdraw(
+    domain: string,
+    expectedIp: string,
+    credentialId?: string,
+    zoneId?: string,
+  ): Promise<Result<{ removed: boolean }, CloudflareDnsAutomationFailure>> {
+    const context = await this.context(domain, expectedIp, credentialId, zoneId);
+    if (!context.ok) return context;
+    const records = await this.cloudflare.dnsRecords(context.value.credential, context.value.zone);
+    if (!records.ok) return records;
+    const record = records.value.find(
+      (item) =>
+        item.name.replace(/\.$/, '') === context.value.normalized &&
+        (item.type === 'A' || item.type === 'AAAA') &&
+        item.content === expectedIp &&
+        isManagedRecord(item),
+    );
+    if (!record) return ok({ removed: false });
+    const deleted = await this.cloudflare.deleteDnsRecord(
+      context.value.credential,
+      context.value.zone,
+      record.id,
+    );
+    return deleted.ok ? ok({ removed: true }) : deleted;
   }
 
   async verify(
