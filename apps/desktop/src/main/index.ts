@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { app, BrowserWindow, session } from 'electron';
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { APP } from '@cloudforge/shared';
@@ -6,6 +7,7 @@ import { registerIpcHandlers } from './ipc/index.js';
 import { initContainer } from './container.js';
 import { initLogger, log } from './logging/logger.js';
 import { checkForUpdates, configureUpdateManager } from './updates/update-manager.js';
+import { withToolDirectories } from './tool-path.js';
 
 /**
  * Apply a Content-Security-Policy to every response.
@@ -53,6 +55,8 @@ function hardenPermissions(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  const toolPath = withToolDirectories(process.env.PATH, process.platform, homedir());
+  if (toolPath !== undefined) process.env.PATH = toolPath;
   initLogger();
   log().info(
     { event: 'app.start', version: app.getVersion(), platform: process.platform },
