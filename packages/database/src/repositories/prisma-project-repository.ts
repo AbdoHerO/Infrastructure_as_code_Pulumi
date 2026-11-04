@@ -2,6 +2,7 @@ import { err, ok, PersistenceError, type Result } from '@cloudforge/shared';
 import type { Project, ProjectId, ProjectRepository } from '@cloudforge/core';
 import type { Db } from '../client.js';
 import { toDomainProject, toPrismaProject } from '../mappers/project-mapper.js';
+import { deleteProjectWorkspaces } from '../project-deletion.js';
 
 /** Prisma/SQLite implementation of the {@link ProjectRepository} port. */
 export class PrismaProjectRepository implements ProjectRepository {
@@ -30,26 +31,9 @@ export class PrismaProjectRepository implements ProjectRepository {
 
   async delete(id: ProjectId): Promise<Result<void, PersistenceError>> {
     return guard('delete project', async () => {
-      // Legacy databases received projectId through ALTER TABLE and therefore
-      // do not have physical ON DELETE CASCADE constraints on every table.
       // Delete the entire workspace atomically so no orphaned secret or runtime
-      // row can survive a project deletion.
-      await this.db.$transaction(async (tx) => {
-        await tx.project.updateMany({ where: { id }, data: { providerId: null } });
-        await tx.logEntry.deleteMany({ where: { projectId: id } });
-        await tx.deployment.deleteMany({ where: { projectId: id } });
-        await tx.jenkinsPipeline.deleteMany({ where: { projectId: id } });
-        await tx.vpsTarget.deleteMany({ where: { projectId: id } });
-        await tx.activity.deleteMany({ where: { projectId: id } });
-        await tx.setting.deleteMany({ where: { projectId: id } });
-        await tx.plugin.deleteMany({ where: { projectId: id } });
-        await tx.template.deleteMany({ where: { projectId: id } });
-        await tx.secret.deleteMany({ where: { projectId: id } });
-        await tx.sshKey.deleteMany({ where: { projectId: id } });
-        await tx.provider.deleteMany({ where: { projectId: id } });
-        await tx.credential.deleteMany({ where: { projectId: id } });
-        await tx.project.deleteMany({ where: { id } });
-      });
+      // row can survive a project deletion, even on legacy schemas.
+      await this.db.$transaction((tx) => deleteProjectWorkspaces(tx, id));
     });
   }
 

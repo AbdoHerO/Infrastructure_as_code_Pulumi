@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createPrismaClient, type Db } from './client.js';
 import { migrateProjectOwnership } from './project-ownership-migration.js';
 import { ensureSchema, migrateSchema } from './schema-bootstrap.js';
+import { isolateProjectSnapshot, restoreProjectSnapshot } from './project-snapshot.js';
+import { deleteProjectWorkspaces } from './project-deletion.js';
 
 const PROJECT_A = '10000000-0000-4000-8000-000000000001';
 const PROJECT_B = '10000000-0000-4000-8000-000000000002';
@@ -100,7 +102,8 @@ async function legacyDatabase() {
     `CREATE TABLE "SshKey" (
       "id" TEXT PRIMARY KEY, "projectId" TEXT, "name" TEXT NOT NULL,
       "publicKey" TEXT NOT NULL, "ciphertext" TEXT, "fingerprint" TEXT NOT NULL DEFAULT '',
-      "createdAt" DATETIME NOT NULL, "updatedAt" DATETIME NOT NULL
+      "createdAt" DATETIME NOT NULL, "updatedAt" DATETIME NOT NULL,
+      FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL
     )`,
     `CREATE TABLE "Secret" (
       "id" TEXT PRIMARY KEY, "scope" TEXT NOT NULL DEFAULT 'global',
@@ -119,7 +122,8 @@ async function legacyDatabase() {
     `CREATE TABLE "Activity" (
       "id" TEXT PRIMARY KEY, "projectId" TEXT, "type" TEXT NOT NULL,
       "message" TEXT NOT NULL, "metadata" TEXT NOT NULL DEFAULT '{}',
-      "createdAt" DATETIME NOT NULL
+      "createdAt" DATETIME NOT NULL,
+      FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE SET NULL
     )`,
   ];
   for (const statement of statements) await db.$executeRawUnsafe(statement);
@@ -294,6 +298,54 @@ describe('legacy project ownership migration', () => {
       expect(await migrateProjectOwnership(db)).toBe(true);
       expect(await db.project.count()).toBe(0);
       expect(await db.setting.count()).toBe(0);
+    } finally {
+      await db.$disconnect();
+    }
+  });
+
+  it('isolates, restores and deletes projects on a migrated legacy database', async () => {
+    const db = await legacyDatabase();
+    try {
+      await migrateSchema(db);
+      await migrateProjectOwnership(db);
+      await db.project.createMany({
+        data: [
+          { id: PROJECT_A, name: 'A', environment: 'development', region: 'test' },
+          { id: PROJECT_B, name: 'B', environment: 'development', region: 'test' },
+        ],
+      });
+      for (const [projectId, tag] of [
+        [PROJECT_A, 'a'],
+        [PROJECT_B, 'b'],
+      ] as const) {
+        await db.credential.create({
+          data: { id: `credential-${tag}`, projectId, kind: 'ssh', name: tag, ciphertext: 'x' },
+        });
+        await db.sshKey.create({
+          data: { id: `key-${tag}`, projectId, name: tag, publicKey: 'ssh-ed25519 AAAA' },
+        });
+        await db.activity.create({
+          data: { id: `activity-${tag}`, projectId, type: 'test', message: tag },
+        });
+      }
+
+      // A snapshot of the legacy file must drop B entirely: the SET NULL rules on
+      // SshKey/Activity used to trip the ownership triggers, and tables without a
+      // cascade used to keep B's credentials as orphans.
+      await isolateProjectSnapshot(db, PROJECT_A);
+      expect(await db.project.findMany({ select: { id: true } })).toEqual([{ id: PROJECT_A }]);
+      expect(await db.credential.findMany({ select: { id: true } })).toEqual([
+        { id: 'credential-a' },
+      ]);
+      expect(await db.sshKey.findMany({ select: { id: true } })).toEqual([{ id: 'key-a' }]);
+      expect(await db.activity.findMany({ select: { id: true } })).toEqual([{ id: 'activity-a' }]);
+
+      await restoreProjectSnapshot(db, db, PROJECT_A);
+      expect(await db.sshKey.count({ where: { projectId: PROJECT_A } })).toBe(1);
+
+      await db.$transaction((tx) => deleteProjectWorkspaces(tx, PROJECT_A));
+      expect(await db.project.count()).toBe(0);
+      expect(await db.credential.count()).toBe(0);
     } finally {
       await db.$disconnect();
     }

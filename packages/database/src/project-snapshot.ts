@@ -1,4 +1,5 @@
 import type { Db } from './client.js';
+import { deleteProjectWorkspaces } from './project-deletion.js';
 
 export interface ImportedProjectPasskey {
   readonly hash: string;
@@ -21,10 +22,13 @@ export async function isolateProjectSnapshot(db: Db, projectId: string): Promise
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
   if (!project) throw new Error('The active project is missing from the database snapshot');
 
-  await db.$transaction(async (tx) => {
-    await tx.project.deleteMany({ where: { id: { not: projectId } } });
-    await tx.systemSetting.deleteMany();
-  });
+  await db.$transaction(
+    async (tx) => {
+      await deleteProjectWorkspaces(tx, { not: projectId });
+      await tx.systemSetting.deleteMany();
+    },
+    { timeout: 30_000 },
+  );
 }
 
 /**
@@ -74,7 +78,7 @@ export async function restoreProjectSnapshot(
       const current = await tx.project.findUnique({ where: { id: projectId } });
       if (!current) throw new Error('The active project no longer exists');
 
-      await tx.project.delete({ where: { id: projectId } });
+      await deleteProjectWorkspaces(tx, projectId);
       await tx.project.create({
         data: {
           ...sourceProject,
