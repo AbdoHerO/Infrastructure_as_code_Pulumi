@@ -310,6 +310,14 @@ export class InfrastructureService {
     return outputs;
   }
 
+  /** Remove the files that failed attempts left behind since `since`. */
+  pruneAttemptHistory(
+    ref: StackReference,
+    since: Date,
+  ): Promise<Result<void, InfrastructureError>> {
+    return this.engine.pruneAttemptHistory(ref, since);
+  }
+
   private async requirePlan(
     projectId: string,
   ): Promise<Result<InfrastructurePlan, PersistenceError | NotFoundError>> {

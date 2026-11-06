@@ -7,6 +7,7 @@ import { ConfirmationDialogProvider } from '../components/ConfirmationDialogProv
 import { WorkspaceProvider } from '../features/projects/WorkspaceContext.js';
 import { WorkspaceGate } from '../features/projects/WorkspaceGate.js';
 import { McpRuntime } from '../features/mcp/McpRuntime.js';
+import { KeepTryingWatcher } from '../features/infrastructure/useInfrastructure.js';
 
 /** Application-wide context providers (data fetching, tooltips, and more). */
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
@@ -30,6 +31,7 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
         <TooltipProvider delayDuration={300}>
           <ConfirmationDialogProvider>
             <McpRuntime />
+            <KeepTryingWatcher />
             <WorkspaceGate>
               <SettingsEffects />
               {children}

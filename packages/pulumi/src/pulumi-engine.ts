@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   type ConfigMap,
   type EngineEvent as PulumiEngineEvent,
@@ -10,6 +11,7 @@ import {
   type Stack,
 } from '@pulumi/pulumi/automation';
 import { err, InfrastructureError, ok, type Result } from '@cloudforge/shared';
+import { summarizeEngineFailure } from '@cloudforge/core';
 import type {
   ApplyResult,
   EngineEvent,
@@ -24,6 +26,9 @@ import type {
   StackReference,
 } from '@cloudforge/core';
 import { buildProgram } from './build-program.js';
+
+/** Enough recent files per folder to diagnose the last few attempts. */
+const ATTEMPT_FILES_TO_KEEP = 40;
 
 /** Configuration for the local Pulumi engine. */
 export interface PulumiEngineOptions {
@@ -150,6 +155,49 @@ export class PulumiEngine implements InfrastructureEngine {
     );
   }
 
+  /**
+   * Remove what failed retries left behind since `since`. Every `pulumi up` adds to
+   * the stack's history, backups and logs, even when it changes nothing, so
+   * retrying for days would otherwise fill the disk. The stack's state is in
+   * another folder and is never touched, and neither is anything older than `since`.
+   */
+  async pruneAttemptHistory(
+    ref: StackReference,
+    since: Date,
+  ): Promise<Result<void, InfrastructureError>> {
+    const { project, stack } = ref;
+    const safeName = /^[\w.-]+$/;
+    if (!safeName.test(project) || !safeName.test(stack)) return ok(undefined);
+    const pulumiState = join(this.options.stateDir, '.pulumi');
+    const logPrefix = `organization+${project}+${stack}-`;
+    const isWorkspaceFile = (name: string): boolean => {
+      const prefix = `${project}-`;
+      const suffix = '-workspace.json';
+      if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
+      return /^[0-9a-f]{40}$/.test(name.slice(prefix.length, -suffix.length));
+    };
+    try {
+      await Promise.all([
+        pruneFiles(join(pulumiState, 'history', project, stack), () => true, since),
+        pruneFiles(join(pulumiState, 'backups', project, stack), () => true, since),
+        pruneFiles(
+          join(this.options.home, 'logs'),
+          (name) => name.startsWith(logPrefix) && name.endsWith('.log'),
+          since,
+        ),
+        pruneFiles(join(this.options.home, 'workspaces'), isWorkspaceFile, since),
+      ]);
+      return ok(undefined);
+    } catch (cause) {
+      return err(
+        new InfrastructureError('Could not clean up after a failed attempt', {
+          cause,
+          context: { project, stack },
+        }),
+      );
+    }
+  }
+
   /** Create/select the stack and run an operation, normalising failures. */
   private async withStack<T>(
     ref: StackReference,
@@ -159,6 +207,7 @@ export class PulumiEngine implements InfrastructureEngine {
     onEvent: EngineEventSink | undefined,
     operation: (stack: Stack) => Promise<T>,
   ): Promise<Result<T, InfrastructureError>> {
+    let workDir: string | undefined;
     try {
       onEvent?.({
         stream: 'stdout',
@@ -190,6 +239,7 @@ export class PulumiEngine implements InfrastructureEngine {
       const stack = createIfMissing
         ? await LocalWorkspace.createOrSelectStack(stackArgs, workspaceOptions)
         : await LocalWorkspace.selectStack(stackArgs, workspaceOptions);
+      workDir = stack.workspace.workDir;
 
       if (Object.keys(plan.config).length > 0) {
         const config: ConfigMap = {};
@@ -215,13 +265,50 @@ export class PulumiEngine implements InfrastructureEngine {
       });
       onEvent?.({ stream: 'stderr', message: detail });
       return err(
-        new InfrastructureError(`Pulumi operation failed: ${firstLine(detail)}`, {
+        new InfrastructureError(`Pulumi operation failed: ${summarizeEngineFailure(detail)}`, {
           cause,
           context: { project: ref.project, stack: ref.stack },
         }),
       );
+    } finally {
+      if (workDir) await removeTemporaryWorkspace(workDir);
     }
   }
+}
+
+/**
+ * The SDK creates a temporary folder for every operation and never removes it.
+ * The state lives in the backend, so nothing reads the folder afterwards. Only a
+ * folder that is plainly the SDK's own is removed.
+ */
+export async function removeTemporaryWorkspace(workDir: string): Promise<void> {
+  if (!basename(workDir).startsWith('automation-')) return;
+  if (resolve(dirname(workDir)) !== resolve(tmpdir())) return;
+  await rm(workDir, { recursive: true, force: true, maxRetries: 2 }).catch(() => undefined);
+}
+
+/** Remove the files of one folder made since `since`, past the newest few. */
+async function pruneFiles(
+  directory: string,
+  belongs: (name: string) => boolean,
+  since: Date,
+): Promise<void> {
+  const names = await readdir(directory).catch((cause: unknown) => {
+    if (isMissingPath(cause)) return [];
+    throw cause;
+  });
+  const files = await Promise.all(
+    names.filter(belongs).map(async (name) => {
+      const path = join(directory, name);
+      const details = await stat(path);
+      return { path, isFile: details.isFile(), modified: details.mtimeMs };
+    }),
+  );
+  const removable = files
+    .filter((file) => file.isFile && file.modified >= since.getTime())
+    .sort((a, b) => b.modified - a.modified)
+    .slice(ATTEMPT_FILES_TO_KEEP);
+  await Promise.all(removable.map((file) => rm(file.path, { force: true })));
 }
 
 interface PulumiCheckpoint {
@@ -527,10 +614,3 @@ function emptyPlan(): InfrastructurePlan {
 }
 
 /** First non-empty line of a (possibly multi-line) error message, trimmed. */
-function firstLine(message: string): string {
-  const line = message
-    .split('\n')
-    .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  return (line ?? 'unknown error').slice(0, 300);
-}

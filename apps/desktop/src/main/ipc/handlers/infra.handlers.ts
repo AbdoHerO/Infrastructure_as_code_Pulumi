@@ -5,11 +5,17 @@ import {
   matchSshConnections,
   type StackReference,
 } from '@cloudforge/core';
-import { UnauthorizedError } from '@cloudforge/shared';
+import { UnauthorizedError, ValidationError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
+import {
+  isKeepTrying,
+  keepTryingStatus,
+  startKeepTrying,
+  stopKeepTrying,
+} from '../../infra/keep-trying.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { projectOperations } from '../../project-operation-registry.js';
 
@@ -75,6 +81,22 @@ export function registerInfraHandlers(): void {
     if (result.targetSync?.count) emitEvent('vpsTargets:changed', { reason: 'synchronized' });
     return result;
   });
+
+  registerHandler('infra:keepTrying', async ({ projectId, streamId, previewToken }) => {
+    const ref = await stackRef(projectId);
+    if (!isKeepTrying(projectId)) {
+      audit(
+        'infrastructure.keep_trying.started',
+        'Started trying to create the server until capacity is available',
+        projectId,
+      );
+    }
+    return startKeepTrying({ projectId, streamId, previewToken, ref });
+  });
+
+  registerHandler('infra:stopTrying', ({ projectId }) => stopKeepTrying(projectId));
+
+  registerHandler('infra:tryingStatus', ({ projectId }) => keepTryingStatus(projectId));
 
   registerHandler('infra:destroy', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
@@ -235,6 +257,13 @@ async function providerOperation<T>(
   streamId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
+  // A new preview would withdraw the approval the retries run on, and an Apply or
+  // a Destroy would compete with them for the same stack.
+  if (isKeepTrying(projectId)) {
+    throw new ValidationError(
+      'CloudForge is still trying to create this server. Stop it on the Infrastructure page first.',
+    );
+  }
   const lease = projectOperations.begin(`infra:${name}:${streamId}`, projectId, false);
   try {
     return await operation();

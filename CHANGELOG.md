@@ -7,8 +7,12 @@ All notable changes to CloudForge are documented here. The format follows
 
 ### Added
 
+- **Keep trying** (Infrastructure): when Oracle answers `Out of host capacity`,
+  CloudForge can apply the plan you previewed every 2 minutes until the server is
+  created, then tell you with a notification. It stops by itself on any error that
+  waiting cannot fix or if the plan changes. See `docs/FIRST-INSTANCE.md`.
 - **MCP server** (Settings → MCP): an AI assistant such as Claude can now use every
-  feature of CloudForge, through 231 tools, 16 resources and 13 guided workflows. It
+  feature of CloudForge, through 234 tools, 16 resources and 13 guided workflows. It
   is off by default, only accepts connections from this computer with a token, and
   works on the project open in the window. You decide what a client may do: critical
   actions ask you in the window each time, reading secrets and running commands on

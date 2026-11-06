@@ -9,6 +9,7 @@ import { initLogger, log } from './logging/logger.js';
 import { checkForUpdates, configureUpdateManager } from './updates/update-manager.js';
 import { withToolDirectories } from './tool-path.js';
 import { initMcp, shutdownMcp } from './mcp/index.js';
+import { stopAllKeepTrying } from './infra/keep-trying.js';
 
 /**
  * Apply a Content-Security-Policy to every response.
@@ -116,6 +117,7 @@ app.on('will-quit', (event) => {
   // Hold the quit until temporary private keys are gone, then let it carry on.
   event.preventDefault();
   cleanedUp = true;
+  stopAllKeepTrying();
   void Promise.allSettled([shutdownMcp(), getContainer().dispose()]).finally(() => app.quit());
 });
 

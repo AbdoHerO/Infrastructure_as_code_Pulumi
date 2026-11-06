@@ -12,11 +12,13 @@ import type {
   CustomTemplateSummary,
   EngineProgress,
   InfrastructurePlan,
+  KeepTryingState,
   ManagedStackSummary,
   PreviewResult,
   Shape,
   StackReference,
 } from '@cloudforge/core';
+import { toast } from '@cloudforge/ui';
 import { invoke, subscribe } from '../../lib/ipc.js';
 
 const CUSTOM_TEMPLATES_KEY = ['infra', 'customTemplates'] as const;
@@ -69,6 +71,72 @@ export function useApply(): ReturnType<
       void queryClient.invalidateQueries({ queryKey: ['ansible', 'targets'] });
     },
   });
+}
+
+function keepTryingKey(projectId: string | null): readonly unknown[] {
+  return ['infra', 'keepTrying', projectId];
+}
+
+/** The project's current or last "keep trying" run; {@link KeepTryingWatcher} keeps it fresh. */
+export function useKeepTryingStatus(
+  projectId: string | null,
+): UseQueryResult<KeepTryingState | null> {
+  return useQuery({
+    queryKey: keepTryingKey(projectId),
+    queryFn: () => invoke('infra:tryingStatus', { projectId: projectId ?? '' }),
+    enabled: projectId !== null,
+  });
+}
+
+/** Start retrying the approved preview in the background. */
+export function useStartKeepTrying(): UseMutationResult<
+  KeepTryingState,
+  Error,
+  { projectId: string; streamId: string; previewToken: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request) => invoke('infra:keepTrying', request),
+    onSuccess: (state) => queryClient.setQueryData(keepTryingKey(state.projectId), state),
+  });
+}
+
+/** Stop retrying after the attempt in progress, if any. */
+export function useStopKeepTrying(): UseMutationResult<
+  KeepTryingState | null,
+  Error,
+  { projectId: string }
+> {
+  return useMutation({
+    mutationFn: (request) => invoke('infra:stopTrying', request),
+  });
+}
+
+/**
+ * What happens as a run progresses, whichever page is open: a run takes days, so
+ * its result usually arrives while you are doing something else. Mounted above
+ * the project gate, because locking the project ends the run.
+ */
+export function KeepTryingWatcher(): null {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      subscribe('infra:tryingChanged', (state) => {
+        queryClient.setQueryData(keepTryingKey(state.projectId), state);
+        if (state.status === 'created') {
+          toast.success('Your server was created');
+          void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
+          void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', state.projectId] });
+          void queryClient.invalidateQueries({ queryKey: ['ansible', 'targets'] });
+        } else if (state.status === 'failed') {
+          toast.error(`CloudForge stopped trying to create your server: ${state.message}`);
+        } else if (state.status === 'stopped') {
+          toast.info(state.message);
+        }
+      }),
+    [queryClient],
+  );
+  return null;
 }
 
 /** Destroy a project's infrastructure. */

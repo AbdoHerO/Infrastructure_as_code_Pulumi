@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Repeat,
   Save,
   ServerCog,
   Terminal,
@@ -37,9 +38,11 @@ import {
   type ResourceSpec,
   type SshKeySummary,
   ADDABLE_KINDS,
+  classifyApplyFailure,
   createResource,
   type extractSshConnectionHints,
   formatSshCommand,
+  isKeepTryingActive,
   isProvisioningProviderKind,
   matchSshConnections,
   uniqueName,
@@ -51,6 +54,7 @@ import { useConfirmation } from '../../components/ConfirmationDialogProvider.js'
 import { useWorkspace } from '../projects/WorkspaceContext.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import { useSshKeys } from '../ssh-keys/useSshKeys.js';
+import { KeepTryingPanel, NoCapacityNotice } from './KeepTryingPanel.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
 import {
@@ -59,6 +63,7 @@ import {
   useDestroy,
   useDestroyManagedStack,
   useEngineLogs,
+  useKeepTryingStatus,
   useManagedStacks,
   useOutputs,
   usePlan,
@@ -66,6 +71,8 @@ import {
   useRefresh,
   useSavePlan,
   useShapes,
+  useStartKeepTrying,
+  useStopKeepTrying,
   type InfrastructureProgressState,
   type InfrastructureResourceProgress,
 } from './useInfrastructure.js';
@@ -139,13 +146,49 @@ export function InfrastructurePage(): JSX.Element {
   const currentPreview =
     approvedPreview?.fingerprint === planFingerprint ? approvedPreview.result : null;
   const issues = useMemo(() => validatePlan(currentPlan), [currentPlan]);
+  const keepTryingState = useKeepTryingStatus(projectId).data ?? null;
+  const startKeepTrying = useStartKeepTrying();
+  const stopKeepTrying = useStopKeepTrying();
+  const trying = isKeepTryingActive(keepTryingState);
+  // Remembered by run, so one run's Stop or Dismiss does not carry over to the next.
+  const [stoppingRun, setStoppingRun] = useState<string | null>(null);
+  const [dismissedRun, setDismissedRun] = useState<string | null>(null);
+  const [noCapacity, setNoCapacity] = useState(false);
   const busy =
     preview.isPending ||
     apply.isPending ||
     destroy.isPending ||
     refresh.isPending ||
     destroyManagedStack.isPending ||
-    savePlan.isPending;
+    savePlan.isPending ||
+    startKeepTrying.isPending ||
+    trying;
+  // Retrying never accepts deleting or replacing resources on its own.
+  const canKeepTrying =
+    !busy &&
+    issues.length === 0 &&
+    currentPreview !== null &&
+    !currentPreview.hasReplacements &&
+    !currentPreview.hasDeletes;
+
+  // The approval is used up once the server exists.
+  useEffect(() => {
+    if (keepTryingState?.status === 'created') setApprovedPreview(null);
+  }, [keepTryingState?.status]);
+
+  const keepTrying = async (): Promise<void> => {
+    if (!currentPreview) return;
+    clear();
+    setNoCapacity(false);
+    if (!(await persist())) return;
+    startKeepTrying.mutate(
+      { projectId, streamId, previewToken: currentPreview.previewToken },
+      {
+        onError: (error) =>
+          toast.error(error instanceof IpcCallError ? error.message : 'Could not start trying'),
+      },
+    );
+  };
 
   const destroyStack = async (stack: ManagedStackSummary): Promise<void> => {
     const names = stack.resources.map((resource) => resource.name).join(', ');
@@ -220,6 +263,7 @@ export function InfrastructurePage(): JSX.Element {
       if (!confirmed) return;
     }
     clear();
+    setNoCapacity(false);
     if (operation === 'preview' && !(await persist())) return;
     const onError = (error: Error): void => {
       toast.error(error instanceof IpcCallError ? error.message : `${operation} failed`);
@@ -277,7 +321,10 @@ export function InfrastructurePage(): JSX.Element {
               toast.success('Apply complete');
             }
           },
-          onError,
+          onError: (error) => {
+            onError(error);
+            if (classifyApplyFailure(error.message) === 'capacity') setNoCapacity(true);
+          },
         },
       );
       return;
@@ -356,6 +403,14 @@ export function InfrastructurePage(): JSX.Element {
           )}
           Apply
         </Button>
+        <Button
+          variant="outline"
+          disabled={!canKeepTrying}
+          title="Apply again every few minutes until the cloud provider has room for this server. Run Preview first."
+          onClick={() => void keepTrying()}
+        >
+          <Repeat className="size-4" /> Keep trying
+        </Button>
         <Button variant="destructive" disabled={busy} onClick={() => void runOperation('destroy')}>
           <Trash className="size-4" /> Destroy
         </Button>
@@ -372,6 +427,30 @@ export function InfrastructurePage(): JSX.Element {
           Refresh / detect drift
         </Button>
       </div>
+
+      {keepTryingState && keepTryingState.startedAt !== dismissedRun ? (
+        <KeepTryingPanel
+          state={keepTryingState}
+          stopping={stoppingRun === keepTryingState.startedAt}
+          onStop={() => {
+            setStoppingRun(keepTryingState.startedAt);
+            stopKeepTrying.mutate(
+              { projectId },
+              {
+                onError: (error) => {
+                  setStoppingRun(null);
+                  toast.error(error instanceof IpcCallError ? error.message : 'Could not stop');
+                },
+              },
+            );
+          }}
+          onDismiss={() => setDismissedRun(keepTryingState.startedAt)}
+        />
+      ) : null}
+
+      {noCapacity && currentPreview && !trying ? (
+        <NoCapacityNotice disabled={!canKeepTrying} onKeepTrying={() => void keepTrying()} />
+      ) : null}
 
       {issues.length > 0 ? (
         <Card className="border-destructive/40 mb-4">

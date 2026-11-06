@@ -62,6 +62,34 @@ allowance is shared by boot and block volumes; this template's 200 GB boot disk
 uses all of it. Always Free is not a promise of regional capacity or zero cost.
 Review Preview and OCI usage before applying.
 
+## When Oracle has no free capacity
+
+`Out of host capacity` means Oracle has no room for this server right now. Your plan
+is fine, and the network and firewall stay in place. Oracle publishes no date for
+when room comes back, and a free slot may not last long, so let CloudForge wait for
+it:
+
+1. On **Infrastructure**, click **Preview**, then **Keep trying**.
+2. Leave CloudForge open with this project selected. You can use its other pages, and
+   your computer will not go to sleep while it runs.
+3. When the server exists, CloudForge shows a Windows notification, and the address is
+   under **Stack outputs**.
+
+CloudForge applies the plan you previewed every 2 minutes, with your sizes unchanged.
+It waits longer if Oracle asks for fewer requests, and carries on through network
+problems of up to about two hours.
+
+It stops when:
+
+- you click **Stop**, open another project, lock this one, or close CloudForge;
+- the plan changes, because your Preview no longer describes it;
+- Oracle answers with an error that waiting cannot fix, such as a rejected key. The
+  error is shown, and you also get a notification.
+
+It never runs a preview that deletes or replaces resources. To start again, click
+**Preview**, then **Keep trying**. A run does not resume by itself when CloudForge
+reopens, because it creates real resources and should only start when you ask.
+
 ## Understand the creation progress
 
 CloudForge does not display a fabricated percentage. While Preview, Apply or

@@ -26,6 +26,7 @@ import type {
   AppSettings,
   AvailabilityDomain,
   ApplyResult,
+  KeepTryingState,
   ConnectionTestResult,
   CloudInstance,
   CloudResource,
@@ -429,6 +430,18 @@ export interface IpcContract {
     };
     response: ApplyResult;
   };
+  /**
+   * Keep applying the approved preview until the provider has room. Returns at
+   * once; progress arrives on `infra:tryingChanged`.
+   */
+  'infra:keepTrying': {
+    request: { projectId: string; streamId: string; previewToken: string };
+    response: KeepTryingState;
+  };
+  /** Stop after the attempt in progress, if any. */
+  'infra:stopTrying': { request: { projectId: string }; response: KeepTryingState | null };
+  /** The current or last run of this project since CloudForge started. */
+  'infra:tryingStatus': { request: { projectId: string }; response: KeepTryingState | null };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
   'infra:refresh': { request: { projectId: string; streamId: string }; response: void };
   'infra:outputs': { request: { projectId: string }; response: Record<string, unknown> };
@@ -886,6 +899,7 @@ export interface IpcEventContract {
   'ssl:log': { streamId: string; event: CertificateEvent };
   'wordpress:log': { streamId: string; event: WordPressEvent };
   'stacks:log': { streamId: string; event: StackEvent };
+  'infra:tryingChanged': KeepTryingState;
   'updates:state': UpdateState;
   'vpsTargets:changed': { reason: 'created' | 'updated' | 'deleted' | 'synchronized' };
   'cloudflare:changed': {
@@ -924,6 +938,7 @@ export const IPC_EVENT_CHANNELS = [
   'ssl:log',
   'wordpress:log',
   'stacks:log',
+  'infra:tryingChanged',
   'updates:state',
   'vpsTargets:changed',
   'cloudflare:changed',
@@ -1147,6 +1162,9 @@ export const IPC_CHANNELS = [
   'infra:validate',
   'infra:preview',
   'infra:apply',
+  'infra:keepTrying',
+  'infra:stopTrying',
+  'infra:tryingStatus',
   'infra:destroy',
   'infra:refresh',
   'infra:outputs',

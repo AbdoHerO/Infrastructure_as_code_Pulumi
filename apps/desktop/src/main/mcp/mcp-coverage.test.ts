@@ -119,6 +119,7 @@ describe('MCP tool catalogue', () => {
       'providers_reboot_instance',
       'cloud_firewall_update',
       'infra_apply',
+      'infra_keep_trying',
       'infra_destroy',
       'infra_destroy_stack',
       'infra_delete_custom_template',

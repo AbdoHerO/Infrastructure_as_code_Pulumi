@@ -129,4 +129,7 @@ export interface InfrastructureEngine {
 
   /** Read the current outputs of a stack. */
   outputs(ref: StackReference): Promise<Result<Record<string, unknown>, InfrastructureError>>;
+
+  /** Remove the files that failed attempts left behind since `since`; the state stays. */
+  pruneAttemptHistory(ref: StackReference, since: Date): Promise<Result<void, InfrastructureError>>;
 }

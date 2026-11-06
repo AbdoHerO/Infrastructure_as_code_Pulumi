@@ -316,6 +316,36 @@ export const INFRASTRUCTURE_TOOLS: readonly McpTool[] = [
     { operation: engineLog },
   ),
   infrastructure.call(
+    'infra_keep_trying',
+    'infra:keepTrying',
+    'critical',
+    "Keep applying the saved plan until the provider has free capacity, for when infra_apply fails with no capacity. Runs in the background and returns at once; follow it with infra_trying_status. It creates real resources with nobody watching, and ends if this project is closed. Needs a fresh previewToken, is refused for a preview that deletes or replaces resources, and stops by itself if the plan changes or an error can't be fixed by waiting.",
+    {
+      previewToken: z.string().min(1).describe('From infra_preview on the current saved plan'),
+    },
+    (input, context) => ({
+      projectId: context.projectId(),
+      streamId: context.streamId,
+      previewToken: input.previewToken,
+    }),
+  ),
+  infrastructure.call(
+    'infra_stop_trying',
+    'infra:stopTrying',
+    'write',
+    'Stop infra_keep_trying after the attempt in progress, if any. Changes nothing in the cloud.',
+    {},
+    (_input, context) => ({ projectId: context.projectId() }),
+  ),
+  infrastructure.call(
+    'infra_trying_status',
+    'infra:tryingStatus',
+    'read',
+    'The current or last infra_keep_trying run of this project: status, attempts and when the next attempt starts. Null if none since CloudForge started.',
+    {},
+    (_input, context) => ({ projectId: context.projectId() }),
+  ),
+  infrastructure.call(
     'infra_destroy',
     'infra:destroy',
     'critical',

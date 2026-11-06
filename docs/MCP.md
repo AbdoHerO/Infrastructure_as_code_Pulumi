@@ -2,7 +2,7 @@
 
 CloudForge can let an AI assistant such as Claude work with your projects through
 the [Model Context Protocol](https://modelcontextprotocol.io). The assistant sees
-the same features you see in the window: 231 tools covering projects, cloud
+the same features you see in the window: 234 tools covering projects, cloud
 infrastructure, servers, Docker, Nginx, certificates, Cloudflare, WordPress, Jenkins
 and the rest.
 

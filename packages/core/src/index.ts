@@ -72,6 +72,7 @@ export * from './application/settings/settings-service.js';
 export * from './application/providers/cloud-provider.js';
 export * from './application/providers/provider-connection-service.js';
 export * from './application/providers/firewall-analysis.js';
+export * from './application/infrastructure/capacity-retry.js';
 export * from './application/infrastructure/infrastructure-plan.js';
 export * from './application/infrastructure/infrastructure-service.js';
 export * from './application/infrastructure/infrastructure-template.js';
