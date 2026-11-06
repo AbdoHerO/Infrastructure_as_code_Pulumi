@@ -16,10 +16,21 @@ export function registerSettingsHandlers(): void {
         appearance: settings.appearance,
         logs: settings.logs,
         updates: settings.updates,
+        deployment: { defaultRegion: settings.deployment.defaultRegion },
       }),
     );
     pruneLogs(settings.logs.retentionDays);
     configureUpdateManager(settings.updates.autoDownload);
+    current.activityService.recordSafe({
+      type: 'settings.updated',
+      message: `Changed settings: ${Object.keys(patch).join(', ')}`,
+      metadata: { sections: Object.keys(patch) },
+    });
     return settings;
+  });
+
+  registerHandler('settings:newProjectDefaults', async () => {
+    const settings = orThrow(await getContainer().systemSettingsService.get());
+    return { region: settings.deployment.defaultRegion };
   });
 }

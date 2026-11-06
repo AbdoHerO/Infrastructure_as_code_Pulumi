@@ -1,3 +1,4 @@
+import { hostAccessInstructions, hostAccessKeyRequest } from '@cloudforge/core';
 import { getContainer } from '../../container.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
@@ -16,6 +17,14 @@ export function registerHostAccessHandlers(): void {
   registerHandler('hostAccess:inspect', async ({ targetId }) =>
     orThrow(await service().inspect(targetId)),
   );
+  registerHandler('hostAccess:instructions', async ({ targetId, username, sudo, language }) => {
+    const target = orThrow(await getContainer().vpsTargetService.get(targetId));
+    const chosen = language ?? 'en';
+    return {
+      ...hostAccessInstructions(target, username, { sudo: sudo ?? false, language: chosen }),
+      keyRequest: hostAccessKeyRequest(chosen),
+    };
+  });
   registerHandler('hostAccess:grant', async ({ targetId, username, publicKey, sudo }) =>
     orThrow(await service().grant(targetId, { username, publicKey, sudo })),
   );

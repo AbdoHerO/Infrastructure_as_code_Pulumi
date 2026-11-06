@@ -31,6 +31,13 @@ describe('renderer confirmation policy', () => {
     expect(violations).toEqual([]);
   });
 
+  it('copies through the main process, because the window has no clipboard permission', () => {
+    const violations = sourceFiles(rendererRoot).filter((path) =>
+      /navigator\.clipboard\.\w+/.test(readFileSync(path, 'utf8')),
+    );
+    expect(violations).toEqual([]);
+  });
+
   it('keeps destructive feature surfaces connected to an in-app confirmation dialog', () => {
     const guardedPages = [
       'features/secrets/SecretsPage.tsx',

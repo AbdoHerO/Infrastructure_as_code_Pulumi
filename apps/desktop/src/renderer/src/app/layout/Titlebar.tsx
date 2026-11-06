@@ -6,6 +6,7 @@ import { useThemeStore } from '../theme/theme-store.js';
 import { useCommandPalette } from '../command/command-store.js';
 import { useWorkspace } from '../../features/projects/WorkspaceContext.js';
 import { IpcCallError } from '../../lib/ipc.js';
+import { useMcpStatus } from '../../features/mcp/useMcp.js';
 
 const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
   light: 'dark',
@@ -27,6 +28,7 @@ export function Titlebar(): JSX.Element {
   const setMode = useThemeStore((s) => s.setMode);
   const openPalette = useCommandPalette((s) => s.setOpen);
   const { session, lock } = useWorkspace();
+  const mcpClients = useMcpStatus().data?.clients.length ?? 0;
   const ModeIcon = MODE_ICON[mode];
   const lockWorkspace = async (): Promise<void> => {
     try {
@@ -50,11 +52,23 @@ export function Titlebar(): JSX.Element {
         <Search className="size-3.5" />
         <span>Search or run a command…</span>
         <kbd className="bg-background text-muted-foreground ml-auto rounded px-1.5 py-0.5 text-[10px] font-medium">
-          ⌘K
+          {navigator.platform.startsWith('Mac') ? '⌘K' : 'Ctrl K'}
         </kbd>
       </button>
 
       <div className="no-drag flex items-center gap-1">
+        {mcpClients > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mr-1 gap-2 text-xs"
+            title="AI clients connected over MCP. Manage them in Settings."
+            onClick={() => navigate('/settings')}
+          >
+            <span className="bg-primary size-2 rounded-full" />
+            MCP · {mcpClients}
+          </Button>
+        ) : null}
         {session ? (
           <Button
             variant="outline"

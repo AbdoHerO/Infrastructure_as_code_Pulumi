@@ -46,6 +46,13 @@ logs), the main process **pushes** events to the renderer. Channels are
 | `ansible:log`   | `{ streamId, event: AnsibleEvent }` — bootstrap/playbook/Nginx stages and output               |
 | `updates:state` | `UpdateState` — check/download/install status and download percentage                          |
 
+### 3. MCP clients
+
+The [MCP server](MCP.md) is a second way in. `registerHandler` also records each
+handler, and both `ipcMain` and the MCP tools run it through `dispatch` in
+[`main/ipc/registry.ts`](../apps/desktop/src/main/ipc/registry.ts), so a request has
+the same project boundary, operation lease and error envelope either way.
+
 ## Channel catalogue
 
 All request/response channels, grouped by feature. `void` means no payload.
@@ -275,6 +282,9 @@ The content is persisted only after the normal encrypted credential create or
 update operation.
 
 ## Adding a channel (checklist)
+
+The build fails until `apps/desktop/src/main/mcp/coverage.ts` says which MCP tool
+serves the new channel, or records why none does. Add the tool in `mcp/catalog`.
 
 1. Add the channel + request/response types to `IpcContract` in `contract.ts`,
    and append the name to `IPC_CHANNELS`. (For a stream, also extend

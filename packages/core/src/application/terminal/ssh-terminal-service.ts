@@ -9,12 +9,18 @@ import {
 import type { ActivityService } from '../activity/activity-service.js';
 import type { RemoteTargetResolver } from '../ports/remote-target-resolver.js';
 import type {
+  SshCommandResult,
   SshTerminalManager,
   SshTerminalSink,
   SshTerminalSize,
 } from '../ports/ssh-terminal-manager.js';
 
 export type SshTerminalServiceError = ValidationError | DeploymentError;
+
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60;
+const MAX_COMMAND_TIMEOUT_SECONDS = 600;
+const MAX_COMMAND_LENGTH = 65_536;
+const MAX_COMMAND_OUTPUT_LENGTH = 200_000;
 
 /** Opens interactive shells only through saved, fingerprint-verified VPS targets. */
 export class SshTerminalService {
@@ -71,6 +77,44 @@ export class SshTerminalService {
 
   closeAll(): void {
     this.terminal.closeAll();
+  }
+
+  /**
+   * Run one command on a saved target and return its output and exit code. The
+   * command text never reaches the activity feed: it can carry secrets.
+   */
+  async exec(
+    targetId: string,
+    command: string,
+    timeoutSeconds: number = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+  ): Promise<Result<SshCommandResult, SshTerminalServiceError>> {
+    if (!isUuid(targetId)) return err(new ValidationError('Select a valid saved VPS target'));
+    if (!command.trim() || command.length > MAX_COMMAND_LENGTH)
+      return err(new ValidationError('A command must be 1–65536 characters'));
+    if (
+      !Number.isInteger(timeoutSeconds) ||
+      timeoutSeconds < 1 ||
+      timeoutSeconds > MAX_COMMAND_TIMEOUT_SECONDS
+    )
+      return err(new ValidationError('The timeout must be 1–600 seconds'));
+    const target = await this.targets.resolve(targetId);
+    if (!target.ok) return target;
+    const result = await this.terminal.exec(target.value, command, {
+      timeoutMs: timeoutSeconds * 1000,
+      maxOutputLength: MAX_COMMAND_OUTPUT_LENGTH,
+    });
+    if (result.ok) {
+      this.activities.recordSafe({
+        type: 'ssh.command.executed',
+        message: 'Ran a command on a server over SSH',
+        metadata: {
+          targetId,
+          exitCode: result.value.exitCode,
+          timedOut: result.value.timedOut,
+        },
+      });
+    }
+    return result;
   }
 }
 

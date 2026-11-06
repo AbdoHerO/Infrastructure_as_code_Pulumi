@@ -81,6 +81,7 @@ resources. A practical development policy is:
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifySecurityGroupRules",
         "ec2:ImportKeyPair",
         "ec2:DeleteKeyPair",
         "ec2:RunInstances",

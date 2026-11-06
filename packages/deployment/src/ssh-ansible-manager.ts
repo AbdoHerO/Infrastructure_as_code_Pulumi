@@ -271,7 +271,8 @@ $SUDO /opt/cloudforge/ansible/bin/pip install --disable-pip-version-check --upgr
     if (profileId !== 'jenkins' && profileId !== 'postgres') return ok(null);
     const profile = ANSIBLE_PROFILES.find((item) => item.id === profileId);
     if (!profile) return err(new DeploymentError(`Unknown Ansible profile: ${profileId}`));
-    const validated = validateVariables(profile, variables);
+    // The secrets are what this reads back from the server, so nobody has them to give.
+    const validated = validateVariables(profile, variables, { secretsRequired: false });
     if (!validated.ok) return validated;
     if (profileId === 'postgres') return this.postgresAccess(target, validated.value);
     const port = profilePort(profileId, validated.value) ?? 8080;
@@ -786,14 +787,16 @@ async function postCheck(
   return ok(undefined);
 }
 
-function validateVariables(
+export function validateVariables(
   profile: AnsibleProfile,
   input: Readonly<Record<string, unknown>>,
+  options: { readonly secretsRequired: boolean } = { secretsRequired: true },
 ): Result<Record<string, unknown>, DeploymentError> {
   const output: Record<string, unknown> = {};
   for (const spec of profile.variables) {
     const raw = input[spec.key] ?? spec.defaultValue;
-    if (spec.required && (raw === undefined || raw === ''))
+    const required = spec.required && (options.secretsRequired || spec.secret !== true);
+    if (required && (raw === undefined || raw === ''))
       return err(new DeploymentError(`${spec.label} is required`));
     if (raw === undefined || raw === '') continue;
     if (spec.type === 'number') {

@@ -25,6 +25,7 @@ import {
   CardTitle,
   Input,
   Label,
+  LogTerminal,
   Select,
   Table,
   TableBody,
@@ -39,6 +40,7 @@ import { useConfirmation } from '../../components/ConfirmationDialogProvider.js'
 import { useVpsTargets } from '../ansible/useAnsible.js';
 import {
   useRuntimeActions,
+  useRuntimeApplyLog,
   useRuntimeConnectivity,
   useRuntimeDrift,
   useRuntimePlan,
@@ -88,6 +90,8 @@ export function VpsRuntimePage(): JSX.Element {
   const [inspected, setInspected] = useState(false);
   const [preview, setPreview] = useState<RuntimePreview | null>(null);
   const [typed, setTyped] = useState<Record<string, string>>({});
+  const [applyStreamId] = useState(() => crypto.randomUUID());
+  const applyLog = useRuntimeApplyLog(applyStreamId);
 
   const plan = useRuntimePlan(targetId);
   const drift = useRuntimeDrift(targetId, inspected);
@@ -137,9 +141,10 @@ export function VpsRuntimePage(): JSX.Element {
       destructive: destructive.length > 0,
     });
     if (!ok) return;
+    applyLog.clear();
     try {
       const report = await actions.apply.mutateAsync({
-        streamId: `runtime-apply-${targetId}-${String(preview.planVersion)}`,
+        streamId: applyStreamId,
         previewToken: preview.token,
         confirmations: destructive.map((operation) => operation.resource),
       });
@@ -170,6 +175,60 @@ export function VpsRuntimePage(): JSX.Element {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not adopt');
     }
+  };
+
+  const changeMode = async (next: RuntimeMode): Promise<void> => {
+    const chosen = MODES.find((entry) => entry.value === next);
+    const ok = await confirm({
+      title: `Switch to ${chosen?.label ?? next}?`,
+      description: `${chosen?.blurb ?? ''}\n\nNothing on the VPS changes now. This decides what an apply is allowed to do.`,
+      confirmLabel: 'Switch mode',
+      destructive: false,
+    });
+    if (!ok) return;
+    dropPreview();
+    actions.setMode.mutate(next, {
+      onSuccess: () => toast.success('Runtime mode saved'),
+      onError: (error) => toast.error(error.message),
+    });
+  };
+
+  const release = async (
+    resourceKind: 'container' | 'network' | 'volume',
+    dockerName: string,
+  ): Promise<void> => {
+    const ok = await confirm({
+      title: `Release ${dockerName}?`,
+      description:
+        'CloudForge stops owning this resource. Nothing on the VPS is changed, and it keeps running.',
+      confirmLabel: 'Release',
+      destructive: false,
+    });
+    if (!ok) return;
+    dropPreview();
+    actions.release.mutate(
+      { resourceKind, dockerName },
+      {
+        onSuccess: () => toast.success(`Released ${dockerName}`),
+        onError: (error) => toast.error(error.message),
+      },
+    );
+  };
+
+  const openRequiredPorts = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Open the required ports?',
+      description:
+        'Adds rules to the firewall on the VPS for the ports this plan needs. Nothing is closed.',
+      confirmLabel: 'Open ports',
+      destructive: false,
+    });
+    if (!ok) return;
+    dropPreview();
+    actions.openFirewall.mutate(undefined, {
+      onSuccess: () => toast.success('Required ports are open on the VPS firewall'),
+      onError: (error) => toast.error(error.message),
+    });
   };
 
   return (
@@ -231,13 +290,7 @@ export function VpsRuntimePage(): JSX.Element {
           <CardContent className="space-y-3">
             <Select
               value={mode}
-              onChange={(event) => {
-                dropPreview();
-                actions.setMode.mutate(event.target.value as RuntimeMode, {
-                  onSuccess: () => toast.success('Runtime mode saved'),
-                  onError: (error) => toast.error(error.message),
-                });
-              }}
+              onChange={(event) => void changeMode(event.target.value as RuntimeMode)}
             >
               {MODES.map((entry) => (
                 <option key={entry.value} value={entry.value}>
@@ -342,16 +395,9 @@ export function VpsRuntimePage(): JSX.Element {
                               size="sm"
                               variant="ghost"
                               onClick={() =>
-                                actions.release.mutate(
-                                  {
-                                    resourceKind: entry.resourceKind as
-                                      'container' | 'network' | 'volume',
-                                    dockerName: entry.dockerName,
-                                  },
-                                  {
-                                    onSuccess: () => toast.success(`Released ${entry.dockerName}`),
-                                    onError: (error) => toast.error(error.message),
-                                  },
+                                void release(
+                                  entry.resourceKind as 'container' | 'network' | 'volume',
+                                  entry.dockerName,
                                 )
                               }
                             >
@@ -422,12 +468,7 @@ export function VpsRuntimePage(): JSX.Element {
               <Button
                 variant="secondary"
                 disabled={actions.openFirewall.isPending}
-                onClick={() =>
-                  actions.openFirewall.mutate(undefined, {
-                    onSuccess: () => toast.success('Required ports are open on the VPS firewall'),
-                    onError: (error) => toast.error(error.message),
-                  })
-                }
+                onClick={() => void openRequiredPorts()}
               >
                 <ShieldCheck className="mr-2 h-4 w-4" /> Open required ports
               </Button>
@@ -507,6 +548,9 @@ export function VpsRuntimePage(): JSX.Element {
                   </p>
                 )}
               </div>
+            )}
+            {(actions.apply.isPending || applyLog.lines.length > 0) && (
+              <LogTerminal lines={applyLog.lines} emptyMessage="Starting…" />
             )}
           </CardContent>
         </Card>

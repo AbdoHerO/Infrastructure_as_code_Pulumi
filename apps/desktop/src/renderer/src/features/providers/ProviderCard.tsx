@@ -14,7 +14,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { Badge, Button, Card, CardContent, Separator } from '@cloudforge/ui';
+import { Badge, Button, Card, CardContent, Separator, toast } from '@cloudforge/ui';
 import {
   type CloudInstance,
   type CredentialSummaryDto,
@@ -69,7 +69,10 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
     }
     instanceAction.mutate(
       { credentialId: credential.id, instanceId: instance.id, action },
-      { onSuccess: () => instances.mutate(credential.id) },
+      {
+        onSuccess: () => instances.mutate(credential.id),
+        onError: (error) => toast.error(error.message),
+      },
     );
   };
 
@@ -186,6 +189,21 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={images.isPending}
+                  onClick={() => images.mutate(credential.id)}
+                >
+                  {images.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Image className="size-4" />
+                  )}
+                  {images.data ? `${images.data.length} images` : 'Load images'}
+                </Button>
+              ) : null}
+              {!isAws ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
                   disabled={instances.isPending}
                   onClick={() => instances.mutate(credential.id)}
                 >
@@ -224,9 +242,9 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 total={shapes.data.length}
               />
             ) : null}
-            {isAws && images.data ? (
+            {images.data ? (
               <DiscoveryList
-                title="Recent Amazon Linux and Ubuntu images"
+                title={isAws ? 'Recent Amazon Linux and Ubuntu images' : 'Recent images'}
                 items={images.data.slice(0, 20).map((image) => ({
                   id: image.id,
                   text: `${image.name} · ${image.architecture}`,
@@ -234,7 +252,7 @@ export function ProviderCard({ credential }: { credential: CredentialSummaryDto 
                 total={images.data.length}
               />
             ) : null}
-            {isAws && (availabilityDomains.isError || shapes.isError || images.isError) ? (
+            {(isAws && (availabilityDomains.isError || shapes.isError)) || images.isError ? (
               <p className="text-destructive text-xs">
                 {availabilityDomains.error?.message ??
                   shapes.error?.message ??

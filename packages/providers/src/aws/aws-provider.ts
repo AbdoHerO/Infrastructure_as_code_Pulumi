@@ -1,15 +1,21 @@
 import {
+  AuthorizeSecurityGroupEgressCommand,
+  AuthorizeSecurityGroupIngressCommand,
   DescribeAvailabilityZonesCommand,
   DescribeImagesCommand,
   DescribeInstancesCommand,
   DescribeInstanceTypesCommand,
   DescribeInternetGatewaysCommand,
   DescribeRegionsCommand,
+  DescribeSecurityGroupRulesCommand,
   DescribeSubnetsCommand,
   DescribeVolumesCommand,
   DescribeVpcsCommand,
   EC2Client,
+  ModifySecurityGroupRulesCommand,
   RebootInstancesCommand,
+  RevokeSecurityGroupEgressCommand,
+  RevokeSecurityGroupIngressCommand,
   StartInstancesCommand,
   StopInstancesCommand,
   TerminateInstancesCommand,
@@ -24,6 +30,8 @@ import type {
   CloudResource,
   ConnectionTestResult,
   InstanceAction,
+  InstanceFirewall,
+  LiveFirewallRule,
   MachineImage,
   ProviderCredentials,
   Region,
@@ -95,8 +103,35 @@ interface InstancesOutput {
       Placement?: { AvailabilityZone?: string };
       LaunchTime?: Date;
       Tags?: readonly { Key?: string; Value?: string }[];
+      SubnetId?: string;
+      PublicIpAddress?: string;
+      PrivateIpAddress?: string;
+      SecurityGroups?: readonly { GroupId?: string }[];
     }[];
   }[];
+}
+
+interface AwsSecurityGroupRule {
+  readonly SecurityGroupRuleId?: string;
+  readonly GroupId?: string;
+  readonly IsEgress?: boolean;
+  readonly IpProtocol?: string;
+  readonly FromPort?: number;
+  readonly ToPort?: number;
+  readonly CidrIpv4?: string;
+  readonly CidrIpv6?: string;
+  readonly Description?: string;
+}
+
+interface SecurityGroupRulesOutput {
+  readonly SecurityGroupRules?: readonly AwsSecurityGroupRule[];
+  readonly NextToken?: string;
+}
+
+/** A security group rule CloudForge can show, and the group it belongs to. */
+interface LocatedRule {
+  readonly rule: LiveFirewallRule;
+  readonly groupId: string;
 }
 
 interface ResourcesOutput {
@@ -355,6 +390,128 @@ export class AwsProvider implements CloudProvider {
     }
   }
 
+  /**
+   * The instance's security groups as one list. Rules CloudForge cannot express,
+   * such as those naming another security group, are left out, and an update only
+   * ever touches rules it was shown.
+   */
+  async getInstanceFirewall(instanceId: string): Promise<Result<InstanceFirewall, ProviderError>> {
+    try {
+      const { instance, groupIds, rules } = await this.firewallContext(instanceId);
+      const subnets = instance.SubnetId
+        ? ((await this.clients.ec2.send(
+            new DescribeSubnetsCommand({ SubnetIds: [instance.SubnetId] }),
+          )) as ResourcesOutput)
+        : {};
+      return ok({
+        provider: this.kind,
+        instanceId,
+        instanceName: tagName(instance.Tags) ?? instanceId,
+        state: instance.State?.Name ?? 'unknown',
+        subnetId: instance.SubnetId ?? '',
+        subnetName: tagName(subnets.Subnets?.[0]?.Tags) ?? instance.SubnetId ?? '',
+        securityListId: groupIds.join(', '),
+        publicIp: instance.PublicIpAddress ?? null,
+        privateIp: instance.PrivateIpAddress ?? null,
+        rules: rules.map((item) => item.rule),
+      });
+    } catch (error) {
+      return err(awsError('read the instance security groups', error));
+    }
+  }
+
+  async updateInstanceFirewall(
+    instanceId: string,
+    rules: readonly LiveFirewallRule[],
+  ): Promise<Result<InstanceFirewall, ProviderError>> {
+    if (rules.some((rule) => rule.stateless)) {
+      return err(new ProviderError('AWS security groups are always stateful.'));
+    }
+    try {
+      const { groupIds, rules: current } = await this.firewallContext(instanceId);
+      const firstGroup = groupIds[0];
+      if (!firstGroup) return err(new ProviderError('The instance has no security group'));
+      const existing = new Map(current.map((item) => [item.rule.id, item]));
+      const wanted = new Set(rules.map((rule) => rule.id));
+      // Additions and edits come first, so a replaced rule is never briefly missing.
+      for (const rule of rules) {
+        const found = existing.get(rule.id);
+        if (!found) await this.authorizeRule(firstGroup, rule);
+        else if (JSON.stringify(found.rule) === JSON.stringify(rule)) continue;
+        else if (found.rule.direction === rule.direction) {
+          await this.clients.ec2.send(
+            new ModifySecurityGroupRulesCommand({
+              GroupId: found.groupId,
+              SecurityGroupRules: [
+                { SecurityGroupRuleId: rule.id, SecurityGroupRule: ruleRequest(rule) },
+              ],
+            }),
+          );
+        } else {
+          await this.authorizeRule(found.groupId, rule);
+          await this.revokeRule(found);
+        }
+      }
+      for (const item of current) {
+        if (!wanted.has(item.rule.id)) await this.revokeRule(item);
+      }
+    } catch (error) {
+      return err(awsError('update the instance security groups', error));
+    }
+    return this.getInstanceFirewall(instanceId);
+  }
+
+  private async firewallContext(instanceId: string): Promise<{
+    instance: NonNullable<
+      NonNullable<InstancesOutput['Reservations']>[number]['Instances']
+    >[number];
+    groupIds: string[];
+    rules: LocatedRule[];
+  }> {
+    const output = (await this.clients.ec2.send(
+      new DescribeInstancesCommand({ InstanceIds: [instanceId] }),
+    )) as InstancesOutput;
+    const instance = output.Reservations?.[0]?.Instances?.[0];
+    if (!instance) throw new ProviderError('AWS did not return that EC2 instance');
+    const groupIds = (instance.SecurityGroups ?? []).flatMap((group) =>
+      group.GroupId ? [group.GroupId] : [],
+    );
+    const rules: LocatedRule[] = [];
+    let nextToken: string | undefined;
+    do {
+      const page = (await this.clients.ec2.send(
+        new DescribeSecurityGroupRulesCommand({
+          Filters: [{ Name: 'group-id', Values: groupIds }],
+          ...(nextToken ? { NextToken: nextToken } : {}),
+        }),
+      )) as SecurityGroupRulesOutput;
+      for (const raw of page.SecurityGroupRules ?? []) {
+        const located = mapSecurityGroupRule(raw);
+        if (located) rules.push(located);
+      }
+      nextToken = page.NextToken;
+    } while (nextToken);
+    return { instance, groupIds, rules };
+  }
+
+  private async authorizeRule(groupId: string, rule: LiveFirewallRule): Promise<void> {
+    const input = { GroupId: groupId, IpPermissions: [ipPermission(rule)] };
+    await this.clients.ec2.send(
+      rule.direction === 'ingress'
+        ? new AuthorizeSecurityGroupIngressCommand(input)
+        : new AuthorizeSecurityGroupEgressCommand(input),
+    );
+  }
+
+  private async revokeRule({ rule, groupId }: LocatedRule): Promise<void> {
+    const input = { GroupId: groupId, SecurityGroupRuleIds: [rule.id] };
+    await this.clients.ec2.send(
+      rule.direction === 'ingress'
+        ? new RevokeSecurityGroupIngressCommand(input)
+        : new RevokeSecurityGroupEgressCommand(input),
+    );
+  }
+
   async listResources(): Promise<Result<CloudResource[], ProviderError>> {
     try {
       const [vpcs, subnets, gateways, volumes] = (await Promise.all([
@@ -424,6 +581,67 @@ export class AwsProvider implements CloudProvider {
       return err(awsError('list AWS infrastructure resources', error));
     }
   }
+}
+
+const AWS_PROTOCOLS: Readonly<Record<string, LiveFirewallRule['protocol']>> = {
+  '-1': 'all',
+  tcp: 'tcp',
+  udp: 'udp',
+  icmp: 'icmp',
+};
+
+function mapSecurityGroupRule(raw: AwsSecurityGroupRule): LocatedRule | null {
+  const protocol = AWS_PROTOCOLS[raw.IpProtocol ?? ''];
+  const cidr = raw.CidrIpv4 ?? raw.CidrIpv6;
+  if (!raw.SecurityGroupRuleId || !raw.GroupId || !protocol || !cidr) return null;
+  // ICMP uses these two fields for its type and code, and -1 means "all" elsewhere.
+  const hasPorts =
+    (protocol === 'tcp' || protocol === 'udp') &&
+    raw.FromPort !== undefined &&
+    raw.ToPort !== undefined &&
+    raw.FromPort >= 1;
+  return {
+    groupId: raw.GroupId,
+    rule: {
+      id: raw.SecurityGroupRuleId,
+      direction: raw.IsEgress ? 'egress' : 'ingress',
+      protocol,
+      cidr,
+      portFrom: hasPorts ? (raw.FromPort ?? null) : null,
+      portTo: hasPorts ? (raw.ToPort ?? null) : null,
+      description: raw.Description ?? '',
+      stateless: false,
+    },
+  };
+}
+
+/** Ports as AWS wants them: TCP and UDP need a range even for "all ports". */
+function awsPorts(rule: LiveFirewallRule): { FromPort?: number; ToPort?: number } {
+  if (rule.protocol === 'all') return {};
+  if (rule.protocol === 'icmp') return { FromPort: -1, ToPort: -1 };
+  return { FromPort: rule.portFrom ?? 0, ToPort: rule.portTo ?? 65535 };
+}
+
+function ipPermission(rule: LiveFirewallRule): Record<string, unknown> {
+  const description = rule.description.trim();
+  const named = description ? { Description: description } : {};
+  return {
+    IpProtocol: rule.protocol === 'all' ? '-1' : rule.protocol,
+    ...awsPorts(rule),
+    ...(rule.cidr.includes(':')
+      ? { Ipv6Ranges: [{ CidrIpv6: rule.cidr, ...named }] }
+      : { IpRanges: [{ CidrIp: rule.cidr, ...named }] }),
+  };
+}
+
+function ruleRequest(rule: LiveFirewallRule): Record<string, unknown> {
+  const description = rule.description.trim();
+  return {
+    IpProtocol: rule.protocol === 'all' ? '-1' : rule.protocol,
+    ...awsPorts(rule),
+    ...(rule.cidr.includes(':') ? { CidrIpv6: rule.cidr } : { CidrIpv4: rule.cidr }),
+    ...(description ? { Description: description } : {}),
+  };
 }
 
 function createClients(config: AwsConfig): AwsClientSet {

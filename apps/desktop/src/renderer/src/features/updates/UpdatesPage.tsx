@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { CheckCircle2, Download, Loader2, RefreshCw, RotateCw, XCircle } from 'lucide-react';
-import { Button, Card, CardContent } from '@cloudforge/ui';
+import { Button, Card, CardContent, toast } from '@cloudforge/ui';
 import type { UpdateState } from '@shared/ipc/contract.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { PageHeader } from '../../components/PageHeader.js';
@@ -15,15 +15,22 @@ export function UpdatesPage(): JSX.Element {
   const check = useMutation({
     mutationFn: () => invoke('updates:check', undefined),
     onSuccess: setState,
+    onError: (error) => toast.error(error.message),
   });
   const download = useMutation({
     mutationFn: () => invoke('updates:download', undefined),
     onSuccess: setState,
+    onError: (error) => toast.error(error.message),
   });
-  const install = useMutation({ mutationFn: () => invoke('updates:install', undefined) });
+  const install = useMutation({
+    mutationFn: () => invoke('updates:install', undefined),
+    onError: (error) => toast.error(error.message),
+  });
 
   useEffect(() => {
-    void invoke('updates:state', undefined).then(setState);
+    void invoke('updates:state', undefined)
+      .then(setState)
+      .catch((error: Error) => toast.error(error.message));
     return subscribe('updates:state', setState);
   }, []);
 

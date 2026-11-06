@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Download, Loader2, RefreshCw, RotateCw } from 'lucide-react';
 import {
@@ -23,6 +23,7 @@ import { useSettings, useUpdateSettings } from './useSettings.js';
 import { invoke, subscribe } from '../../lib/ipc.js';
 import { toast } from '@cloudforge/ui';
 import { useWorkspace } from '../projects/WorkspaceContext.js';
+import { McpSettingsPanel } from '../mcp/McpSettingsPanel.js';
 
 /** The Settings module with grouped, tabbed sections. */
 export function SettingsPage(): JSX.Element {
@@ -78,20 +79,23 @@ export function SettingsPage(): JSX.Element {
           <TabsTrigger value="ssl">SSL</TabsTrigger>
           <TabsTrigger value="cloudflare">Cloudflare</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="mcp">
+          <McpSettingsPanel />
+        </TabsContent>
 
         <TabsContent value="general">
           <Card>
             <CardContent className="divide-border/60 divide-y py-2">
               <Row title="Log retention" description="How many days to keep deployment logs.">
-                <Input
+                <SavedInput
                   type="number"
                   min={1}
                   className="w-24"
-                  defaultValue={settings?.logs.retentionDays ?? 30}
-                  onBlur={(event) =>
-                    update.mutate({ logs: { retentionDays: Number(event.target.value) || 30 } })
-                  }
+                  value={settings?.logs.retentionDays ?? 30}
+                  onSave={(text) => update.mutate({ logs: { retentionDays: Number(text) || 30 } })}
                 />
               </Row>
             </CardContent>
@@ -136,13 +140,11 @@ export function SettingsPage(): JSX.Element {
                 <span className="text-sm font-medium text-emerald-600">Always enabled</span>
               </Row>
               <Row title="Default region" description="Pre-selected region for new projects.">
-                <Input
+                <SavedInput
                   className="w-48"
                   placeholder="eu-frankfurt-1"
-                  defaultValue={settings?.deployment.defaultRegion ?? ''}
-                  onBlur={(event) =>
-                    update.mutate({ deployment: { defaultRegion: event.target.value.trim() } })
-                  }
+                  value={settings?.deployment.defaultRegion ?? ''}
+                  onSave={(text) => update.mutate({ deployment: { defaultRegion: text.trim() } })}
                 />
               </Row>
             </CardContent>
@@ -248,29 +250,27 @@ export function SettingsPage(): JSX.Element {
                 title="Renew before"
                 description="Number of remaining days that triggers renewal (1–90)."
               >
-                <Input
+                <SavedInput
                   className="w-24"
                   type="number"
                   min={1}
                   max={90}
-                  defaultValue={settings?.ssl.renewBeforeDays ?? 30}
-                  onBlur={(event) =>
-                    update.mutate({ ssl: { renewBeforeDays: Number(event.target.value) || 30 } })
-                  }
+                  value={settings?.ssl.renewBeforeDays ?? 30}
+                  onSave={(text) => update.mutate({ ssl: { renewBeforeDays: Number(text) || 30 } })}
                 />
               </Row>
               <Row
                 title="Check interval"
                 description="Hours between background certificate checks (1–168)."
               >
-                <Input
+                <SavedInput
                   className="w-24"
                   type="number"
                   min={1}
                   max={168}
-                  defaultValue={settings?.ssl.checkIntervalHours ?? 24}
-                  onBlur={(event) =>
-                    update.mutate({ ssl: { checkIntervalHours: Number(event.target.value) || 24 } })
+                  value={settings?.ssl.checkIntervalHours ?? 24}
+                  onSave={(text) =>
+                    update.mutate({ ssl: { checkIntervalHours: Number(text) || 24 } })
                   }
                 />
               </Row>
@@ -306,24 +306,22 @@ export function SettingsPage(): JSX.Element {
                 title="Default zone"
                 description="Zone ID used by automatic DNS and SSL workflows."
               >
-                <Input
+                <SavedInput
                   className="w-64"
-                  defaultValue={settings?.cloudflare.defaultZoneId ?? ''}
-                  onBlur={(event) =>
-                    update.mutate({ cloudflare: { defaultZoneId: event.target.value.trim() } })
-                  }
+                  value={settings?.cloudflare.defaultZoneId ?? ''}
+                  onSave={(text) => update.mutate({ cloudflare: { defaultZoneId: text.trim() } })}
                 />
               </Row>
               <Row
                 title="Default TTL"
                 description="1 means Cloudflare Automatic; otherwise 60–86400 seconds."
               >
-                <Input
+                <SavedInput
                   className="w-28"
                   type="number"
-                  defaultValue={settings?.cloudflare.defaultTtl ?? 1}
-                  onBlur={(event) =>
-                    update.mutate({ cloudflare: { defaultTtl: Number(event.target.value) || 1 } })
+                  value={settings?.cloudflare.defaultTtl ?? 1}
+                  onSave={(text) =>
+                    update.mutate({ cloudflare: { defaultTtl: Number(text) || 1 } })
                   }
                 />
               </Row>
@@ -351,15 +349,15 @@ export function SettingsPage(): JSX.Element {
                 title="Auto refresh interval"
                 description="Minutes between background synchronization checks."
               >
-                <Input
+                <SavedInput
                   className="w-28"
                   type="number"
                   min={1}
                   max={1440}
-                  defaultValue={settings?.cloudflare.autoRefreshMinutes ?? 15}
-                  onBlur={(event) =>
+                  value={settings?.cloudflare.autoRefreshMinutes ?? 15}
+                  onSave={(text) =>
                     update.mutate({
-                      cloudflare: { autoRefreshMinutes: Number(event.target.value) || 15 },
+                      cloudflare: { autoRefreshMinutes: Number(text) || 15 },
                     })
                   }
                 />
@@ -379,15 +377,15 @@ export function SettingsPage(): JSX.Element {
                 title="Propagation timeout"
                 description="Maximum seconds to wait for the expected DNS answer."
               >
-                <Input
+                <SavedInput
                   className="w-28"
                   type="number"
                   min={30}
                   max={3600}
-                  defaultValue={settings?.cloudflare.propagationTimeoutSeconds ?? 300}
-                  onBlur={(event) =>
+                  value={settings?.cloudflare.propagationTimeoutSeconds ?? 300}
+                  onSave={(text) =>
                     update.mutate({
-                      cloudflare: { propagationTimeoutSeconds: Number(event.target.value) || 300 },
+                      cloudflare: { propagationTimeoutSeconds: Number(text) || 300 },
                     })
                   }
                 />
@@ -451,14 +449,12 @@ export function SettingsPage(): JSX.Element {
                 title="Browser cache TTL"
                 description="Default browser cache duration for managed zones."
               >
-                <Input
+                <SavedInput
                   className="w-28"
                   type="number"
                   min={0}
-                  defaultValue={settings?.cloudflare.cacheTtl ?? 14400}
-                  onBlur={(event) =>
-                    update.mutate({ cloudflare: { cacheTtl: Number(event.target.value) || 0 } })
-                  }
+                  value={settings?.cloudflare.cacheTtl ?? 14400}
+                  onSave={(text) => update.mutate({ cloudflare: { cacheTtl: Number(text) || 0 } })}
                 />
               </Row>
               <Row
@@ -519,7 +515,7 @@ export function SettingsPage(): JSX.Element {
                 description={
                   session?.project.hasPasskey
                     ? 'Re-authenticate before exporting secrets. This passkey is not written to the backup.'
-                    : 'This migrated project has no passkey. Set one from Projects before exporting it.'
+                    : 'This project has no passkey. Set one under Projects before exporting it: a backup holds its secrets.'
                 }
               >
                 <Input
@@ -599,6 +595,35 @@ function updateStatusLabel(state: UpdateState): string {
     default:
       return 'Application updates';
   }
+}
+
+/**
+ * A field that shows the stored value, follows it when it changes, and saves only
+ * when you changed it. It always ends up showing what was really stored, since the
+ * main process corrects values that are out of range.
+ */
+function SavedInput({
+  value,
+  onSave,
+  ...props
+}: Omit<ComponentProps<typeof Input>, 'value' | 'defaultValue' | 'onChange' | 'onBlur'> & {
+  value: string | number;
+  onSave: (text: string) => void;
+}): JSX.Element {
+  const stored = String(value);
+  const [text, setText] = useState(stored);
+  useEffect(() => setText(stored), [stored]);
+  return (
+    <Input
+      {...props}
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => {
+        if (text !== stored) onSave(text);
+        setText(stored);
+      }}
+    />
+  );
 }
 
 function Row({

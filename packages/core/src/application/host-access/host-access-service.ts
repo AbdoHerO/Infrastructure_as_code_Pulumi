@@ -305,6 +305,59 @@ export interface HostAccessInstructions {
   readonly message: string;
 }
 
+/** What to send someone so they make a key and send back only its public half. */
+export function hostAccessKeyRequest(language: 'en' | 'fr'): string {
+  return language === 'fr'
+    ? [
+        'Bonjour,',
+        '',
+        "Pour vous donner un accès SSH au serveur, j'ai besoin de votre clé SSH publique.",
+        '',
+        '1. Ouvrez un terminal (PowerShell sous Windows, Terminal sous Mac ou Linux) et tapez :',
+        '',
+        'ssh-keygen -t ed25519',
+        '',
+        '   Appuyez sur Entrée à chaque question (une phrase de passe est recommandée).',
+        '',
+        '2. Affichez votre clé PUBLIQUE et envoyez-moi la ligne affichée (elle commence par ssh-ed25519) :',
+        '',
+        '   Mac / Linux :',
+        'cat ~/.ssh/id_ed25519.pub',
+        '',
+        '   Windows (PowerShell) :',
+        'type $env:USERPROFILE\\.ssh\\id_ed25519.pub',
+        '',
+        '   Si une commande est « introuvable », tapez-la à la main au lieu de la coller.',
+        '',
+        "N'envoyez jamais l'autre fichier (id_ed25519, sans .pub) : c'est votre clé privée, elle reste sur votre ordinateur.",
+      ].join('\n')
+    : [
+        'Hello,',
+        '',
+        'To give you SSH access to the server, I need your public SSH key.',
+        '',
+        '1. Open a terminal (PowerShell on Windows, Terminal on Mac or Linux) and type:',
+        '',
+        // Commands start at column 0: chat apps turn leading spaces into
+        // non-breaking spaces, which the shell then reads as part of the command.
+        'ssh-keygen -t ed25519',
+        '',
+        '   Press Enter at each question (a passphrase is recommended).',
+        '',
+        '2. Show your PUBLIC key and send me the line it prints (it starts with ssh-ed25519):',
+        '',
+        '   Mac / Linux:',
+        'cat ~/.ssh/id_ed25519.pub',
+        '',
+        '   Windows (PowerShell):',
+        'type $env:USERPROFILE\\.ssh\\id_ed25519.pub',
+        '',
+        '   If a command is "not found", type it by hand instead of pasting it.',
+        '',
+        'Never send the other file (id_ed25519, without .pub): it is your private key and stays on your computer.',
+      ].join('\n');
+}
+
 /**
  * How a person connects with the access CloudForge gave them, from the saved
  * target (address, port, pinned host key) and their account name.

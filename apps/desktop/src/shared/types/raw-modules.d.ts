@@ -7,3 +7,9 @@ declare module '*.sql?raw' {
   const content: string;
   export default content;
 }
+
+/** The documentation articles, bundled for the window and for MCP. */
+declare module '*.md?raw' {
+  const content: string;
+  export default content;
+}

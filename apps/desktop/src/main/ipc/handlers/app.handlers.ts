@@ -17,6 +17,7 @@ export function registerAppHandlers(): void {
   registerHandler('app:copyDiagnostics', () => clipboard.writeText(formatDiagnostics(appInfo())));
   registerHandler('app:copyText', ({ text }) => clipboard.writeText(text));
   registerHandler('app:synchronize', () => getContainer().synchronizeData());
+  registerHandler('app:backgroundJobs', () => getContainer().backgroundJobs());
 }
 
 function appInfo(): AppInfo {

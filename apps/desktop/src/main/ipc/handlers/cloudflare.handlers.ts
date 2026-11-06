@@ -1,4 +1,9 @@
-import type { CloudflareService } from '@cloudforge/core';
+import {
+  CLOUDFLARE_DNS_TEMPLATES,
+  cloudflareDnsTemplateRecord,
+  type CloudflareService,
+} from '@cloudforge/core';
+import { NotFoundError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
@@ -55,6 +60,32 @@ export function registerCloudflareHandlers(): void {
       ),
     ),
   );
+  registerHandler('cloudflare:withdrawDns', async ({ credentialId, zoneId, domain, expectedIp }) =>
+    orThrow(
+      await getContainer().cloudflareDnsAutomationService.withdraw(
+        domain,
+        expectedIp,
+        credentialId,
+        zoneId,
+      ),
+    ),
+  );
+  registerHandler('cloudflare:dnsTemplates', () => CLOUDFLARE_DNS_TEMPLATES);
+  registerHandler('cloudflare:applyDnsTemplate', async (request) => {
+    const { credentialId, zoneId, templateId, address } = request;
+    const template = CLOUDFLARE_DNS_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) throw new NotFoundError(`Unknown DNS template: ${templateId}`);
+    const zones = orThrow(await service().zones(credentialId));
+    const zone = zones.find((item) => item.id === zoneId);
+    if (!zone) throw new NotFoundError('The Cloudflare zone was not found');
+    return orThrow(
+      await service().createDnsRecord(
+        credentialId,
+        zoneId,
+        cloudflareDnsTemplateRecord(template, zone.name, address ?? ''),
+      ),
+    );
+  });
   registerHandler('cloudflare:zoneSettings', async ({ credentialId, zoneId }) =>
     orThrow(await service().zoneSettings(credentialId, zoneId)),
   );

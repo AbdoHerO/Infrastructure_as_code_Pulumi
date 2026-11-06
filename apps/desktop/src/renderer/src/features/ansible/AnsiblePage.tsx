@@ -39,6 +39,7 @@ import {
 } from '@cloudforge/ui';
 import type {
   AnsibleProfileId,
+  AnsibleVariableSpec,
   NginxSite,
   VpsPreflightReport,
   VpsTargetDto,
@@ -120,13 +121,12 @@ export function AnsiblePage(): JSX.Element {
         onError: fail,
       },
     );
+  // What you typed, or else what the server reports, or else the profile's default.
+  // A refresh of the server's state can never overwrite what you typed.
+  const variableValue = (spec: AnsibleVariableSpec): unknown =>
+    variables[spec.key] ?? profileState?.configuration[spec.key] ?? spec.defaultValue;
   const profileValues = (): Record<string, unknown> =>
-    Object.fromEntries(
-      (profile?.variables ?? []).map((spec) => [
-        spec.key,
-        variables[spec.key] ?? spec.defaultValue,
-      ]),
-    );
+    Object.fromEntries((profile?.variables ?? []).map((spec) => [spec.key, variableValue(spec)]));
   const preflight = (requestedProfile: AnsibleProfileId = profile?.id ?? 'docker'): void => {
     logs.clear();
     actions.preflight.mutate(
@@ -164,7 +164,8 @@ export function AnsiblePage(): JSX.Element {
       {
         onSuccess: () => {
           toast.success('VPS prerequisites repaired; running final checks');
-          preflight();
+          // The check that asked for this repair, which may not be the selected profile.
+          preflight(report?.profileId ?? undefined);
         },
         onError: fail,
       },
@@ -261,6 +262,7 @@ export function AnsiblePage(): JSX.Element {
     actions.access.reset();
     actions.run.reset();
     setShowAccessSecret(false);
+    setVariables({});
     const saved = savedTargets.data?.find((item) => item.id === id);
     if (!saved) {
       setTargetName('');
@@ -307,14 +309,12 @@ export function AnsiblePage(): JSX.Element {
       actions.profileStates.reset();
       return;
     }
-    actions.profileStates.mutate(target);
+    // A moment later, so typing in these fields does not connect on every key.
+    const timer = window.setTimeout(() => actions.profileStates.mutate(target), 600);
+    return () => window.clearTimeout(timer);
     // Primitive target fields deliberately define when remote state is refreshed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, hostKeySha256, port, sshCredentialId, username]);
-  useEffect(() => {
-    if (!profileState || Object.keys(profileState.configuration).length === 0) return;
-    setVariables((current) => ({ ...current, ...profileState.configuration }));
-  }, [profileId, profileState]);
   const saveTarget = (): void => {
     const request = { name: targetName, ...target };
     const callbacks = {
@@ -635,7 +635,7 @@ export function AnsiblePage(): JSX.Element {
                     {spec.type === 'boolean' ? (
                       <div className="flex min-h-10 items-center gap-3">
                         <Switch
-                          checked={Boolean(variables[spec.key] ?? spec.defaultValue)}
+                          checked={Boolean(variableValue(spec))}
                           onCheckedChange={(checked) => {
                             setVariables((current) => ({ ...current, [spec.key]: checked }));
                             actions.preflight.reset();
@@ -643,20 +643,19 @@ export function AnsiblePage(): JSX.Element {
                           id={`ansible-variable-${spec.key}`}
                         />
                         <Label htmlFor={`ansible-variable-${spec.key}`}>
-                          {(variables[spec.key] ?? spec.defaultValue) ? 'Enabled' : 'Disabled'}
+                          {variableValue(spec) ? 'Enabled' : 'Disabled'}
                         </Label>
                       </div>
                     ) : (
                       <Input
                         type={spec.secret ? 'password' : spec.type === 'number' ? 'number' : 'text'}
-                        value={displayValue(variables[spec.key] ?? spec.defaultValue)}
+                        value={displayValue(variableValue(spec))}
                         onChange={(event) => {
+                          // As typed: the main process checks it, and an emptied number
+                          // field must stay empty rather than turn into 0.
                           setVariables((current) => ({
                             ...current,
-                            [spec.key]:
-                              spec.type === 'number'
-                                ? Number(event.target.value)
-                                : event.target.value,
+                            [spec.key]: event.target.value,
                           }));
                           actions.preflight.reset();
                         }}

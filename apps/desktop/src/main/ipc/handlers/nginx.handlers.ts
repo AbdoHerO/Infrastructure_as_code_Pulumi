@@ -1,3 +1,4 @@
+import { nginxConfigChanges } from '@cloudforge/core';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
@@ -53,6 +54,15 @@ export function registerNginxHandlers(): void {
   registerHandler('nginx:readBackupConfig', async ({ targetId, backupId }) => ({
     content: orThrow(await getContainer().nginxService.readBackupConfig(targetId, backupId)),
   }));
+  registerHandler('nginx:compareBackup', async ({ targetId, backupId }) => {
+    const service = getContainer().nginxService;
+    const [backup, current] = await Promise.all([
+      service.readBackupConfig(targetId, backupId),
+      service.readMainConfig(targetId),
+    ]);
+    const changes = nginxConfigChanges(orThrow(backup), orThrow(current));
+    return { changedLines: changes.length, changes };
+  });
   registerHandler('nginx:restore', async ({ targetId, backupId, streamId }) =>
     orThrow(
       await getContainer().nginxService.restore(targetId, backupId, (event) =>

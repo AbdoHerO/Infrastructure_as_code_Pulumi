@@ -7,6 +7,21 @@ All notable changes to CloudForge are documented here. The format follows
 
 ### Added
 
+- **MCP server** (Settings → MCP): an AI assistant such as Claude can now use every
+  feature of CloudForge, through 231 tools, 16 resources and 13 guided workflows. It
+  is off by default, only accepts connections from this computer with a token, and
+  works on the project open in the window. You decide what a client may do: critical
+  actions ask you in the window each time, reading secrets and running commands on
+  servers stay off until you allow them, and a client cannot change these settings.
+  Every change a client makes appears in the activity feed. See `docs/MCP.md`.
+- The **Firewall** page now works with AWS instances, through their security groups.
+- **Cloud Providers** can now list machine images for Oracle Cloud too.
+- New abilities, available in the API and to MCP clients: renew due certificates now,
+  remove a DNS record CloudForge created, read a saved template's plan, ready-made DNS
+  records and plan resources, the SSH connections of a stack, comparing an Nginx
+  backup with the live config, connection instructions for SSH access, advice on
+  firewall rules and their history, running one command on a server, the state of the
+  background jobs, pruning logs now, and filtering the activity feed.
 - **Docker Stacks** page: deploy any Docker Compose stack on a saved server and
   publish it on one or more domains. Load the Compose file and `.env` from a
   folder or paste them; they stay as written, with a generated file adding the
@@ -19,11 +34,61 @@ All notable changes to CloudForge are documented here. The format follows
 
 ### Changed
 
+- The `domain` option of `deploy:run` is gone: no deployment template used it.
+- Updated Electron to 43.8.3, undici to 7.30.1 and 6.29.1, and zod to 4.6.7, which
+  the release audit flagged as high severity.
 - WordPress now handles HTTPS the same way: an Origin certificate behind the
   Cloudflare proxy, instead of always Let's Encrypt.
 
 ### Fixed
 
+- SSH connections now refuse a server fingerprint CloudForge did not read itself or
+  have saved, on every page.
+- The Nginx page no longer keeps one server's `nginx.conf`, site or logs after you
+  switch to another server, so they can no longer be saved to the wrong one. Saving
+  the main config now asks first, and a log export is named after what it contains.
+- The SSL page clears certificates from another server, asks before exporting a zip
+  (it contains the private key), says when issuing switches a whole Cloudflare zone,
+  and reports when it cannot read the server's sites.
+- **Copy** buttons for credentials, SSH keys and the log path now really copy. They
+  said "Copied" while the window was not allowed to use the clipboard.
+- Failures that showed nothing now show a message: saving settings, updates, deleting
+  a credential, Cloudflare zones and records, zone settings, the firewall page,
+  starting or stopping instances, and container logs and statistics.
+- The Dashboard shows real numbers instead of fixed zeros.
+- The Jenkins page sends exactly the values it shows, and asks before a build with a
+  `WIPE` parameter, which erases data.
+- The Ansible page no longer overwrites what you typed when it refreshes, connects on
+  every key, checks the wrong profile after a repair, or turns an emptied number into 0. Showing the PostgreSQL login no longer needs the password typed again.
+- The infrastructure editor's custom image field now appears, sizes no longer stay
+  hidden in a plan after choosing a fixed shape, and declining a destructive apply no
+  longer saves the plan first. A plan with no image, or a kind CloudForge cannot
+  create, is now reported instead of failing or being skipped.
+- The Cloudflare page can show all zones, keeps batch actions to the records you can
+  see, no longer turns a template into an update of the record being edited, and
+  cleans up tags. Page rules can be cancelled and redirect rules reset after saving.
+- Cancelling the folder picker no longer leaves project import stuck on "Importing…".
+- Pressing Enter on a project with an empty passkey no longer tries to open it.
+- Settings fields show the stored value, including after it is corrected, and save only
+  when changed.
+- Saved servers added elsewhere now appear in SSH access and the host firewall.
+- The VPS Runtime page asks before changing mode, releasing a resource or opening
+  ports, and no longer re-reads the server each time the window gets focus.
+- The Docker Stacks page reports a failed analysis instead of keeping the old one.
+- More is recorded in the activity feed: credentials, SSH keys, servers, plugins,
+  settings, backups, starting and stopping instances, stack and site redeploys,
+  plan saves and previews, and templates.
+- Private keys prepared for SSH are now removed when CloudForge closes, not at the next
+  start, and are written only when you click **Prepare SSH command**.
+- Applying an infrastructure plan with problems is now refused by the application
+  itself, not only by the page, and so is applying a preview that deletes or replaces
+  resources unless those changes were accepted.
+- The VPS Runtime page now shows the output of an apply.
+- The "Default region" setting now pre-fills the region of a new project.
+- Exporting a project backup now enforces the 12-character passphrase in the
+  application itself, not only on the page.
+- The background Cloudflare synchronization no longer makes Lock or Switch project
+  fail with "Wait for the active operation to finish".
 - A proxied domain in a Flexible Cloudflare zone no longer gets a redirect to
   HTTPS on the server, which sent visitors round in an endless loop.
 - Removing or deleting a WordPress site now stops renewing its certificate;

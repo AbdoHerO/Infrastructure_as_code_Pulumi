@@ -1,8 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { type InfrastructurePlan, validatePlan } from './infrastructure-plan.js';
+import { type InfrastructurePlan, type ResourceSpec, validatePlan } from './infrastructure-plan.js';
 import { findInfrastructureTemplate } from './infrastructure-template.js';
 
 const base: Omit<InfrastructurePlan, 'resources'> = { providerKind: 'oracle', config: {} };
+
+describe('validatePlan: what the engine cannot do', () => {
+  it('refuses a kind the engine would silently skip', () => {
+    const issues = validatePlan({
+      ...base,
+      resources: [{ kind: 'dns', name: 'records' } as unknown as ResourceSpec],
+    });
+    expect(issues).toEqual([
+      { resource: 'records', message: 'CloudForge cannot create "dns" resources yet' },
+    ]);
+  });
+
+  it('asks for an image on a compute resource', () => {
+    const issues = validatePlan({
+      ...base,
+      resources: [
+        { kind: 'network', name: 'network', cidrBlock: '10.0.0.0/16' },
+        {
+          kind: 'subnet',
+          name: 'subnet',
+          networkName: 'network',
+          cidrBlock: '10.0.1.0/24',
+          public: true,
+        },
+        {
+          kind: 'compute',
+          name: 'web',
+          shape: 't3.micro',
+          image: ' ',
+          subnetName: 'subnet',
+          sshPublicKey: '',
+          assignPublicIp: true,
+        },
+      ],
+    });
+    expect(issues).toEqual([{ resource: 'web', message: 'Choose an operating system or image' }]);
+  });
+});
 
 describe('validatePlan', () => {
   it('accepts a consistent plan', () => {

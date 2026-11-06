@@ -136,6 +136,13 @@ function rotatePath(path: string, directory: string): void {
   }
 }
 
+let lastPrune: { readonly at: string; readonly removed: number } | null = null;
+
+/** When logs were last pruned, and how many files that removed. */
+export function lastLogPrune(): { readonly at: string; readonly removed: number } | null {
+  return lastPrune;
+}
+
 /** Remove rotated logs older than the configured retention period. */
 export function pruneLogs(retentionDays: number): number {
   const cutoff = Date.now() - Math.max(1, retentionDays) * 86_400_000;
@@ -151,6 +158,7 @@ export function pruneLogs(retentionDays: number): number {
   } catch {
     // Retention cleanup is best-effort and must not prevent startup.
   }
+  lastPrune = { at: new Date().toISOString(), removed };
   return removed;
 }
 

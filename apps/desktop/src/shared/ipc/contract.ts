@@ -1,6 +1,20 @@
 import type { SerializedAppError } from '@cloudforge/shared';
 import type {
+  McpApprovalRequest,
+  McpClientConfig,
+  McpSettingsPatch,
+  McpStatus,
+} from '../mcp/types.js';
+import type {
   ActivityDto,
+  ActivityFilter,
+  CloudflareDnsTemplate,
+  CredentialKindSpec,
+  CustomTemplate,
+  HostAccessInstructions,
+  InfrastructureResourcePresets,
+  NginxConfigLineChange,
+  SshCommandResult,
   AnsibleEvent,
   AnsibleAccessDetails,
   DockerNetworkSummary,
@@ -119,6 +133,8 @@ export interface IpcContract {
   'app:copyDiagnostics': { request: void; response: void };
   'app:copyText': { request: { text: string }; response: void };
   'app:synchronize': { request: void; response: { warnings: readonly string[] } };
+  /** When the automatic jobs last ran and when they run next. */
+  'app:backgroundJobs': { request: void; response: BackgroundJobsStatus };
 
   'projects:picker': { request: void; response: ProjectPickerDto[] };
   'projects:list': { request: void; response: ProjectDto[] };
@@ -157,10 +173,13 @@ export interface IpcContract {
   };
 
   'credentials:list': { request: void; response: CredentialSummaryDto[] };
+  /** Every credential kind and the fields it needs. */
+  'credentials:kinds': { request: void; response: CredentialKindSpec[] };
   'credentials:create': { request: CreateCredentialInput; response: CredentialSummaryDto };
   'credentials:update': { request: UpdateCredentialInput; response: CredentialSummaryDto };
+  /** Reads the named file, or asks the user to choose one when no path is given. */
   'credentials:importEnvironmentFile': {
-    request: void;
+    request: { path: string } | void;
     response: { filename: string; content: string } | null;
   };
   'credentials:reveal': { request: { id: string }; response: RevealedCredentialDto };
@@ -168,6 +187,8 @@ export interface IpcContract {
 
   'settings:get': { request: void; response: AppSettings };
   'settings:update': { request: SettingsPatch; response: AppSettings };
+  /** Defaults for a new project, readable before any project is open. */
+  'settings:newProjectDefaults': { request: void; response: { region: string } };
 
   'cloudflare:test': { request: { credentialId: string }; response: ServiceConnection };
   'cloudflare:dashboard': {
@@ -282,6 +303,16 @@ export interface IpcContract {
     request: { credentialId: string; zoneId: string; accountId: string };
     response: CloudflarePlatformSummary;
   };
+  'cloudflare:dnsTemplates': { request: void; response: readonly CloudflareDnsTemplate[] };
+  'cloudflare:applyDnsTemplate': {
+    request: { credentialId: string; zoneId: string; templateId: string; address?: string };
+    response: CloudflareDnsRecord;
+  };
+  /** Deletes a domain's record only when CloudForge created it for this address. */
+  'cloudflare:withdrawDns': {
+    request: { credentialId?: string; zoneId?: string; domain: string; expectedIp: string };
+    response: { removed: boolean };
+  };
 
   'jenkins:list': { request: void; response: JenkinsPipelineRecord[] };
   'jenkins:test': {
@@ -297,13 +328,17 @@ export interface IpcContract {
   'jenkins:status': { request: { id: string }; response: JenkinsJobStatus };
 
   'security:status': { request: void; response: { backedByOsKeychain: boolean } };
+  /** The three backup channels ask for a folder when none is given. */
   'backup:create': {
-    request: { passphrase: string; projectPasskey: string };
+    request: { passphrase: string; projectPasskey: string; destinationDir?: string };
     response: { path: string | null };
   };
-  'backup:restore': { request: { passphrase: string }; response: { restored: boolean } };
+  'backup:restore': {
+    request: { passphrase: string; sourceDir?: string };
+    response: { restored: boolean };
+  };
   'backup:importProject': {
-    request: { passphrase: string; projectPasskey: string };
+    request: { passphrase: string; projectPasskey: string; sourceDir?: string };
     response: { imported: boolean };
   };
 
@@ -317,8 +352,9 @@ export interface IpcContract {
     response: SshKeySummary;
   };
   'sshKeys:revealPrivate': { request: { id: string }; response: { privateKey: string } };
+  /** Asks where to save unless `path` is given; a given path never overwrites a file. */
   'sshKeys:exportPrivate': {
-    request: { id: string; suggestedName: string };
+    request: { id: string; suggestedName: string; path?: string };
     response: { path: string | null };
   };
   'sshKeys:materializePrivate': {
@@ -341,8 +377,9 @@ export interface IpcContract {
     request: { credentialId: string; instanceId: string; action: InstanceAction };
     response: CloudInstance;
   };
+  /** When `confirmationName` is given it must be the instance's exact name. */
   'providers:terminateInstance': {
-    request: { credentialId: string; instanceId: string };
+    request: { credentialId: string; instanceId: string; confirmationName?: string };
     response: void;
   };
   'firewall:get': {
@@ -359,6 +396,21 @@ export interface IpcContract {
     response: InstanceFirewall;
   };
 
+  /** Advice on a set of cloud firewall rules. Pure: it reads nothing and changes nothing. */
+  'firewall:analyze': {
+    request: { rules: readonly LiveFirewallRule[]; ports?: readonly number[] };
+    response: {
+      warnings: string[];
+      presets: Readonly<Record<string, { protocol: string; from: number; to: number }>>;
+      publicPorts: { port: number; allowed: boolean }[];
+    };
+  };
+  /** Past changes to one instance's firewall, each with its rules before and after. */
+  'firewall:history': {
+    request: { instanceId: string; limit?: number };
+    response: ActivityDto[];
+  };
+
   'infra:engineStatus': { request: void; response: { available: boolean } };
   'infra:getPlan': { request: { projectId: string }; response: InfrastructurePlan | null };
   'infra:savePlan': { request: { projectId: string; plan: InfrastructurePlan }; response: void };
@@ -367,8 +419,14 @@ export interface IpcContract {
     request: { projectId: string; streamId: string };
     response: PreviewResult;
   };
+  /** A preview that deletes or replaces resources also needs `acceptDestructiveChanges`. */
   'infra:apply': {
-    request: { projectId: string; streamId: string; previewToken: string };
+    request: {
+      projectId: string;
+      streamId: string;
+      previewToken: string;
+      acceptDestructiveChanges?: boolean;
+    };
     response: ApplyResult;
   };
   'infra:destroy': { request: { projectId: string; streamId: string }; response: void };
@@ -398,7 +456,6 @@ export interface IpcContract {
       sshCredentialId: string;
       hostKeySha256: string;
       appImage?: string;
-      domain?: string;
       streamId: string;
     };
     response: DeploymentDto;
@@ -499,6 +556,11 @@ export interface IpcContract {
    * created are ever changed or removed; its own login account is refused.
    */
   'hostAccess:inspect': { request: { targetId: string }; response: HostAccessState };
+  /** How a person connects, and the message asking them for their public key. */
+  'hostAccess:instructions': {
+    request: { targetId: string; username: string; sudo?: boolean; language?: 'en' | 'fr' };
+    response: HostAccessInstructions & { keyRequest: string };
+  };
   'wordpress:list': { request: void; response: WordPressSiteRecord[] };
   'domains:check': { request: DomainQuery; response: DomainCheck };
   'stacks:list': { request: void; response: StackRecord[] };
@@ -506,8 +568,9 @@ export interface IpcContract {
     request: { composeYaml: string; environment: string };
     response: ComposeAnalysis;
   };
+  /** Reads the named folder, or asks the user to choose one when no path is given. */
   'stacks:chooseFolder': {
-    request: void;
+    request: { path: string } | void;
     response: {
       folderName: string;
       composeFileName: string;
@@ -584,9 +647,15 @@ export interface IpcContract {
     response: void;
   };
   'terminal:close': { request: { sessionId: string }; response: void };
+  /** Runs one command on a saved target, without a terminal session. */
+  'terminal:exec': {
+    request: { targetId: string; command: string; timeoutSeconds?: number };
+    response: SshCommandResult;
+  };
 
   'ansible:profiles': { request: void; response: AnsibleProfile[] };
   'ansible:targets': { request: void; response: VpsTargetDto[] };
+  'ansible:getTarget': { request: { id: string }; response: VpsTargetDto };
   'ansible:createTarget': { request: SaveVpsTargetRequest; response: VpsTargetDto };
   'ansible:updateTarget': {
     request: SaveVpsTargetRequest & { id: string };
@@ -689,6 +758,11 @@ export interface IpcContract {
     request: { targetId: string; backupId: string; streamId: string };
     response: NginxOperationOutcome;
   };
+  /** What differs between a backup and the live main config. */
+  'nginx:compareBackup': {
+    request: { targetId: string; backupId: string };
+    response: { changedLines: number; changes: NginxConfigLineChange[] };
+  };
   'ssl:verifyDns': {
     request: { targetId: string; domain: string; cloudflareCredentialId?: string };
     response: {
@@ -720,8 +794,10 @@ export interface IpcContract {
     };
     response: { name: string; contentBase64: string };
   };
+  /** Runs the renewal sweep now instead of waiting for its timer. */
+  'ssl:renewDue': { request: void; response: { started: boolean; message: string } };
 
-  'activity:list': { request: { limit?: number }; response: ActivityDto[] };
+  'activity:list': { request: { limit?: number } & ActivityFilter; response: ActivityDto[] };
 
   'infra:templates': { request: void; response: InfrastructureTemplateSummary[] };
   'infra:applyTemplate': {
@@ -731,10 +807,22 @@ export interface IpcContract {
       sshPublicKey?: string;
       sshCredentialId?: string;
       region?: string;
+      shape?: string;
     };
     response: InfrastructurePlan;
   };
   'infra:customTemplates': { request: void; response: CustomTemplateSummary[] };
+  'infra:getCustomTemplate': { request: { id: string }; response: CustomTemplate };
+  /** Default resources, shapes and images for writing a plan. */
+  'infra:resourcePresets': {
+    request: { providerKind?: string };
+    response: InfrastructureResourcePresets;
+  };
+  /** SSH addresses of the stack's instances and the saved key each one uses. */
+  'infra:sshConnections': {
+    request: { projectId: string };
+    response: InfraSshConnection[];
+  };
   'infra:saveTemplate': {
     request: { name: string; description?: string; plan: InfrastructurePlan };
     response: CustomTemplateSummary;
@@ -768,6 +856,21 @@ export interface IpcContract {
     };
     response: void;
   };
+  /** Deletes rotated log files older than the retention setting. */
+  'logs:prune': { request: void; response: { removed: number } };
+
+  /**
+   * The MCP server's own management, for the Settings page and the approval
+   * dialog only. No MCP tool can reach these: a client must never be able to
+   * widen its own permissions or approve its own requests.
+   */
+  'mcp:status': { request: void; response: McpStatus };
+  'mcp:updateSettings': { request: McpSettingsPatch; response: McpStatus };
+  'mcp:regenerateToken': { request: void; response: McpStatus };
+  'mcp:revealToken': { request: void; response: { token: string } };
+  'mcp:clientConfig': { request: void; response: McpClientConfig };
+  'mcp:pendingApprovals': { request: void; response: McpApprovalRequest[] };
+  'mcp:resolveApproval': { request: { id: string; approved: boolean }; response: void };
 }
 
 /**
@@ -797,6 +900,15 @@ export interface IpcEventContract {
   };
   'terminal:data': { sessionId: string; data: string };
   'terminal:closed': { sessionId: string; reason?: string };
+  /** An MCP client changed something, so the open page should reload it. */
+  'app:dataChanged': { channels: readonly string[]; origin: 'mcp' };
+  /** An MCP client opened, locked or deleted a project. */
+  'projects:sessionChanged': { projectId: string | null };
+  /** An MCP client asked the window to show a page or change the theme. */
+  'ui:command':
+    { kind: 'navigate'; path: string } | { kind: 'theme'; theme: 'light' | 'dark' | 'system' };
+  'mcp:statusChanged': McpStatus;
+  'mcp:approvalsChanged': { pending: readonly McpApprovalRequest[] };
 }
 
 export type IpcEventChannel = keyof IpcEventContract;
@@ -817,6 +929,11 @@ export const IPC_EVENT_CHANNELS = [
   'cloudflare:changed',
   'terminal:data',
   'terminal:closed',
+  'app:dataChanged',
+  'projects:sessionChanged',
+  'ui:command',
+  'mcp:statusChanged',
+  'mcp:approvalsChanged',
 ] as const satisfies readonly IpcEventChannel[];
 
 /** Union of all valid IPC channel names. */
@@ -858,6 +975,46 @@ export interface SaveVpsTargetRequest extends SshTargetRequest {
  */
 export interface ContainerTargetRequest {
   readonly targetId: string;
+}
+
+/** One SSH address exposed by the stack, with the saved key its instance uses. */
+export interface InfraSshConnection {
+  readonly resourceName: string;
+  readonly host: string;
+  readonly user: string;
+  readonly sshKeyId: string | null;
+  readonly sshKeyName: string | null;
+  /** The command without a key file; materialize the key to get one. */
+  readonly command: string;
+}
+
+/** The automatic work CloudForge does on its own. */
+export interface BackgroundJobsStatus {
+  readonly sslRenewal: {
+    readonly enabled: boolean;
+    readonly running: boolean;
+    readonly checkIntervalHours: number;
+    readonly renewBeforeDays: number;
+    readonly managedCertificates: number;
+    readonly lastRunAt: string | null;
+    readonly nextRunAt: string | null;
+  };
+  readonly cloudflareSync: {
+    readonly enabled: boolean;
+    readonly running: boolean;
+    readonly intervalMinutes: number;
+    readonly lastRunAt: string | null;
+    readonly nextRunAt: string | null;
+  };
+  readonly deploymentRecovery: {
+    readonly lastRecovered: number | null;
+    readonly lastRunAt: string | null;
+  };
+  readonly logPruning: {
+    readonly retentionDays: number;
+    readonly lastRemoved: number | null;
+    readonly lastRunAt: string | null;
+  };
 }
 
 export type UpdateStatus =
@@ -903,6 +1060,7 @@ export const IPC_CHANNELS = [
   'app:copyDiagnostics',
   'app:copyText',
   'app:synchronize',
+  'app:backgroundJobs',
   'projects:picker',
   'projects:list',
   'projects:get',
@@ -917,6 +1075,7 @@ export const IPC_CHANNELS = [
   'projects:changePasskey',
   'projects:removePasskey',
   'credentials:list',
+  'credentials:kinds',
   'credentials:create',
   'credentials:update',
   'credentials:importEnvironmentFile',
@@ -924,6 +1083,7 @@ export const IPC_CHANNELS = [
   'credentials:delete',
   'settings:get',
   'settings:update',
+  'settings:newProjectDefaults',
   'cloudflare:test',
   'cloudflare:dashboard',
   'cloudflare:zones',
@@ -948,6 +1108,9 @@ export const IPC_CHANNELS = [
   'cloudflare:saveRedirectRule',
   'cloudflare:deleteRedirectRule',
   'cloudflare:platform',
+  'cloudflare:dnsTemplates',
+  'cloudflare:applyDnsTemplate',
+  'cloudflare:withdrawDns',
   'jenkins:list',
   'jenkins:test',
   'jenkins:save',
@@ -976,6 +1139,8 @@ export const IPC_CHANNELS = [
   'providers:terminateInstance',
   'firewall:get',
   'firewall:update',
+  'firewall:analyze',
+  'firewall:history',
   'infra:engineStatus',
   'infra:getPlan',
   'infra:savePlan',
@@ -1012,6 +1177,7 @@ export const IPC_CHANNELS = [
   'hostFirewall:open',
   'hostFirewall:close',
   'hostAccess:inspect',
+  'hostAccess:instructions',
   'wordpress:list',
   'domains:check',
   'stacks:list',
@@ -1036,8 +1202,10 @@ export const IPC_CHANNELS = [
   'terminal:write',
   'terminal:resize',
   'terminal:close',
+  'terminal:exec',
   'ansible:profiles',
   'ansible:targets',
+  'ansible:getTarget',
   'ansible:createTarget',
   'ansible:updateTarget',
   'ansible:deleteTarget',
@@ -1068,14 +1236,19 @@ export const IPC_CHANNELS = [
   'nginx:backups',
   'nginx:readBackupConfig',
   'nginx:restore',
+  'nginx:compareBackup',
   'ssl:verifyDns',
   'ssl:list',
   'ssl:issue',
   'ssl:export',
+  'ssl:renewDue',
   'activity:list',
   'infra:templates',
   'infra:applyTemplate',
   'infra:customTemplates',
+  'infra:getCustomTemplate',
+  'infra:resourcePresets',
+  'infra:sshConnections',
   'infra:saveTemplate',
   'infra:deleteTemplate',
   'infra:applyCustomTemplate',
@@ -1092,6 +1265,14 @@ export const IPC_CHANNELS = [
   'logs:tail',
   'logs:openFolder',
   'logs:report',
+  'logs:prune',
+  'mcp:status',
+  'mcp:updateSettings',
+  'mcp:regenerateToken',
+  'mcp:revealToken',
+  'mcp:clientConfig',
+  'mcp:pendingApprovals',
+  'mcp:resolveApproval',
 ] as const satisfies readonly IpcChannel[];
 
 /**

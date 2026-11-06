@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { Boxes, Cloud, Rocket, Server } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
 import { APP } from '@cloudforge/shared';
@@ -9,26 +10,51 @@ import { StatCard } from './StatCard.js';
 import { EnvironmentChart } from './EnvironmentChart.js';
 import { useAppInfo } from './useAppInfo.js';
 import { useEngineStatus } from './useEngineStatus.js';
+import { invoke } from '../../lib/ipc.js';
+import { useManagedStacks } from '../infrastructure/useInfrastructure.js';
+import { useProviderCredentials } from '../providers/useProviders.js';
 
 /** The application landing dashboard: summary metrics, status and system info. */
 export function DashboardPage(): JSX.Element {
   const { data: info } = useAppInfo();
-  const { session } = useWorkspace();
-  const projects = [session!.project];
+  const { session, projects } = useWorkspace();
   const { data: engine } = useEngineStatus();
   const { data: activity } = useActivity(20);
-  const projectCount = 1;
+  const { data: deploymentCount = 0 } = useQuery({
+    queryKey: ['deploy', 'count'],
+    queryFn: () => invoke('deploy:count', undefined),
+  });
+  const providerCount = useProviderCredentials().data?.length ?? 0;
+  const resourceCount = (useManagedStacks().data ?? []).reduce(
+    (total, stack) => total + stack.resources.length,
+    0,
+  );
 
   const stats = [
     {
-      label: 'Workspace',
-      value: projectCount,
-      hint: session!.project.name,
+      label: 'Projects',
+      value: projects.length,
+      hint: `Open: ${session!.project.name}`,
       icon: Boxes,
     },
-    { label: 'Deployments', value: 0, hint: 'Nothing deployed', icon: Rocket },
-    { label: 'Providers', value: 0, hint: 'Connect a provider', icon: Cloud },
-    { label: 'Infrastructure', value: 0, hint: 'No resources', icon: Server },
+    {
+      label: 'Deployments',
+      value: deploymentCount,
+      hint: deploymentCount > 0 ? 'In this project' : 'Nothing deployed',
+      icon: Rocket,
+    },
+    {
+      label: 'Providers',
+      value: providerCount,
+      hint: providerCount > 0 ? 'Cloud credentials' : 'Connect a provider',
+      icon: Cloud,
+    },
+    {
+      label: 'Infrastructure',
+      value: resourceCount,
+      hint: resourceCount > 0 ? 'Cloud resources in this project' : 'No resources',
+      icon: Server,
+    },
   ];
 
   return (

@@ -6,6 +6,7 @@ import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
+import { requireLocalPath } from '../../security/local-paths.js';
 
 const COMPOSE_FILE_NAMES = [
   'compose.yaml',
@@ -44,13 +45,16 @@ export function registerStackHandlers(): void {
   registerHandler('stacks:analyze', ({ composeYaml, environment }) =>
     Promise.resolve(service().analyze(composeYaml, environment)),
   );
-  registerHandler('stacks:chooseFolder', async () => {
-    const selection = await dialog.showOpenDialog({
-      title: 'Select the folder of your Docker stack',
-      properties: ['openDirectory'],
-    });
-    const folder = selection.filePaths[0];
-    if (selection.canceled || !folder) return null;
+  registerHandler('stacks:chooseFolder', async (request) => {
+    let folder = request ? requireLocalPath(request.path) : undefined;
+    if (!folder) {
+      const selection = await dialog.showOpenDialog({
+        title: 'Select the folder of your Docker stack',
+        properties: ['openDirectory'],
+      });
+      folder = selection.filePaths[0];
+      if (selection.canceled || !folder) return null;
+    }
     for (const fileName of COMPOSE_FILE_NAMES) {
       const composeYaml = await readTextFile(join(folder, fileName));
       if (composeYaml === null) continue;

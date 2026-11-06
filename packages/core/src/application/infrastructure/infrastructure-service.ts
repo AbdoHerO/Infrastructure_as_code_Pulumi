@@ -33,13 +33,21 @@ import {
 } from './infrastructure-template.js';
 import type { ManagedVpsTargetSyncService } from '../vps-targets/managed-vps-target-sync-service.js';
 
+export interface InfrastructureApplyOptions {
+  /** Required when the approved preview deletes or replaces resources. */
+  readonly acceptDestructiveChanges?: boolean;
+}
+
 /**
  * Application service coordinating a project's infrastructure: it persists the
  * declarative plan and drives the {@link InfrastructureEngine} (preview / apply /
  * destroy / outputs). The renderer only ever talks to this service via IPC.
  */
 export class InfrastructureService {
-  private readonly previews = new Map<string, { token: string; planFingerprint: string }>();
+  private readonly previews = new Map<
+    string,
+    { token: string; planFingerprint: string; destructive: boolean }
+  >();
 
   constructor(
     private readonly engine: InfrastructureEngine,
@@ -118,6 +126,18 @@ export class InfrastructureService {
     return this.templates.list();
   }
 
+  /** One custom template with its stored plan. */
+  async getCustomTemplate(
+    id: string,
+  ): Promise<Result<CustomTemplate, PersistenceError | NotFoundError>> {
+    const template = await this.templates.get(id);
+    if (!template.ok) return template;
+    if (template.value === null) {
+      return err(new NotFoundError('Custom template not found', { context: { templateId: id } }));
+    }
+    return ok(template.value);
+  }
+
   /** Save the given plan as a reusable custom template. */
   async saveCustomTemplate(input: {
     name: string;
@@ -176,7 +196,11 @@ export class InfrastructureService {
     const preview = await this.engine.preview(ref, plan.value, credentials.value.data, onEvent);
     if (!preview.ok) return preview;
     const token = newUuid();
-    this.previews.set(stackKey(ref), { token, planFingerprint: fingerprint(plan.value) });
+    this.previews.set(stackKey(ref), {
+      token,
+      planFingerprint: fingerprint(plan.value),
+      destructive: preview.value.hasReplacements || preview.value.hasDeletes,
+    });
     return ok(toPreviewResult(preview.value, token));
   }
 
@@ -185,11 +209,23 @@ export class InfrastructureService {
     projectId: string,
     previewToken: string,
     onEvent?: EngineEventSink,
+    options: InfrastructureApplyOptions = {},
   ): Promise<
     Result<ApplyResult, InfrastructureError | PersistenceError | NotFoundError | ValidationError>
   > {
     const plan = await this.requirePlan(projectId);
     if (!plan.ok) return plan;
+    // Enforced here and not only in the plan editor: every caller of this service
+    // reaches a real cloud account, and an inconsistent plan fails halfway through.
+    const issues = validatePlan(plan.value);
+    if (issues.length > 0) {
+      return err(
+        new ValidationError(
+          `This plan has ${String(issues.length)} problem(s) to fix before it can be applied`,
+          { context: { issues } },
+        ),
+      );
+    }
     const approved = this.previews.get(stackKey(ref));
     if (
       !previewToken ||
@@ -199,6 +235,13 @@ export class InfrastructureService {
       return err(
         new ValidationError(
           'Run Preview for the current saved plan before Apply. The plan changed or the preview expired.',
+        ),
+      );
+    }
+    if (approved.destructive && options.acceptDestructiveChanges !== true) {
+      return err(
+        new ValidationError(
+          'This preview deletes or replaces resources. Review it, then confirm the destructive changes to apply it.',
         ),
       );
     }

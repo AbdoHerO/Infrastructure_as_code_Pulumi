@@ -2,7 +2,8 @@ import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
-import { resolveSshTarget } from './ssh-target.js';
+import { requireKnownHostKey, resolveSshTarget } from './ssh-target.js';
+import { hostKeyTrust } from '../../security/host-key-trust.js';
 import { projectOperations } from '../../project-operation-registry.js';
 
 export function registerAnsibleHandlers(): void {
@@ -10,25 +11,47 @@ export function registerAnsibleHandlers(): void {
   registerHandler('ansible:targets', async () =>
     orThrow(await getContainer().vpsTargetService.list()),
   );
+  registerHandler('ansible:getTarget', async ({ id }) =>
+    orThrow(await getContainer().vpsTargetService.get(id)),
+  );
   registerHandler('ansible:createTarget', async (request) => {
+    await requireKnownHostKey(request);
     await validateSshCredential(request.sshCredentialId);
     const target = orThrow(await getContainer().vpsTargetService.create(request));
     emitEvent('vpsTargets:changed', { reason: 'created' });
+    getContainer().activityService.recordSafe({
+      type: 'vps_target.created',
+      message: `Saved the VPS target "${target.name}"`,
+      metadata: { targetId: target.id, host: target.host },
+    });
     return target;
   });
   registerHandler('ansible:updateTarget', async ({ id, ...request }) => {
+    await requireKnownHostKey(request);
     await validateSshCredential(request.sshCredentialId);
     const target = orThrow(await getContainer().vpsTargetService.update(id, request));
     emitEvent('vpsTargets:changed', { reason: 'updated' });
+    getContainer().activityService.recordSafe({
+      type: 'vps_target.updated',
+      message: `Updated the VPS target "${target.name}"`,
+      metadata: { targetId: target.id, host: target.host },
+    });
     return target;
   });
   registerHandler('ansible:deleteTarget', async ({ id }) => {
     orThrow(await getContainer().vpsTargetService.remove(id));
     emitEvent('vpsTargets:changed', { reason: 'deleted' });
+    getContainer().activityService.recordSafe({
+      type: 'vps_target.deleted',
+      message: 'Deleted a VPS target. The server itself was not changed.',
+      metadata: { targetId: id },
+    });
   });
-  registerHandler('ansible:inspectHostKey', async ({ host, port }) => ({
-    fingerprint: orThrow(await getContainer().ansibleManager.inspectHostKey(host, port)),
-  }));
+  registerHandler('ansible:inspectHostKey', async ({ host, port }) => {
+    const fingerprint = orThrow(await getContainer().ansibleManager.inspectHostKey(host, port));
+    hostKeyTrust.remember(host, port, fingerprint);
+    return { fingerprint };
+  });
   registerHandler('ansible:status', async (request) =>
     orThrow(await getContainer().ansibleManager.status(await resolveSshTarget(request))),
   );
@@ -66,15 +89,20 @@ export function registerAnsibleHandlers(): void {
     }),
   );
   registerHandler('ansible:bootstrap', (request) =>
-    operation(request.streamId, async (signal) =>
-      orThrow(
+    operation(request.streamId, async (signal) => {
+      const status = orThrow(
         await getContainer().ansibleManager.bootstrap(
           await resolveSshTarget(request),
           (event) => emitEvent('ansible:log', { streamId: request.streamId, event }),
           { signal },
         ),
-      ),
-    ),
+      );
+      getContainer().activityService.recordSafe({
+        type: 'ansible.target.bootstrapped',
+        message: `Installed Ansible on ${request.host}`,
+      });
+      return status;
+    }),
   );
   registerHandler('ansible:run', (request) =>
     operation(request.streamId, async (signal) => {
@@ -126,14 +154,19 @@ export function registerAnsibleHandlers(): void {
   registerHandler('ansible:networks', async (request) =>
     orThrow(await getContainer().ansibleManager.listNetworks(await resolveSshTarget(request))),
   );
-  registerHandler('ansible:createNetwork', async (request) =>
-    orThrow(
+  registerHandler('ansible:createNetwork', async (request) => {
+    const network = orThrow(
       await getContainer().ansibleManager.createNetwork(
         await resolveSshTarget(request),
         request.name,
       ),
-    ),
-  );
+    );
+    getContainer().activityService.recordSafe({
+      type: 'ansible.network.created',
+      message: `Created the Docker network "${request.name}" on ${request.host}`,
+    });
+    return network;
+  });
   registerHandler('ansible:nginxSites', async (request) =>
     orThrow(await getContainer().ansibleManager.listNginxSites(await resolveSshTarget(request))),
   );

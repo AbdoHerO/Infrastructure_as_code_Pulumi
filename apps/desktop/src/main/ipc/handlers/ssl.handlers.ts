@@ -7,6 +7,7 @@ export function registerSslHandlers(): void {
   registerHandler('ssl:verifyDns', async ({ targetId, domain, cloudflareCredentialId }) =>
     orThrow(await getContainer().sslService.verifyDns(targetId, domain, cloudflareCredentialId)),
   );
+  registerHandler('ssl:renewDue', () => getContainer().renewCertificatesNow());
   registerHandler('ssl:list', async ({ targetId, certificateVolume }) =>
     orThrow(await getContainer().sslService.list(targetId, certificateVolume)),
   );

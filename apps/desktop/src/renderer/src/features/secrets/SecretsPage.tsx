@@ -116,7 +116,7 @@ export function SecretsPage(): JSX.Element {
                             if (!confirmed) return;
                             deleteCredential.mutate(credential.id, {
                               onSuccess: () => toast.success('Credential deleted'),
-                              onError: () => toast.error('Failed to delete credential'),
+                              onError: (error) => toast.error(error.message),
                             });
                           });
                         }}

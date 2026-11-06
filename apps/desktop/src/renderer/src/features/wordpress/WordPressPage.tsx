@@ -4,6 +4,7 @@ import { AlertTriangle, Copy, Globe, RefreshCw, Rocket, Trash2, Wrench } from 'l
 import {
   nextWordPressPort,
   validateWordPressSite,
+  wordpressProject,
   wordpressSiteUrl,
   type WordPressRuntimeStatus,
   type WordPressSiteRecord,
@@ -265,13 +266,7 @@ export function WordPressPage(): JSX.Element {
               The server needs Docker and Nginx (set them up in VPS Runtime). Containers appear in
               Containers and in Dockhand as the stack{' '}
               <code>
-                {domain.trim()
-                  ? `cloudforge-wp-${domain
-                      .trim()
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]+/g, '-')
-                      .replace(/^-+|-+$/g, '')}`
-                  : 'cloudforge-wp-<domain>'}
+                {domain.trim() ? wordpressProject(domain.trim()) : 'cloudforge-wp-<domain>'}
               </code>
               .
             </CardDescription>

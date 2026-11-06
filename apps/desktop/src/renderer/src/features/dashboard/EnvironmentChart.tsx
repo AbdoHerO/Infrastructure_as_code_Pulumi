@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@cloudforge/ui';
-import { ENVIRONMENTS, type Environment, type ProjectDto } from '@cloudforge/core';
+import { ENVIRONMENTS, type Environment } from '@cloudforge/core';
 
 const BAR_COLOR: Record<Environment, string> = {
   development: 'bg-primary',
@@ -8,7 +8,11 @@ const BAR_COLOR: Record<Environment, string> = {
 };
 
 /** Horizontal bar chart of projects grouped by environment. */
-export function EnvironmentChart({ projects }: { projects: readonly ProjectDto[] }): JSX.Element {
+export function EnvironmentChart({
+  projects,
+}: {
+  projects: readonly { readonly environment: Environment }[];
+}): JSX.Element {
   const counts = ENVIRONMENTS.map((environment) => ({
     environment,
     count: projects.filter((project) => project.environment === environment).length,

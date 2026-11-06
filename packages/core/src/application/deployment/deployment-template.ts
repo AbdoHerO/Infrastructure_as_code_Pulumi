@@ -14,8 +14,6 @@ export interface DeploymentStep {
 export interface DeploymentContext {
   /** Optional container image to run (for app templates). */
   readonly appImage?: string;
-  /** Optional domain for reverse-proxy / TLS steps. */
-  readonly domain?: string;
 }
 
 /** A deployment template and the steps it produces. */

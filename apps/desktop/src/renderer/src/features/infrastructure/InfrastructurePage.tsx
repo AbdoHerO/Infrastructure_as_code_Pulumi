@@ -36,9 +36,13 @@ import {
   type ResourceKind,
   type ResourceSpec,
   type SshKeySummary,
-  extractSshConnectionHints,
+  ADDABLE_KINDS,
+  createResource,
+  type extractSshConnectionHints,
   formatSshCommand,
   isProvisioningProviderKind,
+  matchSshConnections,
+  uniqueName,
   validatePlan,
 } from '@cloudforge/core';
 import { invoke, IpcCallError } from '../../lib/ipc.js';
@@ -49,7 +53,6 @@ import { useCredentials } from '../secrets/useCredentials.js';
 import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
-import { ADDABLE_KINDS, createResource, uniqueName } from './resource-templates.js';
 import {
   useApply,
   useAvailabilityDomains,
@@ -112,21 +115,7 @@ export function InfrastructurePage(): JSX.Element {
     );
   const outputs = useOutputs(projectId, currentStackExists);
   const sshConnections = useMemo(
-    () =>
-      extractSshConnectionHints(outputs.data ?? {}).map((connection) => {
-        const compute = resources.find(
-          (resource) => resource.kind === 'compute' && resource.name === connection.resourceName,
-        );
-        const sshKey =
-          compute?.kind === 'compute'
-            ? sshKeys.data?.find(
-                (key) =>
-                  key.id === compute.sshCredentialId ||
-                  key.publicKey.trim() === compute.sshPublicKey.trim(),
-              )
-            : undefined;
-        return { ...connection, ...(sshKey ? { sshKey } : {}) };
-      }),
+    () => matchSshConnections(outputs.data ?? {}, resources, sshKeys.data ?? []),
     [outputs.data, resources, sshKeys.data],
   );
   const { lines, progress, resources: resourceProgress, clear } = useEngineLogs(streamId);
@@ -231,7 +220,7 @@ export function InfrastructurePage(): JSX.Element {
       if (!confirmed) return;
     }
     clear();
-    if (operation !== 'destroy' && operation !== 'refresh' && !(await persist())) return;
+    if (operation === 'preview' && !(await persist())) return;
     const onError = (error: Error): void => {
       toast.error(error instanceof IpcCallError ? error.message : `${operation} failed`);
     };
@@ -253,7 +242,8 @@ export function InfrastructurePage(): JSX.Element {
         toast.error('Run Preview for the current plan before Apply.');
         return;
       }
-      if (currentPreview.hasReplacements || currentPreview.hasDeletes) {
+      const destructiveChanges = currentPreview.hasReplacements || currentPreview.hasDeletes;
+      if (destructiveChanges) {
         const destructive = currentPreview.resources
           .filter((resource) => resource.destructive)
           .map(
@@ -267,8 +257,15 @@ export function InfrastructurePage(): JSX.Element {
         });
         if (!confirmed) return;
       }
+      // After the question, so saying no changes nothing.
+      if (!(await persist())) return;
       apply.mutate(
-        { projectId, streamId, previewToken: currentPreview.previewToken },
+        {
+          projectId,
+          streamId,
+          previewToken: currentPreview.previewToken,
+          acceptDestructiveChanges: destructiveChanges,
+        },
         {
           onSuccess: (result) => {
             setApprovedPreview(null);
@@ -463,35 +460,29 @@ function SshConnectionPanel({
 }): JSX.Element | null {
   const [keyPaths, setKeyPaths] = useState<Record<string, string>>({});
   const [keyErrors, setKeyErrors] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-    for (const connection of connections) {
-      if (!connection.sshKey) continue;
-      void invoke('sshKeys:materializePrivate', {
-        id: connection.sshKey.id,
-        suggestedName: connection.sshKey.name,
-      })
-        .then(({ path }) => {
-          if (!cancelled)
-            setKeyPaths((current) => ({ ...current, [connection.resourceName]: path }));
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) {
-            setKeyErrors((current) => ({
-              ...current,
-              [connection.resourceName]:
-                error instanceof Error ? error.message : 'Could not prepare the SSH private key',
-            }));
-          }
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [connections]);
+  const [preparing, setPreparing] = useState<string | null>(null);
 
   if (connections.length === 0) return null;
+
+  // Only when asked: this writes a decrypted private key to disk.
+  const prepareKey = (connection: (typeof connections)[number]): void => {
+    if (!connection.sshKey) return;
+    const name = connection.resourceName;
+    setPreparing(name);
+    setKeyErrors(({ [name]: _cleared, ...others }) => others);
+    void invoke('sshKeys:materializePrivate', {
+      id: connection.sshKey.id,
+      suggestedName: connection.sshKey.name,
+    })
+      .then(({ path }) => setKeyPaths((current) => ({ ...current, [name]: path })))
+      .catch((error: unknown) =>
+        setKeyErrors((current) => ({
+          ...current,
+          [name]: error instanceof Error ? error.message : 'Could not prepare the SSH private key',
+        })),
+      )
+      .finally(() => setPreparing(null));
+  };
 
   const copy = async (command: string): Promise<void> => {
     try {
@@ -550,9 +541,25 @@ function SshConnectionPanel({
                     owner-only permissions.
                   </p>
                 </>
-              ) : connection.sshKey && !keyErrors[connection.resourceName] ? (
-                <div className="bg-secondary flex items-center gap-2 rounded-md p-3 text-xs">
-                  <Loader2 className="size-4 animate-spin" /> Preparing the exact SSH command…
+              ) : connection.sshKey ? (
+                <div className="bg-secondary flex flex-wrap items-center justify-between gap-2 rounded-md p-3 text-xs">
+                  <span>
+                    Prepares the private key in a temporary, owner-only file, removed when this
+                    project is locked or CloudForge closes.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={preparing !== null}
+                    onClick={() => prepareKey(connection)}
+                  >
+                    {preparing === connection.resourceName ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Terminal className="size-4" />
+                    )}
+                    Prepare SSH command
+                  </Button>
                 </div>
               ) : null}
               {keyErrors[connection.resourceName] ? (

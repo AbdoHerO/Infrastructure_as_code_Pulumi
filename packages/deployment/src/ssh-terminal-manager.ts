@@ -2,6 +2,8 @@ import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { DeploymentError, err, ok, type Result } from '@cloudforge/shared';
 import type {
   DeploymentTarget,
+  SshCommandOptions,
+  SshCommandResult,
   SshTerminalManager,
   SshTerminalSink,
   SshTerminalSize,
@@ -100,6 +102,76 @@ export class NodeSshTerminalManager implements SshTerminalManager {
 
   closeAll(): void {
     for (const sessionId of [...this.sessions.keys()]) this.close(sessionId);
+  }
+
+  exec(
+    target: DeploymentTarget,
+    command: string,
+    options: SshCommandOptions,
+  ): Promise<Result<SshCommandResult, DeploymentError>> {
+    return new Promise((resolve) => {
+      const client = new Client();
+      let stdout = '';
+      let stderr = '';
+      let truncated = false;
+      let settled = false;
+      const finish = (result: Result<SshCommandResult, DeploymentError>): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        client.end();
+        resolve(result);
+      };
+      const timer = setTimeout(
+        () => finish(ok({ exitCode: null, stdout, stderr, truncated, timedOut: true })),
+        options.timeoutMs,
+      );
+      const kept = (current: string, data: string): string => {
+        const room = options.maxOutputLength - current.length;
+        if (data.length > room) truncated = true;
+        return room > 0 ? current + data.slice(0, room) : current;
+      };
+      let config: ConnectConfig;
+      try {
+        config = sshConnectionConfig(target, CONNECT_TIMEOUT_MS);
+      } catch (cause) {
+        finish(err(new DeploymentError('Invalid SSH target', { cause })));
+        return;
+      }
+      client.once('error', (cause) =>
+        finish(err(new DeploymentError('SSH command connection failed', { cause }))),
+      );
+      client.once('ready', () => {
+        client.exec(command, (error, stream) => {
+          if (error) {
+            finish(
+              err(new DeploymentError('Could not start the remote command', { cause: error })),
+            );
+            return;
+          }
+          stream.setEncoding('utf8');
+          stream.stderr.setEncoding('utf8');
+          stream.on('data', (data: string) => {
+            stdout = kept(stdout, data);
+          });
+          stream.stderr.on('data', (data: string) => {
+            stderr = kept(stderr, data);
+          });
+          stream.once('close', (code: unknown) =>
+            finish(
+              ok({
+                exitCode: typeof code === 'number' ? code : null,
+                stdout,
+                stderr,
+                truncated,
+                timedOut: false,
+              }),
+            ),
+          );
+        });
+      });
+      client.connect(config);
+    });
   }
 
   private endSession(sessionId: string, reason?: string): void {

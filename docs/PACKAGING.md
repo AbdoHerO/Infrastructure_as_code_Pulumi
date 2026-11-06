@@ -41,6 +41,13 @@ Before packaging, generate the Prisma client:
 pnpm --filter @cloudforge/database prisma:generate
 ```
 
+## The MCP bridge
+
+`resources/mcp/cloudforge-mcp.cjs` ships in the installer's `resources/mcp` folder.
+MCP clients that only start local programs run it with CloudForge's own executable
+and `ELECTRON_RUN_AS_NODE=1`, so it needs no Node.js install. Settings → MCP produces
+the exact configuration.
+
 ## Runtime prerequisites (end-user machine)
 
 CloudForge orchestrates external engines that must be installed on the host:

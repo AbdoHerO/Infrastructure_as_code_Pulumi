@@ -122,9 +122,16 @@ export function JenkinsPage(): JSX.Element {
     onSuccess: (result) => toast.success(`Connected to Jenkins ${result.version}`),
     onError: (error) => toast.error(error.message),
   });
+  // Exactly what the form shows, including choices nobody touched.
+  const parameterValues = (pipeline: JenkinsPipelineRecord): Record<string, string> =>
+    Object.fromEntries(
+      (status.data?.parameters.length ? status.data.parameters : pipeline.parameters).map(
+        (parameter) => [parameter.name, shownParameterValue(parameter, buildValues)],
+      ),
+    );
   const trigger = useMutation({
     mutationFn: (pipeline: JenkinsPipelineRecord) =>
-      invoke('jenkins:trigger', { id: pipeline.id, parameters: buildValues }),
+      invoke('jenkins:trigger', { id: pipeline.id, parameters: parameterValues(pipeline) }),
     onSuccess: () => toast.success('Jenkins build queued'),
     onError: (error) => toast.error(error.message),
   });
@@ -252,6 +259,7 @@ export function JenkinsPage(): JSX.Element {
               onClick={() => {
                 setForm({ ...empty, targetId: targets.data?.[0]?.id ?? '' });
                 setEnvironmentText('');
+                setBuildValues({});
                 setSelectedId('');
               }}
             >
@@ -735,11 +743,7 @@ export function JenkinsPage(): JSX.Element {
                   <Field key={parameter.name} label={parameter.name}>
                     <BuildParameterInput
                       parameter={parameter}
-                      value={
-                        parameter.managed
-                          ? parameter.defaultValue
-                          : (buildValues[parameter.name] ?? parameter.defaultValue)
-                      }
+                      value={shownParameterValue(parameter, buildValues)}
                       readOnly={parameter.managed === true}
                       onChange={(value) =>
                         setBuildValues({ ...buildValues, [parameter.name]: value })
@@ -758,7 +762,25 @@ export function JenkinsPage(): JSX.Element {
                   </Field>
                 ))}
                 <div className="flex gap-2">
-                  <Button onClick={() => trigger.mutate(selected)} disabled={trigger.isPending}>
+                  <Button
+                    disabled={trigger.isPending}
+                    onClick={() => {
+                      const erases = Object.values(parameterValues(selected)).some(
+                        (value) => value.trim().toUpperCase() === 'WIPE',
+                      );
+                      if (!erases) {
+                        trigger.mutate(selected);
+                        return;
+                      }
+                      void confirm({
+                        title: 'Run this build and erase data?',
+                        description: `A parameter of ${selected.name} is set to WIPE. Fresh actions permanently delete every database table before rebuilding it.`,
+                        confirmLabel: 'Run and erase',
+                      }).then((confirmed) => {
+                        if (confirmed) trigger.mutate(selected);
+                      });
+                    }}
+                  >
                     <Play className="mr-2 h-4 w-4" /> Run pipeline
                   </Button>
                   <Button
@@ -874,6 +896,20 @@ function ParameterEditor({
       />
     </div>
   );
+}
+
+/** The value a build parameter's field shows, which is also the value a build sends. */
+function shownParameterValue(
+  parameter: JenkinsParameter,
+  values: Readonly<Record<string, string>>,
+): string {
+  if (parameter.managed) return parameter.defaultValue;
+  const value = values[parameter.name] ?? parameter.defaultValue;
+  if (parameter.type === 'boolean') return value || 'false';
+  if (parameter.type === 'choice' && !parameter.choices.includes(value)) {
+    return parameter.choices[0] ?? '';
+  }
+  return value;
 }
 
 function BuildParameterInput({

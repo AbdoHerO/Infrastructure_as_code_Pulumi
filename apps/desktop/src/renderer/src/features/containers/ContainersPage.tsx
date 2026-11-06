@@ -220,27 +220,40 @@ export function ContainersPage(): JSX.Element {
                   <Action
                     icon={<Play className="size-3.5" />}
                     label="Start"
+                    disabled={action.isPending}
                     onClick={() => void perform(container, 'start')}
                   />
                   <Action
                     icon={<Square className="size-3.5" />}
                     label="Stop"
+                    disabled={action.isPending}
                     onClick={() => void perform(container, 'stop')}
                   />
                   <Action
                     icon={<RotateCw className="size-3.5" />}
                     label="Restart"
+                    disabled={action.isPending}
                     onClick={() => void perform(container, 'restart')}
                   />
                   <Action
                     icon={<FileText className="size-3.5" />}
                     label="Logs"
-                    onClick={() => logs.mutate({ targetId, containerId: container.id })}
+                    onClick={() =>
+                      logs.mutate(
+                        { targetId, containerId: container.id },
+                        { onError: (error) => toast.error(error.message) },
+                      )
+                    }
                   />
                   <Action
                     icon={<Activity className="size-3.5" />}
                     label="Stats"
-                    onClick={() => stats.mutate({ targetId, containerId: container.id })}
+                    onClick={() =>
+                      stats.mutate(
+                        { targetId, containerId: container.id },
+                        { onError: (error) => toast.error(error.message) },
+                      )
+                    }
                   />
                   <Button
                     size="sm"
@@ -355,13 +368,15 @@ function Action({
   icon,
   label,
   onClick,
+  disabled = false,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }): JSX.Element {
   return (
-    <Button size="sm" variant="outline" onClick={onClick}>
+    <Button size="sm" variant="outline" disabled={disabled} onClick={onClick}>
       {icon}
       {label}
     </Button>

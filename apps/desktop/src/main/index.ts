@@ -4,10 +4,11 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { APP } from '@cloudforge/shared';
 import { createMainWindow } from './window.js';
 import { registerIpcHandlers } from './ipc/index.js';
-import { initContainer } from './container.js';
+import { getContainer, initContainer } from './container.js';
 import { initLogger, log } from './logging/logger.js';
 import { checkForUpdates, configureUpdateManager } from './updates/update-manager.js';
 import { withToolDirectories } from './tool-path.js';
+import { initMcp, shutdownMcp } from './mcp/index.js';
 
 /**
  * Apply a Content-Security-Policy to every response.
@@ -97,6 +98,9 @@ async function bootstrap(): Promise<void> {
   }
   registerIpcHandlers();
   createMainWindow();
+  await initMcp().catch((error: unknown) =>
+    log().error({ err: error, event: 'mcp.init-failed' }, 'The MCP server could not start'),
+  );
   log().info({ event: 'app.ready' }, 'CloudForge ready');
 
   app.on('activate', () => {
@@ -105,6 +109,15 @@ async function bootstrap(): Promise<void> {
 }
 
 void app.whenReady().then(bootstrap);
+
+let cleanedUp = false;
+app.on('will-quit', (event) => {
+  if (cleanedUp) return;
+  // Hold the quit until temporary private keys are gone, then let it carry on.
+  event.preventDefault();
+  cleanedUp = true;
+  void Promise.allSettled([shutdownMcp(), getContainer().dispose()]).finally(() => app.quit());
+});
 
 app.on('window-all-closed', () => {
   log().info({ event: 'app.window-all-closed' }, 'All windows closed');

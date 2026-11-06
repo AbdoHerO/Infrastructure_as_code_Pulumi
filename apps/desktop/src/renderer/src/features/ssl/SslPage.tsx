@@ -82,7 +82,10 @@ export function SslPage(): JSX.Element {
     if (!targetId) return;
     void invoke('nginx:listSites', { targetId })
       .then((items) => setSites(items.filter((item) => item.managed !== false)))
-      .catch(() => setSites([]));
+      .catch((error: Error) => {
+        setSites([]);
+        toast.error(`Could not read the server's Nginx sites: ${error.message}`);
+      });
   }, [targetId]);
   useEffect(
     () =>
@@ -135,22 +138,27 @@ export function SslPage(): JSX.Element {
     onError: (error) => toast.error(error.message),
   });
   const issue = useMutation({
+    onMutate: () => setLogs([]),
     mutationFn: () =>
       invoke('ssl:issue', {
         targetId,
         streamId,
-        config: {
-          domain,
-          email,
-          certificateVolume,
-          webrootVolume,
-          forceRenewal,
-          authority,
-          cloudflareCredentialId,
-          includeWildcard,
-          keyAlgorithm,
-          validityDays,
-        },
+        // Only what this authority uses, so a field left over from the other has no say.
+        config:
+          authority === 'letsencrypt'
+            ? { domain, email, certificateVolume, webrootVolume, forceRenewal, authority }
+            : {
+                domain,
+                email: '',
+                certificateVolume,
+                webrootVolume,
+                forceRenewal: false,
+                authority,
+                cloudflareCredentialId,
+                includeWildcard,
+                keyAlgorithm,
+                validityDays,
+              },
       }),
     onSuccess: (certificate) => {
       toast.success(`Certificate issued for ${certificate.domain}`);
@@ -166,12 +174,13 @@ export function SslPage(): JSX.Element {
     format: 'pem' | 'crt' | 'key' | 'zip',
   ): Promise<void> => {
     if (
-      format === 'key' &&
+      (format === 'key' || format === 'zip') &&
       !(await confirm({
-        title: 'Export private key?',
+        title:
+          format === 'zip' ? 'Export the certificate with its private key?' : 'Export private key?',
         description:
           'The unencrypted certificate private key will be saved to this computer. Anyone with this file can impersonate the origin server.',
-        confirmLabel: 'Export private key',
+        confirmLabel: format === 'zip' ? 'Export archive' : 'Export private key',
       }))
     )
       return;
@@ -210,6 +219,8 @@ export function SslPage(): JSX.Element {
                 setTargetId(event.target.value);
                 setDns(null);
                 setVerificationStartedAt(null);
+                // They belong to the other server, and exporting one would ask this one.
+                setCertificates([]);
               }}
             >
               <option value="">Select target</option>
@@ -401,7 +412,7 @@ export function SslPage(): JSX.Element {
               onClick={() => {
                 void confirm({
                   title: 'Issue and apply SSL certificate?',
-                  description: `${authority === 'cloudflare-origin-ca' ? 'Create a Cloudflare Origin CA certificate' : 'Issue a Let’s Encrypt certificate'} for ${domain || 'this domain'}, update its managed Nginx configuration, validate it, and reload Nginx?`,
+                  description: `${authority === 'cloudflare-origin-ca' ? 'Create a Cloudflare Origin CA certificate' : 'Issue a Let’s Encrypt certificate'} for ${domain || 'this domain'}, update its managed Nginx configuration, validate it, and reload Nginx?${authority === 'cloudflare-origin-ca' ? ' This also switches the whole Cloudflare zone to Full (strict), which affects every site in it.' : ''}`,
                   confirmLabel: 'Issue certificate',
                   destructive: false,
                 }).then((confirmed) => {

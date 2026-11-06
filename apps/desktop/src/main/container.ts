@@ -39,7 +39,10 @@ import {
   VpsTargetService,
   JenkinsPipelineService,
   isProvisioningProviderKind,
+  type SecretCipher,
+  type SettingsRepository,
 } from '@cloudforge/core';
+import type { BackgroundJobsStatus } from '@shared/ipc/contract.js';
 import { DefaultProviderFactory } from '@cloudforge/providers';
 import { DefaultServiceProviderFactory } from '@cloudforge/service-providers';
 import {
@@ -93,7 +96,7 @@ import {
 } from './security/project-key-files.js';
 import { NodeProjectPasskeyHasher } from './security/project-passkey-hasher.js';
 import { createInfrastructureEngine } from './infra/engine.js';
-import { log, pruneLogs, setActiveLogProject } from './logging/logger.js';
+import { lastLogPrune, log, pruneLogs, setActiveLogProject } from './logging/logger.js';
 import { projectStackReference } from './infra/stack-reference.js';
 import { emitEvent } from './ipc/emit.js';
 import { projectOperations } from './project-operation-registry.js';
@@ -139,7 +142,12 @@ export interface AppContainer {
   readonly cloudflareDnsAutomationService: CloudflareDnsAutomationService;
   readonly jenkinsPipelineService: JenkinsPipelineService;
   readonly secretsBackedByOsKeychain: boolean;
+  /** Device-level values, readable with no project open. */
+  readonly deviceSettings: SettingsRepository;
+  readonly secretCipher: SecretCipher;
   synchronizeData(): Promise<{ warnings: readonly string[] }>;
+  backgroundJobs(): Promise<BackgroundJobsStatus>;
+  renewCertificatesNow(): Promise<{ started: boolean; message: string }>;
   snapshotDatabase(destination: string): Promise<void>;
   snapshotProjectDatabase(destination: string, projectId: string): Promise<void>;
   restoreProjectDatabase(source: string, projectId: string): Promise<void>;
@@ -660,10 +668,12 @@ export async function initContainer(): Promise<AppContainer> {
     if (cloudflareSyncRunning)
       return { warnings: ['Cloudflare synchronization is already active'] };
     cloudflareSyncRunning = true;
+    // Abortable for the same reason as the certificate sweep above: this is a timer
+    // the user never started, so Lock and Switch wait for it instead of refusing.
     const operation = projectOperations.begin(
       `cloudflare-sync:${lease.sessionId}`,
       lease.projectId,
-      false,
+      true,
     );
     try {
       return await synchronizeCloudflareFor(lease);
@@ -718,6 +728,11 @@ export async function initContainer(): Promise<AppContainer> {
       ? { warnings: [...targets.warnings, ...cloudflare.warnings] }
       : { warnings: ['Project changed before synchronization completed'] };
   };
+  let lastDeploymentRecovery: { readonly at: string; readonly recovered: number } | null = null;
+  const nextRunAt = (lastRun: number | undefined, intervalMs: number): string | null =>
+    lastRun === undefined ? null : new Date(lastRun + intervalMs).toISOString();
+  const lastRunAt = (lastRun: number | undefined): string | null =>
+    lastRun === undefined ? null : new Date(lastRun).toISOString();
   const projectSessionService = new ProjectSessionService(
     projectRepository,
     projectPasskeys,
@@ -736,6 +751,10 @@ export async function initContainer(): Promise<AppContainer> {
         void runScheduledSslRenewal(true);
         void runScheduledCloudflareSync(true);
         const recoveredDeployments = unwrap(await deploymentService.recoverInterrupted());
+        lastDeploymentRecovery = {
+          at: new Date().toISOString(),
+          recovered: recoveredDeployments,
+        };
         if (recoveredDeployments > 0) {
           log().warn(
             {
@@ -793,7 +812,60 @@ export async function initContainer(): Promise<AppContainer> {
     cloudflareDnsAutomationService,
     jenkinsPipelineService,
     secretsBackedByOsKeychain: cipher.backedByOsKeychain,
+    deviceSettings: new PrismaSystemSettingsRepository(db),
+    secretCipher: cipher,
     synchronizeData: synchronizeActiveProject,
+    backgroundJobs: async () => {
+      const lease = projectContext.requireActive();
+      const settings = unwrap(await settingsService.get());
+      const lastSsl = lastSslCheck.get(lease.projectId);
+      const lastCloudflare = lastCloudflareSync.get(lease.projectId);
+      const prune = lastLogPrune();
+      return {
+        sslRenewal: {
+          enabled: settings.ssl.autoRenew,
+          running: sslRenewalRunning,
+          checkIntervalHours: settings.ssl.checkIntervalHours,
+          renewBeforeDays: settings.ssl.renewBeforeDays,
+          managedCertificates: settings.ssl.managed.length,
+          lastRunAt: lastRunAt(lastSsl),
+          nextRunAt: nextRunAt(lastSsl, settings.ssl.checkIntervalHours * 60 * 60_000),
+        },
+        cloudflareSync: {
+          enabled: settings.cloudflare.autoSync && settings.cloudflare.defaultCredentialId !== '',
+          running: cloudflareSyncRunning,
+          intervalMinutes: settings.cloudflare.autoRefreshMinutes,
+          lastRunAt: lastRunAt(lastCloudflare),
+          nextRunAt: nextRunAt(lastCloudflare, settings.cloudflare.autoRefreshMinutes * 60_000),
+        },
+        deploymentRecovery: {
+          lastRecovered: lastDeploymentRecovery?.recovered ?? null,
+          lastRunAt: lastDeploymentRecovery?.at ?? null,
+        },
+        logPruning: {
+          retentionDays: settings.logs.retentionDays,
+          lastRemoved: prune?.removed ?? null,
+          lastRunAt: prune?.at ?? null,
+        },
+      };
+    },
+    renewCertificatesNow: async () => {
+      if (sslRenewalRunning) {
+        return { started: false, message: 'A renewal sweep is already running' };
+      }
+      const settings = unwrap(await settingsService.get());
+      if (!settings.ssl.autoRenew) {
+        return {
+          started: false,
+          message: 'Automatic renewal is switched off in this project’s settings',
+        };
+      }
+      await runScheduledSslRenewal(true);
+      return {
+        started: true,
+        message: `Checked ${String(settings.ssl.managed.length)} managed certificate(s); see the activity feed for what was renewed`,
+      };
+    },
     snapshotDatabase: async (destination) => {
       await db.$executeRawUnsafe('VACUUM INTO ?', destination);
     },

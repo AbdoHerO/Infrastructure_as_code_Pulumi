@@ -23,6 +23,7 @@ export default tseslint.config(
       '**/postcss.config.{js,cjs,mjs}',
       '**/*.config.mjs',
       'apps/desktop/scripts/*.cjs',
+      'apps/desktop/resources/**/*.cjs',
     ],
   },
   js.configs.recommended,

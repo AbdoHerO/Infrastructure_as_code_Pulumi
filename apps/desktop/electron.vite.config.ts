@@ -78,6 +78,7 @@ export default defineConfig({
         ...workspaceAliases,
         '@main': resolve(__dirname, 'src/main'),
         '@shared': resolve(__dirname, 'src/shared'),
+        '@docs': resolve(__dirname, '../../docs'),
       },
     },
     build: {

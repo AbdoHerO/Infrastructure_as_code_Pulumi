@@ -195,7 +195,20 @@ export class StackService {
     }
     const saved = await this.saveFiles(stack.value.name, files);
     if (!saved.ok) return saved;
-    return this.apply({ ...stack.value, credentialId: saved.value }, files, analysis, onEvent);
+    const applied = await this.apply(
+      { ...stack.value, credentialId: saved.value },
+      files,
+      analysis,
+      onEvent,
+    );
+    if (applied.ok) {
+      this.activities.recordSafe({
+        type: 'stack.updated',
+        message: `Updated the Docker stack "${stack.value.name}"`,
+        metadata: { stackId: id },
+      });
+    }
+    return applied;
   }
 
   /** Pull the latest images and run every step again; safe on a working stack. */
@@ -210,7 +223,15 @@ export class StackService {
     const analysis = this.analyzer.analyze(files.value.composeYaml, files.value.environment);
     if (analysis.errors.length > 0)
       return this.fail(stack.value, new ValidationError(analysis.errors.join(' ')));
-    return this.apply(stack.value, files.value, analysis, onEvent);
+    const applied = await this.apply(stack.value, files.value, analysis, onEvent);
+    if (applied.ok) {
+      this.activities.recordSafe({
+        type: 'stack.redeployed',
+        message: `Redeployed the Docker stack "${stack.value.name}"`,
+        metadata: { stackId: id },
+      });
+    }
+    return applied;
   }
 
   async status(id: string): Promise<Result<StackRuntimeStatus, StackServiceError>> {

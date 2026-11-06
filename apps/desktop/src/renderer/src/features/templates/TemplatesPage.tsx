@@ -65,7 +65,18 @@ export function TemplatesPage(): JSX.Element {
     if (!sshKeyId && sshKeys.data?.length) setSshKeyId(sshKeys.data[0]!.id);
   }, [sshKeys.data, sshKeyId]);
 
-  const apply = (template: InfrastructureTemplateSummary): void => {
+  /** A template replaces the saved plan, so ask when there is one to lose. */
+  const mayReplacePlan = async (projectId: string, templateName: string): Promise<boolean> => {
+    const existing = await invoke('infra:getPlan', { projectId });
+    if (!existing || existing.resources.length === 0) return true;
+    return confirm({
+      title: 'Replace the saved plan?',
+      description: `"${templateName}" replaces the ${String(existing.resources.length)} resource(s) in this project's saved plan. Nothing changes in the cloud until you apply it.`,
+      confirmLabel: 'Replace plan',
+    });
+  };
+
+  const apply = async (template: InfrastructureTemplateSummary): Promise<void> => {
     if (!projectId) {
       toast.error('Create a project first');
       return;
@@ -75,6 +86,7 @@ export function TemplatesPage(): JSX.Element {
       toast.error('Select an SSH key before applying a VPS template');
       return;
     }
+    if (!(await mayReplacePlan(projectId, template.name))) return;
     applyTemplate.mutate(
       {
         projectId,
@@ -93,11 +105,12 @@ export function TemplatesPage(): JSX.Element {
     );
   };
 
-  const applyCustomTemplate = (template: CustomTemplateSummary): void => {
+  const applyCustomTemplate = async (template: CustomTemplateSummary): Promise<void> => {
     if (!projectId) {
       toast.error('Create a project first');
       return;
     }
+    if (!(await mayReplacePlan(projectId, template.name))) return;
     applyCustom.mutate(
       { projectId, templateId: template.id },
       {
@@ -182,7 +195,7 @@ export function TemplatesPage(): JSX.Element {
                   className="w-full"
                   variant="outline"
                   disabled={applyTemplate.isPending}
-                  onClick={() => apply(template)}
+                  onClick={() => void apply(template)}
                 >
                   Apply to project
                 </Button>
@@ -216,7 +229,7 @@ export function TemplatesPage(): JSX.Element {
                       className="flex-1"
                       variant="outline"
                       disabled={applyCustom.isPending}
-                      onClick={() => applyCustomTemplate(template)}
+                      onClick={() => void applyCustomTemplate(template)}
                     >
                       Apply to project
                     </Button>

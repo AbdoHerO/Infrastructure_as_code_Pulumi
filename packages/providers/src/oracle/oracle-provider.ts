@@ -12,6 +12,7 @@ import type {
   InstanceAction,
   LiveFirewallRule,
   InstanceFirewall,
+  MachineImage,
 } from '@cloudforge/core';
 import { ociRequest, ociRequestPage } from './oci-client.js';
 
@@ -43,6 +44,15 @@ interface OciShape {
   shape: string;
   ocpus?: number;
   memoryInGBs?: number;
+}
+interface OciImage {
+  id: string;
+  displayName: string;
+  operatingSystem?: string;
+  operatingSystemVersion?: string;
+  timeCreated?: string;
+  /** Null for Oracle's own platform images. */
+  compartmentId?: string | null;
 }
 interface OciInstance {
   id: string;
@@ -273,6 +283,18 @@ export class OracleProvider implements CloudProvider {
         ...(s.memoryInGBs !== undefined ? { memoryGb: s.memoryInGBs } : {}),
       })),
     );
+  }
+
+  async listImages(): Promise<Result<MachineImage[], ProviderError>> {
+    const params = new URLSearchParams({
+      compartmentId: this.config.compartmentOcid,
+      lifecycleState: 'AVAILABLE',
+      sortBy: 'TIMECREATED',
+      sortOrder: 'DESC',
+      limit: String(OCI_IMAGE_LIMIT),
+    });
+    const images = await this.get<OciImage[]>(this.iaas(`/20160918/images?${params.toString()}`));
+    return map(images, (list) => list.map(mapOciImage));
   }
 
   async listInstances(): Promise<Result<CloudInstance[], ProviderError>> {
@@ -542,4 +564,21 @@ function dedupeBy<T>(items: readonly T[], key: (item: T) => string): T[] {
     }
   }
   return result;
+}
+
+const OCI_IMAGE_LIMIT = 100;
+
+/** An OCI image in the provider-neutral shape. OCI only states the architecture by name. */
+export function mapOciImage(image: OciImage): MachineImage {
+  const operatingSystem = [image.operatingSystem, image.operatingSystemVersion]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    id: image.id,
+    name: image.displayName,
+    operatingSystem: operatingSystem || 'Unknown',
+    architecture: /aarch64|arm/i.test(image.displayName) ? 'arm64' : 'x86_64',
+    owner: image.compartmentId ?? 'Oracle',
+    ...(image.timeCreated ? { createdAt: image.timeCreated } : {}),
+  };
 }

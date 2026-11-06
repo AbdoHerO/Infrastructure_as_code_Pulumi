@@ -30,4 +30,7 @@ export function registerTerminalHandlers(): void {
   registerHandler('terminal:close', ({ sessionId }) =>
     orThrow(getContainer().sshTerminalService.close(sessionId)),
   );
+  registerHandler('terminal:exec', async ({ targetId, command, timeoutSeconds }) =>
+    orThrow(await getContainer().sshTerminalService.exec(targetId, command, timeoutSeconds)),
+  );
 }

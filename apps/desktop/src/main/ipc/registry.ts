@@ -1,29 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain } from 'electron';
 import { toAppError, UnauthorizedError } from '@cloudforge/shared';
 import type { IpcChannel, IpcRequest, IpcResponse, IpcResult } from '@shared/ipc/contract.js';
 import { getContainer } from '../container.js';
 import { log } from '../logging/logger.js';
 import { projectOperations, type ProjectOperationLease } from '../project-operation-registry.js';
-
-const WITHOUT_PROJECT_SESSION = new Set<IpcChannel>([
-  'app:getInfo',
-  'app:ping',
-  'app:openExternal',
-  'app:copyDiagnostics',
-  'app:copyText',
-  'logs:report',
-  'projects:picker',
-  'projects:count',
-  'projects:session',
-  'projects:unlock',
-  'projects:create',
-  'backup:importProject',
-  'updates:state',
-  'updates:check',
-  'updates:download',
-  'updates:install',
-]);
+import { worksWithoutProjectSession } from './session-policy.js';
 
 // These handlers deliberately close the active session and therefore cannot
 // hold the ordinary per-request lease that teardown waits on.
@@ -32,8 +14,12 @@ const PROJECT_SESSION_TRANSITIONS = new Set<IpcChannel>(['projects:lock', 'proje
 /** A strongly-typed handler for a single IPC channel. */
 export type IpcHandler<C extends IpcChannel> = (
   payload: IpcRequest<C>,
-  event: IpcMainInvokeEvent,
 ) => Promise<IpcResponse<C>> | IpcResponse<C>;
+
+/** Who is calling; recorded in the log next to the channel. */
+export type DispatchOrigin = 'renderer' | 'mcp';
+
+const handlers = new Map<IpcChannel, IpcHandler<IpcChannel>>();
 
 /**
  * Register a channel handler. The handler's return value (or thrown error) is
@@ -44,39 +30,56 @@ export type IpcHandler<C extends IpcChannel> = (
  * or return value, which may contain secrets).
  */
 export function registerHandler<C extends IpcChannel>(channel: C, handler: IpcHandler<C>): void {
-  ipcMain.handle(channel, async (event, payload: IpcRequest<C>): Promise<IpcResult<unknown>> => {
-    const startedAt = Date.now();
-    let requestLease: ProjectOperationLease | undefined;
-    try {
-      const projectId = enforceProjectBoundary(channel, payload);
-      if (projectId && !PROJECT_SESSION_TRANSITIONS.has(channel)) {
-        requestLease = projectOperations.begin(`ipc:${channel}:${randomUUID()}`, projectId, false);
-      }
-      const value = await handler(payload, event);
-      log().debug({ event: 'ipc.ok', channel, ms: Date.now() - startedAt }, `IPC ${channel}`);
-      return { ok: true, value };
-    } catch (error) {
-      const appError = toAppError(error);
-      log().error(
-        {
-          event: 'ipc.error',
-          channel,
-          code: appError.code,
-          err: appError,
-          context: appError.context,
-          ms: Date.now() - startedAt,
-        },
-        `IPC ${channel} failed`,
-      );
-      return { ok: false, error: appError.toJSON() };
-    } finally {
-      requestLease?.complete();
+  handlers.set(channel, handler as unknown as IpcHandler<IpcChannel>);
+  ipcMain.handle(channel, (_event, payload: IpcRequest<C>) =>
+    dispatch(channel, payload, 'renderer'),
+  );
+}
+
+/**
+ * Run a channel's handler. The window and the MCP server both come through here,
+ * so a request has the same project boundary, the same operation lease and the
+ * same error envelope whichever way it arrived.
+ */
+export async function dispatch<C extends IpcChannel>(
+  channel: C,
+  payload: IpcRequest<C>,
+  origin: DispatchOrigin,
+): Promise<IpcResult<IpcResponse<C>>> {
+  const startedAt = Date.now();
+  let requestLease: ProjectOperationLease | undefined;
+  try {
+    const handler = handlers.get(channel) as IpcHandler<C> | undefined;
+    if (!handler) throw new Error(`No handler is registered for ${channel}`);
+    const projectId = enforceProjectBoundary(channel, payload);
+    if (projectId && !PROJECT_SESSION_TRANSITIONS.has(channel)) {
+      requestLease = projectOperations.begin(`ipc:${channel}:${randomUUID()}`, projectId, false);
     }
-  });
+    const value = await handler(payload);
+    log().debug({ event: 'ipc.ok', channel, origin, ms: Date.now() - startedAt }, `IPC ${channel}`);
+    return { ok: true, value };
+  } catch (error) {
+    const appError = toAppError(error);
+    log().error(
+      {
+        event: 'ipc.error',
+        channel,
+        origin,
+        code: appError.code,
+        err: appError,
+        context: appError.context,
+        ms: Date.now() - startedAt,
+      },
+      `IPC ${channel} failed`,
+    );
+    return { ok: false, error: appError.toJSON() };
+  } finally {
+    requestLease?.complete();
+  }
 }
 
 function enforceProjectBoundary(channel: IpcChannel, payload: unknown): string | null {
-  if (WITHOUT_PROJECT_SESSION.has(channel)) return null;
+  if (worksWithoutProjectSession(channel)) return null;
   const lease = getContainer().projectContext.requireActive();
   if (
     payload &&

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import type {
-  ActivityDto,
-  CloudInstance,
-  InstanceFirewall,
-  LiveFirewallRule,
+import {
+  type ActivityDto,
+  type CloudInstance,
+  FIREWALL_RULE_PRESETS,
+  firewallWarnings,
+  type InstanceFirewall,
+  type LiveFirewallRule,
 } from '@cloudforge/core';
 import {
   Badge,
@@ -33,21 +35,6 @@ import { invoke } from '../../lib/ipc.js';
 import { useProviderCredentials } from '../providers/useProviders.js';
 import { HostFirewallCard } from './HostFirewallCard.js';
 
-const TEMPLATES: Record<
-  string,
-  { protocol: LiveFirewallRule['protocol']; from: number; to: number }
-> = {
-  SSH: { protocol: 'tcp', from: 22, to: 22 },
-  HTTP: { protocol: 'tcp', from: 80, to: 80 },
-  HTTPS: { protocol: 'tcp', from: 443, to: 443 },
-  Docker: { protocol: 'tcp', from: 2376, to: 2376 },
-  Kubernetes: { protocol: 'tcp', from: 6443, to: 6443 },
-  MySQL: { protocol: 'tcp', from: 3306, to: 3306 },
-  Postgres: { protocol: 'tcp', from: 5432, to: 5432 },
-  Redis: { protocol: 'tcp', from: 6379, to: 6379 },
-  Mongo: { protocol: 'tcp', from: 27017, to: 27017 },
-};
-
 export function FirewallPage(): JSX.Element {
   const confirm = useConfirmation();
   const providers = useProviderCredentials();
@@ -57,21 +44,19 @@ export function FirewallPage(): JSX.Element {
   const [firewall, setFirewall] = useState<InstanceFirewall | null>(null);
   const [draft, setDraft] = useState<LiveFirewallRule[]>([]);
   const [history, setHistory] = useState<ActivityDto[]>([]);
+  const reloadHistory = (id: string): void => {
+    void invoke('firewall:history', { instanceId: id })
+      .then(setHistory)
+      .catch((error: Error) => toast.error(error.message));
+  };
   const load = useMutation({
     mutationFn: () => invoke('firewall:get', { credentialId, instanceId }),
     onSuccess: (value) => {
       setFirewall(value);
       setDraft([...value.rules]);
-      void invoke('activity:list', { limit: 500 }).then((items) =>
-        setHistory(
-          items.filter(
-            (item) =>
-              item.type === 'firewall.rules.updated' &&
-              item.metadata.instanceId === value.instanceId,
-          ),
-        ),
-      );
+      reloadHistory(value.instanceId);
     },
+    onError: (error) => toast.error(error.message),
   });
   const apply = useMutation({
     mutationFn: () =>
@@ -84,6 +69,7 @@ export function FirewallPage(): JSX.Element {
     onSuccess: (value) => {
       setFirewall(value);
       setDraft([...value.rules]);
+      reloadHistory(value.instanceId);
       toast.success('Firewall updated in place');
     },
     onError: (error) => {
@@ -100,7 +86,7 @@ export function FirewallPage(): JSX.Element {
       .catch((error: Error) => toast.error(error.message));
   }, [credentialId]);
   const addTemplate = (name: string): void => {
-    const template = TEMPLATES[name];
+    const template = FIREWALL_RULE_PRESETS[name];
     if (!template) return;
     setDraft((rules) => [
       ...rules,
@@ -208,7 +194,7 @@ export function FirewallPage(): JSX.Element {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                {Object.keys(TEMPLATES).map((name) => (
+                {Object.keys(FIREWALL_RULE_PRESETS).map((name) => (
                   <Button size="sm" variant="outline" key={name} onClick={() => addTemplate(name)}>
                     <Plus className="mr-1 h-3 w-3" />
                     {name}
@@ -410,56 +396,4 @@ function Info({ label, value }: { label: string; value: string }): JSX.Element {
 }
 function changed(a: readonly LiveFirewallRule[], b: readonly LiveFirewallRule[]): boolean {
   return JSON.stringify(a) !== JSON.stringify(b);
-}
-function firewallWarnings(rules: readonly LiveFirewallRule[]): string[] {
-  const warnings: string[] = [];
-  const keys = new Set<string>();
-  for (const rule of rules) {
-    const key = `${rule.direction}:${rule.protocol}:${rule.cidr}:${rule.portFrom}:${rule.portTo}`;
-    if (keys.has(key)) warnings.push(`Duplicate rule: ${rule.description || key}`);
-    keys.add(key);
-    if (
-      rule.direction === 'ingress' &&
-      rule.cidr === '0.0.0.0/0' &&
-      (rule.protocol === 'all' || rule.portFrom === 22)
-    )
-      warnings.push(
-        rule.portFrom === 22
-          ? 'SSH is open to the entire internet.'
-          : 'All inbound traffic is open to the entire internet.',
-      );
-    if (
-      rule.direction === 'ingress' &&
-      rule.stateless &&
-      (rule.protocol === 'tcp' || rule.protocol === 'udp')
-    )
-      warnings.push(
-        `Stateless inbound ${rule.protocol.toUpperCase()} ${rule.portFrom ?? 'all ports'} requires a matching stateless outbound response rule. Use stateful for normal web services.`,
-      );
-  }
-  for (let index = 0; index < rules.length; index += 1) {
-    const left = rules[index];
-    if (!left) continue;
-    for (const right of rules.slice(index + 1)) {
-      if (
-        left.direction === right.direction &&
-        left.protocol === right.protocol &&
-        left.cidr === right.cidr &&
-        rangesOverlap(left.portFrom, left.portTo, right.portFrom, right.portTo)
-      )
-        warnings.push(
-          `Overlapping ${left.protocol.toUpperCase()} rules for ${left.cidr}: ${left.description || left.id} / ${right.description || right.id}.`,
-        );
-    }
-  }
-  return [...new Set(warnings)];
-}
-function rangesOverlap(
-  leftFrom: number | null,
-  leftTo: number | null,
-  rightFrom: number | null,
-  rightTo: number | null,
-): boolean {
-  if (leftFrom === null || leftTo === null || rightFrom === null || rightTo === null) return true;
-  return leftFrom <= rightTo && rightFrom <= leftTo;
 }

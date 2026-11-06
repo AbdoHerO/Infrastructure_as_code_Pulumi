@@ -187,7 +187,9 @@ export function useAnsibleLogs(streamId: string): { lines: string[]; clear: () =
         if (payload.streamId !== streamId) return;
         const prefix =
           payload.event.stream === 'stderr' ? '! ' : payload.event.stream === 'step' ? '▶ ' : '';
-        setLines((current) => [...current, `${prefix}${payload.event.message.trimEnd()}`]);
+        setLines((current) =>
+          [...current, `${prefix}${payload.event.message.trimEnd()}`].slice(-2000),
+        );
       }),
     [streamId],
   );

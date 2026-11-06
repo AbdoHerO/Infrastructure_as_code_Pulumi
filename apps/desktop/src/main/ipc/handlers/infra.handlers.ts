@@ -1,4 +1,10 @@
-import type { EngineEvent, StackReference } from '@cloudforge/core';
+import {
+  type EngineEvent,
+  formatSshCommand,
+  infrastructureResourcePresets,
+  matchSshConnections,
+  type StackReference,
+} from '@cloudforge/core';
 import { UnauthorizedError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { emitEvent } from '../emit.js';
@@ -29,9 +35,10 @@ export function registerInfraHandlers(): void {
     orThrow(await getContainer().infrastructureService.getPlan(projectId)),
   );
 
-  registerHandler('infra:savePlan', async ({ projectId, plan }) =>
-    orThrow(await getContainer().infrastructureService.savePlan(projectId, plan)),
-  );
+  registerHandler('infra:savePlan', async ({ projectId, plan }) => {
+    orThrow(await getContainer().infrastructureService.savePlan(projectId, plan));
+    audit('infrastructure.plan.saved', 'Saved the infrastructure plan', projectId);
+  });
 
   registerHandler('infra:validate', ({ plan }) =>
     getContainer().infrastructureService.validate(plan),
@@ -39,12 +46,15 @@ export function registerInfraHandlers(): void {
 
   registerHandler('infra:preview', async ({ projectId, streamId }) => {
     const ref = await stackRef(projectId);
-    return providerOperation('preview', projectId, streamId, async () =>
+    const preview = await providerOperation('preview', projectId, streamId, async () =>
       orThrow(await getContainer().infrastructureService.preview(ref, projectId, sink(streamId))),
     );
+    audit('infrastructure.previewed', 'Previewed the infrastructure plan', projectId);
+    return preview;
   });
 
-  registerHandler('infra:apply', async ({ projectId, streamId, previewToken }) => {
+  registerHandler('infra:apply', async (request) => {
+    const { projectId, streamId, previewToken, acceptDestructiveChanges } = request;
     const ref = await stackRef(projectId);
     const result = await providerOperation('apply', projectId, streamId, async () =>
       orThrow(
@@ -53,6 +63,7 @@ export function registerInfraHandlers(): void {
           projectId,
           previewToken,
           sink(streamId),
+          acceptDestructiveChanges === undefined ? {} : { acceptDestructiveChanges },
         ),
       ),
     );
@@ -129,37 +140,93 @@ export function registerInfraHandlers(): void {
 
   registerHandler(
     'infra:applyTemplate',
-    async ({ projectId, templateId, sshPublicKey, sshCredentialId, region }) =>
-      orThrow(
+    async ({ projectId, templateId, sshPublicKey, sshCredentialId, region, shape }) => {
+      const plan = orThrow(
         await getContainer().infrastructureService.applyTemplate(projectId, templateId, {
           ...(sshPublicKey ? { sshPublicKey } : {}),
           ...(sshCredentialId ? { sshCredentialId } : {}),
           ...(region ? { region } : {}),
+          ...(shape ? { shape } : {}),
         }),
-      ),
+      );
+      audit(
+        'infrastructure.template.applied',
+        `Filled the plan from the template ${templateId}`,
+        projectId,
+      );
+      return plan;
+    },
   );
 
   registerHandler('infra:customTemplates', async () =>
     orThrow(await getContainer().infrastructureService.listCustomTemplates()),
   );
 
-  registerHandler('infra:saveTemplate', async ({ name, description, plan }) =>
-    orThrow(
+  registerHandler('infra:getCustomTemplate', async ({ id }) =>
+    orThrow(await getContainer().infrastructureService.getCustomTemplate(id)),
+  );
+
+  registerHandler('infra:resourcePresets', ({ providerKind }) =>
+    infrastructureResourcePresets(providerKind),
+  );
+
+  registerHandler('infra:sshConnections', async ({ projectId }) => {
+    const container = getContainer();
+    const ref = await stackRef(projectId);
+    const stacks = orThrow(await container.infrastructureService.listManagedStacks());
+    const exists = stacks.some(
+      (stack) => stack.ref.project === ref.project && stack.ref.stack === ref.stack,
+    );
+    if (!exists) return [];
+    const [outputs, plan, keys] = await Promise.all([
+      container.infrastructureService.outputs(ref, projectId),
+      container.infrastructureService.getPlan(projectId),
+      container.sshKeyService.list(),
+    ]);
+    return matchSshConnections(orThrow(outputs), orThrow(plan)?.resources ?? [], orThrow(keys)).map(
+      (connection) => ({
+        resourceName: connection.resourceName,
+        host: connection.host,
+        user: connection.user,
+        sshKeyId: connection.sshKey?.id ?? null,
+        sshKeyName: connection.sshKey?.name ?? null,
+        command: formatSshCommand(connection),
+      }),
+    );
+  });
+
+  registerHandler('infra:saveTemplate', async ({ name, description, plan }) => {
+    const template = orThrow(
       await getContainer().infrastructureService.saveCustomTemplate({
         name,
         plan,
         ...(description ? { description } : {}),
       }),
-    ),
-  );
+    );
+    audit('infrastructure.template.saved', `Saved the template "${template.name}"`);
+    return template;
+  });
 
-  registerHandler('infra:deleteTemplate', async ({ id }) =>
-    orThrow(await getContainer().infrastructureService.deleteCustomTemplate(id)),
-  );
+  registerHandler('infra:deleteTemplate', async ({ id }) => {
+    orThrow(await getContainer().infrastructureService.deleteCustomTemplate(id));
+    audit('infrastructure.template.deleted', 'Deleted a saved template');
+  });
 
-  registerHandler('infra:applyCustomTemplate', async ({ projectId, templateId }) =>
-    orThrow(await getContainer().infrastructureService.applyCustomTemplate(projectId, templateId)),
-  );
+  registerHandler('infra:applyCustomTemplate', async ({ projectId, templateId }) => {
+    const plan = orThrow(
+      await getContainer().infrastructureService.applyCustomTemplate(projectId, templateId),
+    );
+    audit('infrastructure.template.applied', 'Filled the plan from a saved template', projectId);
+    return plan;
+  });
+}
+
+function audit(type: string, message: string, projectId?: string): void {
+  getContainer().activityService.recordSafe({
+    type,
+    message,
+    ...(projectId ? { projectId } : {}),
+  });
 }
 
 async function providerOperation<T>(

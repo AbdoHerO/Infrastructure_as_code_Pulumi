@@ -1040,27 +1040,6 @@ export class RuntimePlanService implements RuntimeTopologySynchronizer {
       change: planRuntimeOperations(loaded.value.plan, observed.value, options),
     });
   }
-
-  /**
-   * Forget a target's plan.
-   *
-   * Removes CloudForge's record of intent and nothing else: every container,
-   * network and volume on the VPS keeps running exactly as it is. Called when a
-   * target is deleted, since `Setting` has no foreign key to `VpsTarget` and an
-   * abandoned row would otherwise be silently inherited by the next target that
-   * happened to reuse the id.
-   */
-  async delete(targetId: string): Promise<Result<void, RuntimePlanServiceError>> {
-    if (!isUuid(targetId)) return err(new ValidationError('Select a valid saved VPS target'));
-    const result = await this.plans.delete(targetId);
-    if (!result.ok) return result;
-    this.activities.recordSafe({
-      type: 'runtime.plan.deleted',
-      message: 'Removed the runtime plan. Nothing running on the VPS was changed.',
-      metadata: { targetId },
-    });
-    return ok(undefined);
-  }
 }
 
 function view(plan: VpsRuntimePlan, precomputed?: readonly RuntimePlanIssue[]): RuntimePlanView {

@@ -99,7 +99,11 @@ infrastructure plans (`plan:<projectId>`), runtime plans
 (`runtime-plan:<targetId>`) and scoped cached configuration.
 
 `SystemSetting` uses a global key and is restricted to pre-unlock device
-preferences. It must not contain credentials, topology or provider defaults.
+preferences. It must not contain credentials, topology or provider defaults, with
+two deliberate exceptions. `deployment.defaultRegion` is a plain region name the
+new-project form needs before any project is open. `mcp.settings` and `mcp.token`
+belong to the [MCP server](MCP.md), which works with no project open; the token is
+stored encrypted, and neither leaves this computer in a project backup.
 
 ### Plugin
 

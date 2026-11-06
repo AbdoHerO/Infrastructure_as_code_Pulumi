@@ -21,6 +21,7 @@ import type { SshKeyAlgorithm, SshKeySummary } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { NameConfirmationDialog } from '../../components/NameConfirmationDialog.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
+import { copyToClipboard } from '../../lib/clipboard.js';
 import {
   revealSshPrivateKey,
   exportSshPrivateKey,
@@ -117,10 +118,6 @@ function SshKeyCard({
   onDelete: () => void;
 }): JSX.Element {
   const confirm = useConfirmation();
-  const copy = async (value: string, label: string): Promise<void> => {
-    await navigator.clipboard.writeText(value);
-    toast.success(`${label} copied`);
-  };
   return (
     <Card>
       <CardContent className="space-y-4 py-5">
@@ -135,7 +132,7 @@ function SshKeyCard({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void copy(sshKey.publicKey, 'Public key')}
+            onClick={() => void copyToClipboard(sshKey.publicKey, 'Public key')}
           >
             <Copy className="size-4" /> Copy public key
           </Button>
@@ -149,8 +146,10 @@ function SshKeyCard({
                   'The unencrypted private key will be placed on the clipboard. Other applications may read it; clear the clipboard immediately after use.',
                 confirmLabel: 'Copy private key',
               }).then((confirmed) => {
-                if (confirmed)
-                  void revealSshPrivateKey(sshKey.id).then((value) => copy(value, 'Private key'));
+                if (!confirmed) return;
+                void revealSshPrivateKey(sshKey.id)
+                  .then((value) => copyToClipboard(value, 'Private key'))
+                  .catch((error: Error) => toast.error(error.message));
               });
             }}
           >
@@ -213,9 +212,15 @@ function KeyDialog({
       onError: (error: Error) => toast.error(error.message),
     };
     if (mode === 'generate') {
-      generate.mutate({ name, algorithm, ...(passphrase ? { passphrase } : {}) }, options);
+      generate.mutate(
+        { name: name.trim(), algorithm, ...(passphrase ? { passphrase } : {}) },
+        options,
+      );
     } else {
-      importKey.mutate({ name, privateKey, ...(passphrase ? { passphrase } : {}) }, options);
+      importKey.mutate(
+        { name: name.trim(), privateKey, ...(passphrase ? { passphrase } : {}) },
+        options,
+      );
     }
   };
 

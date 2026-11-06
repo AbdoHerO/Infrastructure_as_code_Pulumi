@@ -38,32 +38,14 @@ import {
   Textarea,
   toast,
 } from '@cloudforge/ui';
-import type { ManagedNginxSite } from '@cloudforge/core';
+import { changedLineCount, type ManagedNginxSite, NEW_NGINX_SITE } from '@cloudforge/core';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
 import { useVpsTargets } from '../ansible/useAnsible.js';
 import { useNginx, useNginxEvents } from './useNginx.js';
 
-const NEW_SITE: ManagedNginxSite = {
-  domain: '',
-  enabled: true,
-  upstreamKind: 'host',
-  upstreamHost: '127.0.0.1',
-  upstreamPort: 3000,
-  websocket: false,
-  ssl: false,
-  httpRedirect: false,
-  headers: [],
-  extraDirectives: [],
-  locations: [],
-  proxyTimeoutSeconds: 60,
-  clientMaxBodySize: '10m',
-  compression: true,
-  cache: false,
-  customSnippets: [],
-  lastModified: null,
-};
+const NEW_SITE = NEW_NGINX_SITE;
 
 export function NginxPage(): JSX.Element {
   const confirm = useConfirmation();
@@ -106,10 +88,28 @@ export function NginxPage(): JSX.Element {
           toast.error(error.message);
         });
     };
-    refresh();
+    // A moment later, so typing a filter does not read the log on every key.
+    const first = window.setTimeout(refresh, 400);
     const timer = window.setInterval(refresh, 3_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
   }, [liveTail, logKind, search, targetId]);
+  // Everything loaded belongs to the server it came from. Keeping it would let one
+  // server's nginx.conf be saved onto another.
+  useEffect(() => {
+    setSite(NEW_SITE);
+    setConfig('');
+    setOriginalConfig('');
+    setBackupComparison(null);
+    setLiveTail(false);
+    setLiveLogLines([]);
+    nginx.logs.reset();
+    events.clear();
+    // Only a change of server resets this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetId]);
   const update = <K extends keyof ManagedNginxSite>(key: K, value: ManagedNginxSite[K]): void =>
     setSite((current) => ({ ...current, [key]: value }));
   const editSite = (selected: ManagedNginxSite): void => {
@@ -452,12 +452,23 @@ export function NginxPage(): JSX.Element {
                     </Button>
                     <Button
                       disabled={!config || busy}
-                      onClick={() =>
-                        nginx.saveConfig.mutate(config, {
-                          onSuccess: ({ summary }) => toast.success(summary),
-                          onError: fail,
-                        })
-                      }
+                      onClick={() => {
+                        void confirm({
+                          title: 'Replace the main nginx.conf?',
+                          description:
+                            'This file affects every site on the server. A backup is made first and the new file is validated before Nginx uses it.',
+                          confirmLabel: 'Validate and save',
+                        }).then((confirmed) => {
+                          if (!confirmed) return;
+                          nginx.saveConfig.mutate(config, {
+                            onSuccess: ({ summary }) => {
+                              setOriginalConfig(config);
+                              toast.success(summary);
+                            },
+                            onError: fail,
+                          });
+                        });
+                      }}
                     >
                       <Save className="mr-2 h-4 w-4" />
                       Validate and save
@@ -562,7 +573,12 @@ export function NginxPage(): JSX.Element {
                     <Button
                       variant="outline"
                       disabled={!nginx.logs.data}
-                      onClick={() => downloadLog(nginx.logs.data?.lines ?? [], logKind)}
+                      onClick={() =>
+                        downloadLog(
+                          nginx.logs.data?.lines ?? [],
+                          nginx.logs.variables?.kind ?? logKind,
+                        )
+                      }
                     >
                       Export
                     </Button>
@@ -725,13 +741,6 @@ function parseHeaders(value: string): ManagedNginxSite['headers'] {
       ? [{ name: line.slice(0, separator).trim(), value: line.slice(separator + 1).trim() }]
       : [];
   });
-}
-function changedLineCount(before: string, after: string): number {
-  const left = before.split('\n');
-  const right = after.split('\n');
-  return Array.from({ length: Math.max(left.length, right.length) }).filter(
-    (_, index) => left[index] !== right[index],
-  ).length;
 }
 function NginxSyntaxPreview({ content }: { content: string }): JSX.Element {
   return (

@@ -3,11 +3,12 @@ import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { app, dialog } from 'electron';
 import type { StackReference } from '@cloudforge/core';
-import { ConflictError, UnauthorizedError } from '@cloudforge/shared';
+import { ConflictError, UnauthorizedError, ValidationError } from '@cloudforge/shared';
 import { getContainer, type PortableProjectSecrets } from '../../container.js';
 import { projectStackReference } from '../../infra/stack-reference.js';
 import { projectOperations } from '../../project-operation-registry.js';
 import { registerHandler } from '../registry.js';
+import { requireLocalPath } from '../../security/local-paths.js';
 import {
   decryptPortableSecrets,
   encryptPortableSecrets,
@@ -26,6 +27,18 @@ interface ProjectBackupManifest {
   readonly version: string;
 }
 
+const MIN_BACKUP_PASSPHRASE_LENGTH = 12;
+
+async function chooseFolder(
+  given: string | undefined,
+  title: string,
+  properties: ('openDirectory' | 'createDirectory')[],
+): Promise<string | null> {
+  if (given !== undefined) return requireLocalPath(given);
+  const selection = await dialog.showOpenDialog({ title, properties });
+  return selection.canceled ? null : (selection.filePaths[0] ?? null);
+}
+
 interface LegacyBackupManifest {
   readonly format: 1 | 2;
   readonly product: 'CloudForge';
@@ -34,7 +47,12 @@ interface LegacyBackupManifest {
 type BackupManifest = ProjectBackupManifest | LegacyBackupManifest;
 
 export function registerBackupHandlers(): void {
-  registerHandler('backup:create', async ({ passphrase, projectPasskey }) => {
+  registerHandler('backup:create', async ({ passphrase, projectPasskey, destinationDir }) => {
+    if (passphrase.length < MIN_BACKUP_PASSPHRASE_LENGTH) {
+      throw new ValidationError(
+        `The backup passphrase must contain at least ${String(MIN_BACKUP_PASSPHRASE_LENGTH)} characters`,
+      );
+    }
     const current = getContainer();
     const lease = current.projectContext.current();
     if (!lease) throw new UnauthorizedError('Unlock a project to create its backup');
@@ -43,11 +61,12 @@ export function registerBackupHandlers(): void {
     const project = await current.projectService.get(lease.projectId);
     if (!project.ok) throw project.error;
 
-    const selection = await dialog.showOpenDialog({
-      title: `Choose a folder for the ${project.value.name} backup`,
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (selection.canceled || !selection.filePaths[0]) return { path: null };
+    const folder = await chooseFolder(
+      destinationDir,
+      `Choose a folder for the ${project.value.name} backup`,
+      ['openDirectory', 'createDirectory'],
+    );
+    if (!folder) return { path: null };
 
     const operation = projectOperations.begin(
       `backup-create:${lease.sessionId}`,
@@ -57,7 +76,7 @@ export function registerBackupHandlers(): void {
     let destination: string | null = null;
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      destination = join(selection.filePaths[0], `CloudForge-project-${timestamp}`);
+      destination = join(folder, `CloudForge-project-${timestamp}`);
       await mkdir(destination, { recursive: false });
       const secrets = await current.exportProjectSecrets(lease.projectId);
       const envelope = encryptPortableSecrets(JSON.stringify(secrets), passphrase);
@@ -86,6 +105,10 @@ export function registerBackupHandlers(): void {
         JSON.stringify(manifest, null, 2),
         'utf8',
       );
+      current.activityService.recordSafe({
+        type: 'backup.created',
+        message: `Exported a portable backup of "${project.value.name}"`,
+      });
       return { path: destination };
     } catch (cause) {
       if (destination) await rm(destination, { recursive: true, force: true });
@@ -95,16 +118,14 @@ export function registerBackupHandlers(): void {
     }
   });
 
-  registerHandler('backup:restore', async ({ passphrase }) => {
+  registerHandler('backup:restore', async ({ passphrase, sourceDir }) => {
     const current = getContainer();
     const lease = current.projectContext.current();
     if (!lease) throw new UnauthorizedError('Unlock the destination project first');
-    const selection = await dialog.showOpenDialog({
-      title: 'Select a CloudForge project backup folder',
-      properties: ['openDirectory'],
-    });
-    if (selection.canceled || !selection.filePaths[0]) return { restored: false };
-    const source = selection.filePaths[0];
+    const source = await chooseFolder(sourceDir, 'Select a CloudForge project backup folder', [
+      'openDirectory',
+    ]);
+    if (!source) return { restored: false };
     const manifest = await readManifest(source);
     if (manifest.format !== 3 && manifest.format !== 4) {
       throw new ConflictError(
@@ -160,12 +181,17 @@ export function registerBackupHandlers(): void {
       if (restored) await rm(safetyBackup, { recursive: true, force: true });
     }
 
+    // Awaited, because the process ends right after this.
+    await current.activityService.record({
+      type: 'backup.restored',
+      message: `Restored "${manifest.projectName}" from a backup`,
+    });
     app.relaunch();
     app.exit(0);
     return { restored: true };
   });
 
-  registerHandler('backup:importProject', async ({ passphrase, projectPasskey }) => {
+  registerHandler('backup:importProject', async ({ passphrase, projectPasskey, sourceDir }) => {
     const current = getContainer();
     if (current.projectContext.current()) {
       throw new ConflictError('Lock the current project before importing another workspace');
@@ -173,12 +199,12 @@ export function registerBackupHandlers(): void {
     if (projectPasskey.length < 8) {
       throw new UnauthorizedError('The new project passkey must contain at least 8 characters');
     }
-    const selection = await dialog.showOpenDialog({
-      title: 'Select a CloudForge project backup folder to import',
-      properties: ['openDirectory'],
-    });
-    if (selection.canceled || !selection.filePaths[0]) return { imported: false };
-    const source = selection.filePaths[0];
+    const source = await chooseFolder(
+      sourceDir,
+      'Select a CloudForge project backup folder to import',
+      ['openDirectory'],
+    );
+    if (!source) return { imported: false };
     const manifest = await readManifest(source);
     if ((manifest.format !== 3 && manifest.format !== 4) || manifest.scope !== 'project') {
       throw new ConflictError('Only a portable multi-project backup can be imported');

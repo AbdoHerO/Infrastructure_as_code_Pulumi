@@ -1,3 +1,9 @@
+import {
+  FIREWALL_RULE_PRESETS,
+  firewallAllowsPublicPort,
+  firewallWarnings,
+} from '@cloudforge/core';
+import { UnauthorizedError } from '@cloudforge/shared';
 import { getContainer } from '../../container.js';
 import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
@@ -32,12 +38,29 @@ export function registerProviderHandlers(): void {
     orThrow(await getContainer().providerService.listResources(credentialId)),
   );
 
-  registerHandler('providers:instanceAction', async ({ credentialId, instanceId, action }) =>
-    orThrow(await getContainer().providerService.instanceAction(credentialId, instanceId, action)),
-  );
-
-  registerHandler('providers:terminateInstance', async ({ credentialId, instanceId }) => {
+  registerHandler('providers:instanceAction', async ({ credentialId, instanceId, action }) => {
     const container = getContainer();
+    const instance = orThrow(
+      await container.providerService.instanceAction(credentialId, instanceId, action),
+    );
+    container.activityService.recordSafe({
+      type: `provider.instance_${action}`,
+      message: `Ran ${action} on the cloud instance ${instance.name}`,
+      metadata: { instanceId },
+    });
+    return instance;
+  });
+
+  registerHandler('providers:terminateInstance', async (request) => {
+    const { credentialId, instanceId, confirmationName } = request;
+    const container = getContainer();
+    if (confirmationName !== undefined) {
+      const instances = orThrow(await container.providerService.listInstances(credentialId));
+      const instance = instances.find((item) => item.id === instanceId);
+      if (instance?.name !== confirmationName) {
+        throw new UnauthorizedError('Type the exact instance name to confirm termination');
+      }
+    }
     orThrow(await container.providerService.terminateInstance(credentialId, instanceId));
     container.activityService.recordSafe({
       type: 'provider.instance_terminated',
@@ -71,5 +94,19 @@ export function registerProviderHandlers(): void {
       },
     });
     return updated;
+  });
+  registerHandler('firewall:analyze', ({ rules, ports }) => ({
+    warnings: firewallWarnings(rules),
+    presets: FIREWALL_RULE_PRESETS,
+    publicPorts: (ports ?? []).map((port) => ({
+      port,
+      allowed: firewallAllowsPublicPort(rules, port),
+    })),
+  }));
+  registerHandler('firewall:history', async ({ instanceId, limit }) => {
+    const events = orThrow(
+      await getContainer().activityService.list(1000, { typePrefix: 'firewall.rules.updated' }),
+    );
+    return events.filter((event) => event.metadata.instanceId === instanceId).slice(0, limit ?? 50);
   });
 }

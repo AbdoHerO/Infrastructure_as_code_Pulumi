@@ -15,7 +15,7 @@ import type {
   ProjectPickerDto,
   ProjectSessionDto,
 } from '@cloudforge/core';
-import { invoke } from '../../lib/ipc.js';
+import { invoke, subscribe } from '../../lib/ipc.js';
 
 interface WorkspaceContextValue {
   readonly loading: boolean;
@@ -65,6 +65,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): JSX.El
       cancelled = true;
     };
   }, []);
+
+  // An MCP client opened, locked or deleted a project: follow it, and drop what the
+  // previous project had cached, exactly as when this window does it.
+  useEffect(
+    () =>
+      subscribe('projects:sessionChanged', () => {
+        queryClient.clear();
+        void refreshSession();
+        void refreshProjects();
+      }),
+    [queryClient, refreshProjects, refreshSession],
+  );
+
+  // The picker and the open project live in this state, not in the query cache.
+  useEffect(
+    () =>
+      subscribe('app:dataChanged', ({ channels }) => {
+        if (!channels.some((channel) => channel.startsWith('projects:'))) return;
+        void refreshSession();
+        void refreshProjects();
+      }),
+    [refreshProjects, refreshSession],
+  );
 
   const create = useCallback(
     async (input: CreateProjectInput): Promise<ProjectDto> => {

@@ -11,11 +11,11 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  toast,
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
 import { ActivityTimeline } from '../activity/ActivityTimeline.js';
 import { useActivity } from '../activity/useActivity.js';
+import { copyToClipboard } from '../../lib/clipboard.js';
 import { openLogFolder, useLogInfo, useLogTail } from './useAppLog.js';
 
 const CATEGORIES = ['all', 'project', 'infrastructure', 'deployment'] as const;
@@ -124,10 +124,7 @@ function AppLogTab(): JSX.Element {
               variant="ghost"
               size="sm"
               onClick={() => {
-                if (info?.path) {
-                  void navigator.clipboard.writeText(info.path);
-                  toast.success('Log path copied');
-                }
+                if (info?.path) void copyToClipboard(info.path, 'Log path');
               }}
             >
               Copy path

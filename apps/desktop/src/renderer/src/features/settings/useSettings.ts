@@ -6,6 +6,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import type { AppSettings, SettingsPatch } from '@cloudforge/core';
+import { toast } from '@cloudforge/ui';
 import { invoke } from '../../lib/ipc.js';
 
 const SETTINGS_KEY = ['settings'] as const;
@@ -24,5 +25,6 @@ export function useUpdateSettings(): UseMutationResult<AppSettings, Error, Setti
   return useMutation({
     mutationFn: (patch: SettingsPatch) => invoke('settings:update', patch),
     onSuccess: (settings) => queryClient.setQueryData(SETTINGS_KEY, settings),
+    onError: (error) => toast.error(`The setting was not saved: ${error.message}`),
   });
 }

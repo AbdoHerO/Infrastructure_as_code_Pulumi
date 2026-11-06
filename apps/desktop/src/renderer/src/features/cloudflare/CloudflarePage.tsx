@@ -18,14 +18,17 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import type {
-  CloudflareDnsRecord,
-  CloudflareDnsBatchAction,
-  CloudflareDnsRecordInput,
-  CloudflareDnsType,
-  CloudflarePageRule,
-  CloudflareRedirectRule,
-  CloudflareZoneSettings,
+import {
+  CLOUDFLARE_DNS_TEMPLATES,
+  cloudflareAnalyticsDates,
+  cloudflareDnsTemplateRecord,
+  type CloudflareDnsRecord,
+  type CloudflareDnsBatchAction,
+  type CloudflareDnsRecordInput,
+  type CloudflareDnsType,
+  type CloudflarePageRule,
+  type CloudflareRedirectRule,
+  type CloudflareZoneSettings,
 } from '@cloudforge/core';
 import {
   Badge,
@@ -54,6 +57,7 @@ import {
 } from '@cloudforge/ui';
 import { PageHeader } from '../../components/PageHeader.js';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
+import { copyToClipboard } from '../../lib/clipboard.js';
 import { invoke, IpcCallError, subscribe } from '../../lib/ipc.js';
 import { useCredentials } from '../secrets/useCredentials.js';
 import {
@@ -91,6 +95,15 @@ const EMPTY_RECORD: CloudflareDnsRecordInput = {
   proxied: true,
 };
 
+const NEW_REDIRECT_RULE: Omit<CloudflareRedirectRule, 'id'> = {
+  source: '(http.host eq "example.com")',
+  destination: 'https://www.example.com',
+  status: 'active',
+  priority: 1,
+  statusCode: 301,
+  preserveQueryString: true,
+};
+
 export function CloudflarePage(): JSX.Element {
   const allCredentials = useCredentials();
   const credentials = useMemo(
@@ -99,6 +112,7 @@ export function CloudflarePage(): JSX.Element {
   );
   const [credentialId, setCredentialId] = useState('');
   const [zoneId, setZoneId] = useState('');
+  const [allZones, setAllZones] = useState(false);
   const zones = useCloudflareZones(credentialId);
   const dashboard = useCloudflareDashboard(credentialId, zoneId, zones.isSuccess);
   const client = useQueryClient();
@@ -107,8 +121,9 @@ export function CloudflarePage(): JSX.Element {
   }, [credentialId, credentials]);
   useEffect(() => {
     if (zoneId && zones.data?.some((zone) => zone.id === zoneId)) return;
+    if (!zoneId && allZones) return;
     setZoneId(zones.data?.[0]?.id ?? '');
-  }, [zoneId, zones.data]);
+  }, [allZones, zoneId, zones.data]);
   useEffect(
     () =>
       subscribe('cloudflare:changed', ({ reason }) => {
@@ -162,7 +177,10 @@ export function CloudflarePage(): JSX.Element {
             <Select
               value={zoneId}
               disabled={!credentialId || zones.isLoading}
-              onChange={(event) => setZoneId(event.target.value)}
+              onChange={(event) => {
+                setAllZones(event.target.value === '');
+                setZoneId(event.target.value);
+              }}
             >
               <option value="">All zones</option>
               {zones.data?.map((zone) => (
@@ -500,7 +518,8 @@ function Zones({
   const client = useQueryClient();
   const [zoneName, setZoneName] = useState('');
   const create = useMutation({
-    mutationFn: () => invoke('cloudflare:createZone', { credentialId, name: zoneName }),
+    mutationFn: () =>
+      invoke('cloudflare:createZone', { credentialId, name: zoneName.trim().toLowerCase() }),
     onSuccess: (zone) => {
       setZoneName('');
       onSelect(zone.id);
@@ -512,6 +531,7 @@ function Zones({
   const remove = useMutation({
     mutationFn: (zoneId: string) => invoke('cloudflare:deleteZone', { credentialId, zoneId }),
     onSuccess: () => client.invalidateQueries({ queryKey: cloudflareKey(credentialId) }),
+    onError: (error) => toast.error(error.message),
   });
   return (
     <Card>
@@ -531,7 +551,7 @@ function Zones({
           </div>
           <Button
             className="mt-6"
-            disabled={!zoneName || create.isPending}
+            disabled={!zoneName.trim() || create.isPending}
             onClick={() => create.mutate()}
           >
             Add zone
@@ -634,8 +654,8 @@ function Dns({
       invoke('cloudflare:ensureDns', {
         credentialId,
         zoneId,
-        domain: automaticDomain,
-        expectedIp: automaticIp,
+        domain: automaticDomain.trim(),
+        expectedIp: automaticIp.trim(),
       }),
     onSuccess: (status) => {
       void records.refetch();
@@ -663,8 +683,12 @@ function Dns({
     onError: (error) => toast.error(error.message),
   });
   const submit = (): void => {
+    const tags = draft.tags?.map((tag) => tag.trim()).filter(Boolean);
     save.mutate(
-      { ...(editing ? { recordId: editing } : {}), input: draft },
+      {
+        ...(editing ? { recordId: editing } : {}),
+        input: { ...draft, ...(tags ? { tags } : {}) },
+      },
       {
         onSuccess: () => {
           toast.success(editing ? 'DNS record updated' : 'DNS record created');
@@ -701,6 +725,20 @@ function Dns({
         ? right.modifiedAt.localeCompare(left.modifiedAt)
         : String(left[sort]).localeCompare(String(right[sort])),
     );
+  // Selections never reach records you can no longer see: not another zone's, and
+  // not those a filter has hidden, which a batch action would otherwise change blind.
+  const visibleIds = filtered.map((record) => record.id).join('|');
+  useEffect(() => {
+    const visible = new Set(visibleIds.split('|'));
+    setSelected((current) => {
+      const next = current.filter((id) => visible.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [visibleIds]);
+  useEffect(() => {
+    setDraft(EMPTY_RECORD);
+    setEditing(undefined);
+  }, [zoneId]);
   const selectedRecords = (records.data ?? []).filter((record) => selected.includes(record.id));
   const addressType = batchAddress.trim().includes(':') ? 'AAAA' : 'A';
   const selectedAddressRecords = selectedRecords.filter((record) => record.type === addressType);
@@ -770,7 +808,7 @@ function Dns({
           </div>
           <Button
             className="mt-6"
-            disabled={automaticDns.isPending}
+            disabled={automaticDns.isPending || !automaticDomain.trim() || !automaticIp.trim()}
             onClick={() => automaticDns.mutate()}
           >
             {automaticDns.isPending ? 'Waiting for propagation…' : 'Create · verify · propagate'}
@@ -785,34 +823,18 @@ function Dns({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          {[
-            ['Laravel', 'A', 'app', true],
-            ['Node', 'A', 'node', true],
-            ['Next.js', 'CNAME', 'www', true],
-            ['WordPress', 'A', '', true],
-            ['Mail', 'MX', '', false],
-            ['API', 'A', 'api', true],
-            ['Subdomain', 'CNAME', 'subdomain', true],
-            ['Load Balancer', 'CNAME', 'app', true],
-          ].map(([label, type, prefix, proxied]) => (
+          {CLOUDFLARE_DNS_TEMPLATES.map((template) => (
             <Button
-              key={String(label)}
+              key={template.id}
               size="sm"
               variant="outline"
-              onClick={() =>
-                setDraft({
-                  type: type as CloudflareDnsType,
-                  name: prefix ? `${prefix}.${zoneName}` : zoneName,
-                  content:
-                    type === 'MX' ? `mail.${zoneName}` : type === 'CNAME' ? zoneName : automaticIp,
-                  ttl: 1,
-                  proxied: Boolean(proxied),
-                  comment: `${label} template managed by CloudForge`,
-                  ...(type === 'MX' ? { priority: 10 } : {}),
-                })
-              }
+              onClick={() => {
+                // A template starts a new record, even if one was being edited.
+                setEditing(undefined);
+                setDraft(cloudflareDnsTemplateRecord(template, zoneName, automaticIp));
+              }}
             >
-              {label}
+              {template.label}
             </Button>
           ))}
         </CardContent>
@@ -886,6 +908,7 @@ function Dns({
           <div className="flex items-end gap-3">
             <Switch
               checked={draft.proxied}
+              disabled={!['A', 'AAAA', 'CNAME'].includes(draft.type)}
               onCheckedChange={(proxied) => setDraft({ ...draft, proxied })}
             />
             <Label className="pb-2">Proxied</Label>
@@ -1048,11 +1071,7 @@ function Dns({
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                void invoke('app:copyText', { text: JSON.stringify(filtered, null, 2) }).then(() =>
-                  toast.success('DNS records exported to clipboard'),
-                )
-              }
+              onClick={() => void copyToClipboard(JSON.stringify(filtered, null, 2), 'DNS records')}
             >
               Export JSON
             </Button>
@@ -1080,7 +1099,6 @@ function Dns({
                 <TableHead>Proxy</TableHead>
                 <TableHead>Modified</TableHead>
                 <TableHead>Metadata</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -1120,9 +1138,6 @@ function Dns({
                       Created {record.createdAt ? new Date(record.createdAt).toLocaleString() : '—'}
                     </p>
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="success">active</Badge>
-                  </TableCell>
                   <TableCell className="space-x-2 text-right">
                     <Button size="sm" variant="outline" onClick={() => edit(record)}>
                       Edit
@@ -1156,7 +1171,11 @@ function Dns({
                           description: `Delete ${record.type} record ${record.name} → ${record.content}? The hostname may stop resolving immediately.`,
                           confirmLabel: 'Delete record',
                         }).then((confirmed) => {
-                          if (confirmed) remove.mutate(record.id);
+                          if (confirmed) {
+                            remove.mutate(record.id, {
+                              onError: (error) => toast.error(error.message),
+                            });
+                          }
                         });
                       }}
                     >
@@ -1362,7 +1381,7 @@ function AnalyticsPanel({
   zoneId: string;
 }): JSX.Element {
   const [range, setRange] = useState<'today' | 'yesterday' | '7d' | '30d'>('7d');
-  const dates = analyticsDates(range);
+  const dates = cloudflareAnalyticsDates(range);
   const query = useQuery({
     queryKey: [...cloudflareKey(credentialId), 'analytics', zoneId, range],
     queryFn: () =>
@@ -1448,27 +1467,6 @@ function AnalyticsPanel({
   );
 }
 
-function analyticsDates(range: 'today' | 'yesterday' | '7d' | '30d'): {
-  since: string;
-  until: string;
-} {
-  const now = new Date();
-  if (range === 'today')
-    return {
-      since: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
-      until: now.toISOString(),
-    };
-  if (range === 'yesterday')
-    return {
-      since: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).toISOString(),
-      until: new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString(),
-    };
-  return {
-    since: new Date(now.getTime() - (range === '30d' ? 30 : 7) * 86400000).toISOString(),
-    until: now.toISOString(),
-  };
-}
-
 function PageRules({
   credentialId,
   zoneId,
@@ -1493,7 +1491,7 @@ function PageRules({
         zoneId,
         rule: {
           ...(editing ? { id: editing.id } : {}),
-          target,
+          target: target.trim(),
           priority,
           status: editing?.status ?? 'active',
           actions: editing?.actions ?? [{ id: 'always_use_https', value: 'on' }],
@@ -1524,7 +1522,7 @@ function PageRules({
         <CardDescription>Existing Page Rules and their priority.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="border-border mb-5 grid gap-3 rounded-md border p-4 md:grid-cols-[1fr_8rem_auto]">
+        <div className="border-border mb-5 grid gap-3 rounded-md border p-4 md:grid-cols-[1fr_8rem_auto_auto]">
           <div>
             <Label>URL pattern</Label>
             <Input
@@ -1544,11 +1542,24 @@ function PageRules({
           </div>
           <Button
             className="mt-6"
-            disabled={!target || save.isPending}
+            disabled={!target.trim() || save.isPending}
             onClick={() => save.mutate()}
           >
             {editing ? 'Update rule' : 'Create HTTPS rule'}
           </Button>
+          {editing ? (
+            <Button
+              className="mt-6"
+              variant="outline"
+              onClick={() => {
+                setEditing(undefined);
+                setTarget('');
+                setPriority(1);
+              }}
+            >
+              Cancel
+            </Button>
+          ) : null}
         </div>
         {query.data?.length ? (
           query.data.map((rule) => (
@@ -1612,14 +1623,7 @@ function RedirectRules({
 }): JSX.Element {
   const confirm = useConfirmation();
   const client = useQueryClient();
-  const [draft, setDraft] = useState<Omit<CloudflareRedirectRule, 'id'>>({
-    source: '(http.host eq "example.com")',
-    destination: 'https://www.example.com',
-    status: 'active',
-    priority: 1,
-    statusCode: 301,
-    preserveQueryString: true,
-  });
+  const [draft, setDraft] = useState<Omit<CloudflareRedirectRule, 'id'>>(NEW_REDIRECT_RULE);
   const [editingId, setEditingId] = useState<string>();
   const query = useQuery({
     queryKey: [...cloudflareKey(credentialId), 'redirectRules', zoneId],
@@ -1631,10 +1635,16 @@ function RedirectRules({
       invoke('cloudflare:saveRedirectRule', {
         credentialId,
         zoneId,
-        rule: editingId ? { ...draft, id: editingId } : draft,
+        rule: {
+          ...draft,
+          source: draft.source.trim(),
+          destination: draft.destination.trim(),
+          ...(editingId ? { id: editingId } : {}),
+        },
       }),
     onSuccess: () => {
       setEditingId(undefined);
+      setDraft(NEW_REDIRECT_RULE);
       void client.invalidateQueries({ queryKey: cloudflareKey(credentialId) });
       toast.success('Redirect Rule saved');
     },
@@ -1708,7 +1718,13 @@ function RedirectRules({
               <Save className="size-4" /> {editingId ? 'Apply update' : 'Create redirect'}
             </Button>
             {editingId ? (
-              <Button variant="outline" onClick={() => setEditingId(undefined)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingId(undefined);
+                  setDraft(NEW_REDIRECT_RULE);
+                }}
+              >
                 Cancel
               </Button>
             ) : null}

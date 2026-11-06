@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowRight,
   Boxes,
@@ -114,10 +114,12 @@ function ImportWorkspace({ onCancel }: { onCancel: () => void }): JSX.Element {
     setWorking(true);
     setError('');
     try {
-      await invoke('backup:importProject', {
+      const { imported } = await invoke('backup:importProject', {
         passphrase: form.passphrase,
         projectPasskey: form.passkey,
       });
+      // When it did import, CloudForge is restarting. Otherwise no folder was chosen.
+      if (!imported) setWorking(false);
     } catch (cause) {
       setError(cause instanceof IpcCallError ? cause.message : 'Could not import the project');
       setWorking(false);
@@ -255,7 +257,7 @@ function ProjectCard({ project }: { project: ProjectPickerDto }): JSX.Element {
           aria-label={`Passkey for ${project.name}`}
           onChange={(event) => setPasskey(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') void open();
+            if (event.key === 'Enter' && passkey.length > 0 && !opening) void open();
           }}
         />
       ) : (
@@ -298,6 +300,19 @@ function CreateWorkspace({
     passkey: '',
     confirmation: '',
   });
+  // The region a new project starts with is a device setting, because no project
+  // is open here to read it from.
+  useEffect(() => {
+    let cancelled = false;
+    void invoke('settings:newProjectDefaults', undefined)
+      .then(({ region }) => {
+        if (!cancelled && region) setForm((current) => ({ ...current, region }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -310,10 +325,10 @@ function CreateWorkspace({
     setError('');
     try {
       const input: CreateProjectInput = {
-        name: form.name,
-        description: form.description,
+        name: form.name.trim(),
+        description: form.description.trim(),
         environment: form.environment,
-        region: form.region,
+        region: form.region.trim(),
         icon: form.icon,
         color: form.color,
         passkey: form.passkey,

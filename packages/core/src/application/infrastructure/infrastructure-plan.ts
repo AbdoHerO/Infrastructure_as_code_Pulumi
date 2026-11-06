@@ -19,6 +19,15 @@ export const RESOURCE_KINDS = [
 
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 
+/** Kinds the infrastructure engine can actually create. */
+const PROVISIONABLE_KINDS: ReadonlySet<string> = new Set([
+  'network',
+  'subnet',
+  'firewall',
+  'compute',
+  'volume',
+]);
+
 interface BaseResource {
   /** Stable logical name, unique within a plan. */
   readonly name: string;
@@ -109,6 +118,13 @@ export function validatePlan(plan: InfrastructurePlan): PlanIssue[] {
       issues.push({ resource: resource.name, message: 'Duplicate resource name' });
     }
     names.add(resource.name);
+    // Otherwise the engine skips it without a word and the plan looks applied.
+    if (!PROVISIONABLE_KINDS.has(resource.kind)) {
+      issues.push({
+        resource: resource.name,
+        message: `CloudForge cannot create "${resource.kind}" resources yet`,
+      });
+    }
     if (resource.kind === 'network') networks.add(resource.name);
     if (resource.kind === 'subnet') subnets.add(resource.name);
   }
@@ -128,6 +144,9 @@ export function validatePlan(plan: InfrastructurePlan): PlanIssue[] {
     }
     if (resource.kind === 'compute' && !subnets.has(resource.subnetName)) {
       issues.push({ resource: resource.name, message: `Unknown subnet "${resource.subnetName}"` });
+    }
+    if (resource.kind === 'compute' && !resource.image.trim()) {
+      issues.push({ resource: resource.name, message: 'Choose an operating system or image' });
     }
   }
 

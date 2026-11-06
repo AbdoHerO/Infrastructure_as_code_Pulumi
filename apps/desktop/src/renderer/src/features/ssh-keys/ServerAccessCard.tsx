@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Copy, RefreshCw, UserMinus, UserPlus, Users } from 'lucide-react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import {
   hostAccessInstructions,
+  hostAccessKeyRequest,
   parseSshPublicKey,
   validateAccessUsername,
   type HostAccessState,
@@ -30,74 +31,11 @@ import {
   toast,
 } from '@cloudforge/ui';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
+import { copyToClipboard as copy } from '../../lib/clipboard.js';
 import { invoke } from '../../lib/ipc.js';
+import { useVpsTargets } from '../ansible/useAnsible.js';
 
 type Language = 'en' | 'fr';
-
-/** What to send someone so they make a key and send back only its public half. */
-const KEY_REQUEST: Record<Language, string> = {
-  en: [
-    'Hello,',
-    '',
-    'To give you SSH access to the server, I need your public SSH key.',
-    '',
-    '1. Open a terminal (PowerShell on Windows, Terminal on Mac or Linux) and type:',
-    '',
-    // Commands start at column 0: chat apps turn leading spaces into
-    // non-breaking spaces, which the shell then reads as part of the command.
-    'ssh-keygen -t ed25519',
-    '',
-    '   Press Enter at each question (a passphrase is recommended).',
-    '',
-    '2. Show your PUBLIC key and send me the line it prints (it starts with ssh-ed25519):',
-    '',
-    '   Mac / Linux:',
-    'cat ~/.ssh/id_ed25519.pub',
-    '',
-    '   Windows (PowerShell):',
-    'type $env:USERPROFILE\\.ssh\\id_ed25519.pub',
-    '',
-    '   If a command is "not found", type it by hand instead of pasting it.',
-    '',
-    'Never send the other file (id_ed25519, without .pub): it is your private key and stays on your computer.',
-  ].join('\n'),
-  fr: [
-    'Bonjour,',
-    '',
-    "Pour vous donner un accès SSH au serveur, j'ai besoin de votre clé SSH publique.",
-    '',
-    '1. Ouvrez un terminal (PowerShell sous Windows, Terminal sous Mac ou Linux) et tapez :',
-    '',
-    'ssh-keygen -t ed25519',
-    '',
-    '   Appuyez sur Entrée à chaque question (une phrase de passe est recommandée).',
-    '',
-    '2. Affichez votre clé PUBLIQUE et envoyez-moi la ligne affichée (elle commence par ssh-ed25519) :',
-    '',
-    '   Mac / Linux :',
-    'cat ~/.ssh/id_ed25519.pub',
-    '',
-    '   Windows (PowerShell) :',
-    'type $env:USERPROFILE\\.ssh\\id_ed25519.pub',
-    '',
-    '   Si une commande est « introuvable », tapez-la à la main au lieu de la coller.',
-    '',
-    "N'envoyez jamais l'autre fichier (id_ed25519, sans .pub) : c'est votre clé privée, elle reste sur votre ordinateur.",
-  ].join('\n'),
-};
-
-/**
- * Copy through the main process: the renderer is denied browser permissions,
- * the clipboard's included, so `navigator.clipboard` fails here.
- */
-async function copy(value: string, label: string): Promise<void> {
-  try {
-    await invoke('app:copyText', { text: value });
-    toast.success(`${label} copied`);
-  } catch (error) {
-    toast.error(`Could not copy: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
 
 /**
  * SSH access for other people — a client, a colleague — to a saved server.
@@ -109,10 +47,7 @@ async function copy(value: string, label: string): Promise<void> {
  */
 export function ServerAccessCard(): JSX.Element {
   const confirm = useConfirmation();
-  const targets = useQuery({
-    queryKey: ['ansible:targets'],
-    queryFn: () => invoke('ansible:targets', undefined),
-  });
+  const targets = useVpsTargets();
   const [targetId, setTargetId] = useState('');
   const [state, setState] = useState<HostAccessState | null>(null);
   const [username, setUsername] = useState('');
@@ -129,7 +64,8 @@ export function ServerAccessCard(): JSX.Element {
     onError: (error) => toast.error(error.message),
   });
   const grant = useMutation({
-    mutationFn: () => invoke('hostAccess:grant', { targetId, username, publicKey, sudo }),
+    mutationFn: () =>
+      invoke('hostAccess:grant', { targetId, username: username.trim(), publicKey, sudo }),
     onSuccess: (value) => {
       setState(value);
       setShown({ username: username.trim(), sudo });
@@ -231,7 +167,7 @@ export function ServerAccessCard(): JSX.Element {
             <RefreshCw className="size-4" /> Refresh
           </Button>
         </div>
-        {targets.data && targets.data.length === 0 && (
+        {targets.data?.length === 0 && (
           <p className="text-muted-foreground text-sm">
             No saved VPS target yet: add the server in Ansible → Targets first.
           </p>
@@ -245,7 +181,7 @@ export function ServerAccessCard(): JSX.Element {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => void copy(KEY_REQUEST[language], 'Message')}
+                onClick={() => void copy(hostAccessKeyRequest(language), 'Message')}
               >
                 <Copy className="size-4" /> Copy the request
               </Button>

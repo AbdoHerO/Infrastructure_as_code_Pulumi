@@ -5,6 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
+import { toast } from '@cloudforge/ui';
 import type {
   CloudflareDashboard,
   CloudflareDnsRecord,
@@ -100,6 +101,10 @@ export function useUpdateCloudflareZoneSettings(
   return useMutation({
     mutationFn: (patch: Partial<CloudflareZoneSettings>) =>
       invoke('cloudflare:updateZoneSettings', { credentialId, zoneId, patch }),
-    onSuccess: () => client.invalidateQueries({ queryKey: [...cloudflareKey(credentialId)] }),
+    onSuccess: () => {
+      toast.success('Zone setting applied');
+      return client.invalidateQueries({ queryKey: [...cloudflareKey(credentialId)] });
+    },
+    onError: (error) => toast.error(error.message),
   });
 }

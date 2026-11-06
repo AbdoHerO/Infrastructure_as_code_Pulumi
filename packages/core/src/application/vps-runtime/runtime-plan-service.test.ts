@@ -451,25 +451,6 @@ describe('RuntimePlanService', () => {
     });
   });
 
-  describe('delete', () => {
-    it('forgets the plan and says the VPS was untouched', async () => {
-      await ctx.service.save(TARGET, managed(), NOW);
-
-      const result = await ctx.service.delete(TARGET);
-
-      expect(result.ok).toBe(true);
-      expect(ctx.rows.size).toBe(0);
-      const recorded = ctx.recordSafe.mock.calls.at(-1)?.[0];
-      expect(recorded?.type).toBe('runtime.plan.deleted');
-      expect(recorded?.message).toContain('Nothing running on the VPS was changed');
-    });
-
-    it('rejects an id that is not a saved target', async () => {
-      expect((await ctx.service.delete('nope')).ok).toBe(false);
-      expect(ctx.remove).not.toHaveBeenCalled();
-    });
-  });
-
   describe('validate', () => {
     it('checks a plan without touching the database', () => {
       const result = ctx.service.validate(

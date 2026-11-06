@@ -186,7 +186,15 @@ export class WordPressService {
     if (!site.ok) return site;
     const secrets = await this.secrets(site.value);
     if (!secrets.ok) return secrets;
-    return this.apply(site.value, secrets.value, onEvent);
+    const applied = await this.apply(site.value, secrets.value, onEvent);
+    if (applied.ok) {
+      this.activities.recordSafe({
+        type: 'wordpress.site.redeployed',
+        message: `Redeployed the WordPress site ${site.value.domain}`,
+        metadata: { siteId: id },
+      });
+    }
+    return applied;
   }
 
   async status(id: string): Promise<Result<WordPressRuntimeStatus, WordPressServiceError>> {

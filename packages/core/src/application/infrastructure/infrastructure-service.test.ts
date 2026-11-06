@@ -122,6 +122,54 @@ describe('InfrastructureService safe apply', () => {
     expect(subject.apply.mock.calls).toHaveLength(0);
   });
 
+  it('refuses to apply a plan with problems, whatever the caller checked', async () => {
+    const subject = fixture();
+    subject.setPlan({
+      ...initialPlan,
+      resources: [
+        {
+          kind: 'subnet',
+          name: 'subnet',
+          networkName: 'missing',
+          cidrBlock: '10.0.1.0/24',
+          public: true,
+        },
+      ],
+    });
+    const preview = await subject.service.preview(ref, 'project-id');
+    if (!preview.ok) throw preview.error;
+
+    const result = await subject.service.apply(ref, 'project-id', preview.value.previewToken);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('problem');
+    expect(subject.apply.mock.calls).toHaveLength(0);
+  });
+
+  it('needs the destructive changes accepted when the preview has any', async () => {
+    const subject = fixture();
+    subject.preview.mockResolvedValueOnce(
+      ok({ changes: { delete: 1 }, resources: [], hasReplacements: false, hasDeletes: true }),
+    );
+    const preview = await subject.service.preview(ref, 'project-id');
+    if (!preview.ok) throw preview.error;
+
+    const refused = await subject.service.apply(ref, 'project-id', preview.value.previewToken);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error.message).toContain('destructive');
+    expect(subject.apply.mock.calls).toHaveLength(0);
+
+    const accepted = await subject.service.apply(
+      ref,
+      'project-id',
+      preview.value.previewToken,
+      undefined,
+      { acceptDestructiveChanges: true },
+    );
+    expect(accepted.ok).toBe(true);
+    expect(subject.apply.mock.calls).toHaveLength(1);
+  });
+
   it('rejects a plan whose provider does not match the linked credential', async () => {
     const subject = fixture();
     subject.setPlan({ ...initialPlan, providerKind: 'aws' });

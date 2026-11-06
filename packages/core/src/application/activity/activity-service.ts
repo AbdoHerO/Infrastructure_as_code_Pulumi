@@ -25,7 +25,19 @@ export interface RecordActivityInput {
   readonly metadata?: Record<string, unknown>;
 }
 
+/** Narrows what {@link ActivityService.list} returns; every field is optional. */
+export interface ActivityFilter {
+  /** Matches the start of the event type, e.g. `firewall.` or `infrastructure.applied`. */
+  readonly typePrefix?: string;
+  /** Case-insensitive text found in the message or the type. */
+  readonly search?: string;
+  /** ISO date: only events at or after it. */
+  readonly since?: string;
+}
+
 const DEFAULT_LIMIT = 200;
+/** How far back a filtered read looks, so a filter can find older events. */
+const FILTER_SCAN_LIMIT = 1000;
 
 /**
  * Records and reads the application activity feed / audit log. Feature handlers
@@ -50,11 +62,27 @@ export class ActivityService {
     void this.record(input);
   }
 
-  async list(limit: number = DEFAULT_LIMIT): Promise<Result<ActivityDto[], PersistenceError>> {
-    const found = await this.activities.list(limit);
+  async list(
+    limit: number = DEFAULT_LIMIT,
+    filter: ActivityFilter = {},
+  ): Promise<Result<ActivityDto[], PersistenceError>> {
+    const filtering = [filter.typePrefix, filter.search, filter.since].some(Boolean);
+    const found = await this.activities.list(
+      filtering ? Math.max(limit, FILTER_SCAN_LIMIT) : limit,
+    );
     if (!found.ok) return found;
-    return ok(found.value.map(toDto));
+    const items = found.value.map(toDto);
+    return ok(filtering ? items.filter(matches(filter)).slice(0, limit) : items);
   }
+}
+
+function matches(filter: ActivityFilter): (item: ActivityDto) => boolean {
+  const search = filter.search?.trim().toLowerCase();
+  const since = filter.since ? Date.parse(filter.since) : null;
+  return (item) =>
+    (!filter.typePrefix || item.type.startsWith(filter.typePrefix)) &&
+    (!search || `${item.message} ${item.type}`.toLowerCase().includes(search)) &&
+    (since === null || Number.isNaN(since) || Date.parse(item.createdAt) >= since);
 }
 
 function toDto(record: ActivityRecord): ActivityDto {

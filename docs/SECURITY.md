@@ -88,6 +88,36 @@ Notable actions (project create/delete, infrastructure applied/destroyed,
 deployment success/failure) are recorded to the `Activity` table and surfaced in
 the Logs module — a lightweight, exportable audit log.
 
+## MCP server
+
+The [MCP server](MCP.md) lets an AI client use CloudForge. It is off by default.
+
+- **Who can connect.** It listens on `127.0.0.1` only and needs a 256-bit bearer token,
+  compared in constant time and stored encrypted. Any program or browser tab on this
+  computer can reach the port, so loopback alone proves nothing: the token proves who
+  is asking, and `Host` and `Origin` checks stop a web page reaching it through DNS
+  rebinding.
+- **What a client can do.** Each tool has a tier (read, write, critical, secret, shell,
+  local) with a device-level setting. Secret and shell tools are off by default, and
+  critical tools ask a person in the window; silence is a refusal. Decisions arrive
+  only through `mcp:*` channels no tool can reach, so a client can neither approve its
+  own requests nor widen its own permissions.
+- **The same guards as the window.** Tools call the same IPC handlers through one
+  `dispatch`. Checks a client could otherwise skip were moved out of the renderer into
+  the main process: plan validation, accepting destructive changes, the instance name
+  on termination, and the backup passphrase rule.
+- **Pinned host keys.** Tools take a saved target's id, and the host, credential and
+  fingerprint are loaded in the main process. A fingerprint can only be saved if this
+  connection has just read it from that host.
+- **Wrong project.** A session is tied to the project it started on. If the open project
+  changes, project-scoped tools refuse until the client acknowledges the change.
+- **Local files.** Paths given to a tool must be complete local paths, never network
+  shares, and files are created without replacing what exists.
+- **What leaves this computer.** Whatever a tool returns, and whatever a client sends
+  as an argument, passes through the AI client and its provider. Path options keep
+  `.env` files and private keys out of that path. Approval text and the log mask
+  secret-looking values and never record call contents.
+
 ## Threat-model notes & responsibilities
 
 - **Local-first**: CloudForge is a single-user desktop app. Data (encrypted

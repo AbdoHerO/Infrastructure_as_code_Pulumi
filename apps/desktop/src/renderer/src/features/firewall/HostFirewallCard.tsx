@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Lock, LockOpen, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import {
+  firewallAllowsPublicPort,
   hostFirewallAllows,
   type HostFirewallPort,
   type HostFirewallState,
@@ -28,6 +29,7 @@ import {
 } from '@cloudforge/ui';
 import { useConfirmation } from '../../components/ConfirmationDialogProvider.js';
 import { invoke } from '../../lib/ipc.js';
+import { useVpsTargets } from '../ansible/useAnsible.js';
 
 /** Ports most often needed on a web server, one click each. */
 const QUICK: readonly { label: string; port: number }[] = [
@@ -53,10 +55,7 @@ export function HostFirewallCard({
   providerRules: readonly LiveFirewallRule[];
 }): JSX.Element {
   const confirm = useConfirmation();
-  const targets = useQuery({
-    queryKey: ['ansible:targets'],
-    queryFn: () => invoke('ansible:targets', undefined),
-  });
+  const targets = useVpsTargets();
   const [targetId, setTargetId] = useState('');
   const [state, setState] = useState<HostFirewallState | null>(null);
   const [customPort, setCustomPort] = useState('');
@@ -131,7 +130,7 @@ export function HostFirewallCard({
         ? QUICK.map(({ label, port }) => ({
             label,
             port,
-            cloud: cloudAllows(providerRules, port),
+            cloud: firewallAllowsPublicPort(providerRules, port),
             host: hostFirewallAllows(state, port, 'tcp'),
           }))
         : [],
@@ -177,7 +176,7 @@ export function HostFirewallCard({
             Read VPS firewall
           </Button>
         </div>
-        {targets.data && targets.data.length === 0 && (
+        {targets.data?.length === 0 && (
           <p className="text-muted-foreground text-sm">
             No saved VPS target yet: add this server in Ansible → Targets to manage its firewall.
           </p>
@@ -329,16 +328,4 @@ export function HostFirewallCard({
 
 function describe(ports: readonly HostFirewallPort[]): string {
   return ports.map((p) => `${String(p.port)}/${p.protocol}`).join(', ');
-}
-
-/** Whether the cloud security list lets the internet reach a TCP port. */
-function cloudAllows(rules: readonly LiveFirewallRule[], port: number): boolean {
-  return rules.some(
-    (rule) =>
-      rule.direction === 'ingress' &&
-      (rule.protocol === 'tcp' || rule.protocol === 'all') &&
-      (rule.cidr === '0.0.0.0/0' || rule.cidr === '::/0') &&
-      (rule.portFrom === null || rule.portFrom <= port) &&
-      (rule.portTo === null || port <= rule.portTo),
-  );
 }

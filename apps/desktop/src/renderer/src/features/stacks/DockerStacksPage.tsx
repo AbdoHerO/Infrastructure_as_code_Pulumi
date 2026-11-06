@@ -113,9 +113,21 @@ function useComposeAnalysis(composeYaml: string, environment: string): ComposeAn
     }
     let current = true;
     const timer = setTimeout(() => {
-      void invoke('stacks:analyze', { composeYaml, environment }).then((result) => {
-        if (current) setAnalysis(result);
-      });
+      void invoke('stacks:analyze', { composeYaml, environment })
+        .then((result) => {
+          if (current) setAnalysis(result);
+        })
+        .catch((error: Error) => {
+          if (!current) return;
+          setAnalysis({
+            name: null,
+            services: [],
+            externalNetworks: [],
+            externalVolumes: [],
+            errors: [`The file could not be analyzed: ${error.message}`],
+            warnings: [],
+          });
+        });
     }, 300);
     return () => {
       current = false;

@@ -10,6 +10,7 @@ import {
   toast,
 } from '@cloudforge/ui';
 import { CREDENTIAL_SCHEMAS, type CredentialSummaryDto } from '@cloudforge/core';
+import { copyToClipboard } from '../../lib/clipboard.js';
 import { IpcCallError } from '../../lib/ipc.js';
 import { revealCredential } from './useCredentials.js';
 
@@ -74,10 +75,7 @@ export function RevealDialog({ credential, onClose }: RevealDialogProps): JSX.El
                       variant="ghost"
                       size="icon"
                       title="Copy"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(data[field.key] ?? '');
-                        toast.success('Copied to clipboard');
-                      }}
+                      onClick={() => void copyToClipboard(data[field.key] ?? '', field.label)}
                     >
                       <Copy className="size-4" />
                     </Button>

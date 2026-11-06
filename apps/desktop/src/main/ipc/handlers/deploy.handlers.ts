@@ -5,6 +5,7 @@ import { registerHandler } from '../registry.js';
 import { orThrow } from '../result.js';
 import { resolveSshTarget } from './ssh-target.js';
 import { projectOperations } from '../../project-operation-registry.js';
+import { hostKeyTrust } from '../../security/host-key-trust.js';
 
 /** Register the Deployments module IPC handlers. */
 export function registerDeployHandlers(): void {
@@ -18,9 +19,11 @@ export function registerDeployHandlers(): void {
     orThrow(await getContainer().deploymentService.count()),
   );
 
-  registerHandler('deploy:inspectHostKey', async ({ host, port }) => ({
-    fingerprint: orThrow(await getContainer().deploymentService.inspectHostKey(host, port)),
-  }));
+  registerHandler('deploy:inspectHostKey', async ({ host, port }) => {
+    const fingerprint = orThrow(await getContainer().deploymentService.inspectHostKey(host, port));
+    hostKeyTrust.remember(host, port, fingerprint);
+    return { fingerprint };
+  });
 
   registerHandler('deploy:cancel', ({ streamId }) => {
     projectOperations.cancel(`deploy:${streamId}`);
@@ -31,10 +34,7 @@ export function registerDeployHandlers(): void {
     const lease = projectOperations.begin(`deploy:${req.streamId}`, projectId, true);
     // Resolve the SSH private key from the encrypted credential (never over IPC).
     const target = await resolveSshTarget(req);
-    const context: DeploymentContext = {
-      ...(req.appImage ? { appImage: req.appImage } : {}),
-      ...(req.domain ? { domain: req.domain } : {}),
-    };
+    const context: DeploymentContext = req.appImage ? { appImage: req.appImage } : {};
 
     try {
       const dto = orThrow(

@@ -19,6 +19,9 @@ extraResources:
     filter:
       - '**/*'
       - '!*.tmp*'
+  # The stdio bridge MCP clients start; see docs/MCP.md.
+  - from: resources/mcp
+    to: mcp
 
 # Abort before creating an installer if Prisma's generated client or native
 # query engine was not copied into the packaged application payload.

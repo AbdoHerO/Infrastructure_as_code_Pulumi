@@ -196,8 +196,9 @@ project. Device preferences required before unlock remain application-wide:
 (automatic checks/downloads), **Security** (encryption status plus
 database/Pulumi-state backup and restore), and **Cloudflare** (default
 credential/zone, TTL/proxy, propagation, synchronization, SSL, redirects,
-cache, confirmation, and Activity preferences). Channels: `settings:*`,
-`security:status`, `backup:*`.
+cache, confirmation, and Activity preferences), and **MCP** (whether AI clients
+can connect and what they may do; see [MCP server](MCP.md)). Channels: `settings:*`,
+`security:status`, `backup:*`, `mcp:*`.
 
 ## Built-in Extensions (`/plugins`)
 

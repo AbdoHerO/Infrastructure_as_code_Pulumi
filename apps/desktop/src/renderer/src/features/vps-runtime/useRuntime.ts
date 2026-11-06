@@ -7,6 +7,7 @@
  * `apply` — cannot be called without a token minted by `preview` moments
  * earlier. Nothing in this file can start a change on its own.
  */
+import { useEffect, useState } from 'react';
 import {
   useMutation,
   useQuery,
@@ -25,7 +26,7 @@ import type {
   RuntimePreview,
   VpsRuntimePlan,
 } from '@cloudforge/core';
-import { invoke } from '../../lib/ipc.js';
+import { invoke, subscribe } from '../../lib/ipc.js';
 
 type ResourceKind = RuntimeAdoption['resourceKind'];
 interface AdoptionRequest {
@@ -79,6 +80,8 @@ export function useRuntimeDrift(
     queryFn: () => invoke('runtime:drift', { targetId }),
     enabled: Boolean(targetId) && enabled,
     retry: false,
+    // Each read opens an SSH connection: only when asked, not on every window focus.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -94,7 +97,26 @@ export function useRuntimeConnectivity(
     queryFn: () => invoke('runtime:connectivity', { targetId }),
     enabled: Boolean(targetId) && enabled,
     retry: false,
+    refetchOnWindowFocus: false,
   });
+}
+
+/** The output of a running apply, for one stream. */
+export function useRuntimeApplyLog(streamId: string): { lines: string[]; clear: () => void } {
+  const [lines, setLines] = useState<string[]>([]);
+  useEffect(
+    () =>
+      subscribe('runtime:log', (payload) => {
+        if (payload.streamId !== streamId) return;
+        const text = payload.event.message.trimEnd();
+        if (!text) return;
+        const prefix =
+          payload.event.stream === 'step' ? '▶ ' : payload.event.stream === 'stdout' ? '' : '! ';
+        setLines((current) => [...current, `${prefix}${text}`].slice(-1000));
+      }),
+    [streamId],
+  );
+  return { lines, clear: () => setLines([]) };
 }
 
 export function useRuntimeActions(targetId: string): RuntimeActions {

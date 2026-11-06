@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Trash2 } from 'lucide-react';
 import {
   Badge,
@@ -11,6 +11,7 @@ import {
   Switch,
   Textarea,
 } from '@cloudforge/ui';
+import { FALLBACK_SHAPES, OS_IMAGES } from '@cloudforge/core';
 import type {
   AvailabilityDomain,
   ComputeResource,
@@ -47,23 +48,6 @@ interface ResourceEditorProps {
   onRemove: () => void;
 }
 
-/** Curated fallbacks used when the account's live values aren't available. */
-const FALLBACK_SHAPES = [
-  'VM.Standard.E2.1.Micro',
-  'VM.Standard.A1.Flex',
-  'VM.Standard.E3.Flex',
-  'VM.Standard.E4.Flex',
-  'VM.Standard.E5.Flex',
-];
-const AWS_FALLBACK_SHAPES = ['t3.micro', 't3.small', 't4g.micro', 't4g.small'];
-const OS_IMAGES = [
-  'ubuntu-22.04',
-  'ubuntu-24.04',
-  'ubuntu-20.04',
-  'oracle-linux-9',
-  'oracle-linux-8',
-  'amazon-linux-2023',
-];
 const CUSTOM_IMAGE_OPTION = '__custom_image__';
 
 /** OCI-aware editor for a single resource, dispatching on its kind. */
@@ -203,13 +187,26 @@ function ComputeFields({
     ...context.shapes.map((s) => s.id),
     ...(context.shapes.length === 0
       ? context.providerKind === 'aws'
-        ? AWS_FALLBACK_SHAPES
-        : FALLBACK_SHAPES
+        ? (FALLBACK_SHAPES.aws ?? [])
+        : (FALLBACK_SHAPES.oracle ?? [])
       : []),
     resource.shape,
   ]);
+  const [customImageChosen, setCustomImageChosen] = useState(false);
   const usingCustomImage =
-    resource.image.trim().startsWith('ocid1.image') || resource.image.trim().startsWith('ami-');
+    customImageChosen ||
+    resource.image.trim().startsWith('ocid1.image') ||
+    resource.image.trim().startsWith('ami-');
+  // Sizing only means something on a flexible shape, so it must not stay behind,
+  // hidden, in the saved plan after switching to a fixed one.
+  const changeShape = (shape: string): void => {
+    if (shape.includes('Flex')) {
+      patch({ shape });
+      return;
+    }
+    const { ocpus: _ocpus, memoryGb: _memoryGb, ...fixed } = resource;
+    onChange({ ...fixed, shape });
+  };
 
   return (
     <div className="space-y-3">
@@ -226,7 +223,7 @@ function ComputeFields({
                   : 'From your account'
           }
         >
-          <Select value={resource.shape} onChange={(event) => patch({ shape: event.target.value })}>
+          <Select value={resource.shape} onChange={(event) => changeShape(event.target.value)}>
             {shapeOptions.map((shape) => (
               <option key={shape} value={shape}>
                 {shape}
@@ -259,9 +256,11 @@ function ComputeFields({
         <Field label="Operating system / image">
           <Select
             value={usingCustomImage ? CUSTOM_IMAGE_OPTION : resource.image}
-            onChange={(event) =>
-              patch({ image: event.target.value === CUSTOM_IMAGE_OPTION ? '' : event.target.value })
-            }
+            onChange={(event) => {
+              const custom = event.target.value === CUSTOM_IMAGE_OPTION;
+              setCustomImageChosen(custom);
+              patch({ image: custom ? '' : event.target.value });
+            }}
           >
             {unique([...OS_IMAGES, ...(usingCustomImage ? [] : [resource.image])]).map((image) => (
               <option key={image} value={image}>

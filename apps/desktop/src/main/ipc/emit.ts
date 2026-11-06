@@ -1,6 +1,7 @@
 import { webContents } from 'electron';
 import type { IpcEventChannel, IpcEventPayload } from '@shared/ipc/contract.js';
 import { log } from '../logging/logger.js';
+import { publishMainEvent } from './event-bus.js';
 
 /**
  * Push a typed event to every renderer. Used for streamed output (engine logs,
@@ -25,6 +26,8 @@ export function emitEvent<C extends IpcEventChannel>(
       else log().trace(fields, message);
     }
   }
+
+  publishMainEvent(channel, payload);
 
   for (const contents of webContents.getAllWebContents()) {
     if (!contents.isDestroyed()) contents.send(channel, payload);

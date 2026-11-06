@@ -23,6 +23,7 @@ import { registerHostFirewallHandlers } from './handlers/host-firewall.handlers.
 import { registerHostAccessHandlers } from './handlers/host-access.handlers.js';
 import { registerWordPressHandlers } from './handlers/wordpress.handlers.js';
 import { registerStackHandlers } from './handlers/stacks.handlers.js';
+import { registerMcpHandlers } from './handlers/mcp.handlers.js';
 
 /**
  * Register every IPC handler exactly once during app startup. Feature modules
@@ -54,4 +55,5 @@ export function registerIpcHandlers(): void {
   registerHostAccessHandlers();
   registerWordPressHandlers();
   registerStackHandlers();
+  registerMcpHandlers();
 }

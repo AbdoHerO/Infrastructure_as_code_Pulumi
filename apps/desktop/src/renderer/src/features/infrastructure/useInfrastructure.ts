@@ -56,13 +56,13 @@ export function useApply(): ReturnType<
   typeof useMutation<
     ApplyResult,
     Error,
-    { projectId: string; streamId: string; previewToken: string }
+    { projectId: string; streamId: string; previewToken: string; acceptDestructiveChanges: boolean }
   >
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, streamId, previewToken }) =>
-      invoke('infra:apply', { projectId, streamId, previewToken }),
+    mutationFn: ({ projectId, streamId, previewToken, acceptDestructiveChanges }) =>
+      invoke('infra:apply', { projectId, streamId, previewToken, acceptDestructiveChanges }),
     onSuccess: (_result, variables) => {
       void queryClient.invalidateQueries({ queryKey: MANAGED_STACKS_KEY });
       void queryClient.invalidateQueries({ queryKey: ['infra', 'outputs', variables.projectId] });
@@ -111,6 +111,8 @@ export function useOutputs(
     queryFn: () => invoke('infra:outputs', { projectId: projectId ?? '' }),
     enabled: projectId !== null && enabled,
     retry: false,
+    // Reading the outputs also re-synchronizes the saved targets: not on every focus.
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -6,6 +6,7 @@ import { invoke } from '../lib/ipc.js';
 import { ConfirmationDialogProvider } from '../components/ConfirmationDialogProvider.js';
 import { WorkspaceProvider } from '../features/projects/WorkspaceContext.js';
 import { WorkspaceGate } from '../features/projects/WorkspaceGate.js';
+import { McpRuntime } from '../features/mcp/McpRuntime.js';
 
 /** Application-wide context providers (data fetching, tooltips, and more). */
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
@@ -28,6 +29,7 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
       <WorkspaceProvider>
         <TooltipProvider delayDuration={300}>
           <ConfirmationDialogProvider>
+            <McpRuntime />
             <WorkspaceGate>
               <SettingsEffects />
               {children}

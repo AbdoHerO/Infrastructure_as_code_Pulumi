@@ -10,15 +10,25 @@ export function registerPluginHandlers(): void {
     orThrow(await getContainer().pluginService.active()),
   );
 
-  registerHandler('plugins:install', async ({ id }) =>
-    orThrow(await getContainer().pluginService.install(id)),
-  );
+  registerHandler('plugins:install', async ({ id }) => {
+    orThrow(await getContainer().pluginService.install(id));
+    audit('plugin.installed', `Installed the extension ${id}`);
+  });
 
-  registerHandler('plugins:setEnabled', async ({ id, enabled }) =>
-    orThrow(await getContainer().pluginService.setEnabled(id, enabled)),
-  );
+  registerHandler('plugins:setEnabled', async ({ id, enabled }) => {
+    orThrow(await getContainer().pluginService.setEnabled(id, enabled));
+    audit(
+      enabled ? 'plugin.enabled' : 'plugin.disabled',
+      `${enabled ? 'Enabled' : 'Disabled'} the extension ${id}`,
+    );
+  });
 
-  registerHandler('plugins:uninstall', async ({ id }) =>
-    orThrow(await getContainer().pluginService.uninstall(id)),
-  );
+  registerHandler('plugins:uninstall', async ({ id }) => {
+    orThrow(await getContainer().pluginService.uninstall(id));
+    audit('plugin.uninstalled', `Uninstalled the extension ${id}`);
+  });
+}
+
+function audit(type: string, message: string): void {
+  getContainer().activityService.recordSafe({ type, message });
 }
