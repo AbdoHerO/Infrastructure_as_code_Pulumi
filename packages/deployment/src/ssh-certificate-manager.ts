@@ -91,9 +91,14 @@ base64 -w0 "$workspace/request.csr"
       stream: 'step',
       message: 'Installing the Cloudflare Origin CA certificate on the VPS',
     });
+    // Cloudflare reaches an Origin CA site on 443 only. Without this the site
+    // switches to HTTPS behind a closed port and Cloudflare answers 523. Opened
+    // first and before `set -eu`, best effort like the Let's Encrypt path: a
+    // firewall CloudForge cannot drive must not stop the certificate.
     const installed = await runPrivilegedRemote(
       target,
-      `set -eu
+      `${openPortsFragment([{ port: 443, protocol: 'tcp' }])}
+set -eu
 workspace=${quote(workspace)}
 live=${quote(live)}
 backup=${quote(backup)}

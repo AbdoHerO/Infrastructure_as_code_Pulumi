@@ -49,7 +49,8 @@ in the Cloudflare dashboard:
 4. verify DNS, then select **Issue certificate**.
 
 CloudForge generates the key and CSR through the selected `VpsTarget`, calls
-Cloudflare from the Electron main process, installs the returned certificate
+Cloudflare from the Electron main process, opens TCP 443 on the VPS host firewall
+(Cloudflare reaches the origin on 443 only), installs the returned certificate
 under the configured certificate volume, confirms that its public key matches
 the private key, backs up an existing certificate, applies the Nginx site using
 the normal validation/rollback transaction, and finally enables Full (strict).

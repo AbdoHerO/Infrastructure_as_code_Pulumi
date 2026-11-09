@@ -46,6 +46,14 @@ All notable changes to CloudForge are documented here. The format follows
 
 ### Fixed
 
+- Issuing a certificate no longer breaks the WebSocket routes of a site, such as
+  Laravel Reverb's `/app`. CloudForge forgot their WebSocket setting when it read
+  the site back from the server, so it rewrote them without the Upgrade headers and
+  every live connection failed with an error 500. A site already affected is
+  repaired by saving its Jenkins pipeline again.
+- A Cloudflare Origin CA certificate now opens port 443 on the server's own
+  firewall. Before, the site switched to HTTPS behind a closed port and Cloudflare
+  answered error 523.
 - SSH connections now refuse a server fingerprint CloudForge did not read itself or
   have saved, on every page.
 - The Nginx page no longer keeps one server's `nginx.conf`, site or logs after you

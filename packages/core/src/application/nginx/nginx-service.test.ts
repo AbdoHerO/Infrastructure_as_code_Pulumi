@@ -256,6 +256,46 @@ describe('managed site metadata', () => {
     expect(decoded).toEqual(site);
   });
 
+  it('keeps the WebSocket setting and timeout of an extra route', () => {
+    // A certificate is issued by re-saving the site read back from the server. A
+    // route that lost `websocket` on the way was rewritten without its Upgrade
+    // headers, and Reverb then answered every handshake with a 500.
+    const withSocketRoute: ManagedNginxSite = {
+      ...site,
+      locations: [
+        {
+          path: '/app',
+          upstreamHost: '127.0.0.1',
+          upstreamPort: 8082,
+          websocket: true,
+          proxyTimeoutSeconds: 3_600,
+        },
+      ],
+    };
+
+    const decoded = decodeManagedNginxSite(encodeManagedNginxSite(withSocketRoute));
+
+    expect(decoded).toEqual(withSocketRoute);
+    expect(decoded).not.toBeNull();
+    if (!decoded) return;
+    expect(renderManagedNginxSite(decoded)).toMatch(
+      /location \/app \{[^}]*proxy_set_header Upgrade \$http_upgrade;[^}]*\}/,
+    );
+  });
+
+  it('ignores a malformed WebSocket setting or timeout on a route', () => {
+    const decoded = decodeManagedNginxSite(
+      encodeLegacy({
+        domain: 'odd.example.com',
+        locations: [
+          { path: '/app', upstreamPort: 8082, websocket: 'yes', proxyTimeoutSeconds: -5 },
+        ],
+      }),
+    );
+
+    expect(decoded?.locations).toEqual([{ path: '/app', upstreamPort: 8082 }]);
+  });
+
   it('stamps a schema version alongside the site fields', () => {
     const payload = JSON.parse(
       Buffer.from(encodeManagedNginxSite(site), 'base64').toString('utf8'),

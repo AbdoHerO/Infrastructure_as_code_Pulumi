@@ -388,6 +388,13 @@ function headerList(value: unknown): NginxHeader[] {
   });
 }
 
+/**
+ * Every field of a location, because anything not read back here is lost the
+ * next time the site is saved from what the server holds. Issuing a certificate
+ * does exactly that, and dropping `websocket` used to remove the Upgrade headers
+ * from a route such as Reverb's `/app`: every WebSocket handshake then reached
+ * the application as a plain request and failed.
+ */
 function locationList(value: unknown): NginxLocation[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -399,6 +406,12 @@ function locationList(value: unknown): NginxLocation[] {
         path: raw.path,
         ...(typeof raw.upstreamHost === 'string' ? { upstreamHost: raw.upstreamHost } : {}),
         ...(typeof raw.upstreamPort === 'number' ? { upstreamPort: raw.upstreamPort } : {}),
+        ...(typeof raw.websocket === 'boolean' ? { websocket: raw.websocket } : {}),
+        ...(typeof raw.proxyTimeoutSeconds === 'number' &&
+        Number.isInteger(raw.proxyTimeoutSeconds) &&
+        raw.proxyTimeoutSeconds > 0
+          ? { proxyTimeoutSeconds: raw.proxyTimeoutSeconds }
+          : {}),
         ...(Array.isArray(raw.extraDirectives)
           ? { extraDirectives: stringList(raw.extraDirectives) }
           : {}),
