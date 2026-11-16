@@ -25,6 +25,7 @@ import type {
   TemplateStore,
 } from '../ports/template-store.js';
 import { type InfrastructurePlan, type PlanIssue, validatePlan } from './infrastructure-plan.js';
+import { changedServers, isDestructivePreview } from './preview-safety.js';
 import {
   findInfrastructureTemplate,
   type InfraTemplateContext,
@@ -34,8 +35,13 @@ import {
 import type { ManagedVpsTargetSyncService } from '../vps-targets/managed-vps-target-sync-service.js';
 
 export interface InfrastructureApplyOptions {
-  /** Required when the approved preview deletes or replaces resources. */
+  /** Required when the approved preview can lose data: see {@link isDestructivePreview}. */
   readonly acceptDestructiveChanges?: boolean;
+  /**
+   * Refuse a preview that changes a server that already exists. Unattended
+   * retries only ever create servers: changing a running one is decided by a person.
+   */
+  readonly onlyNewServers?: boolean;
 }
 
 /**
@@ -46,7 +52,7 @@ export interface InfrastructureApplyOptions {
 export class InfrastructureService {
   private readonly previews = new Map<
     string,
-    { token: string; planFingerprint: string; destructive: boolean }
+    { token: string; planFingerprint: string; destructive: boolean; changesServers: boolean }
   >();
 
   constructor(
@@ -199,7 +205,8 @@ export class InfrastructureService {
     this.previews.set(stackKey(ref), {
       token,
       planFingerprint: fingerprint(plan.value),
-      destructive: preview.value.hasReplacements || preview.value.hasDeletes,
+      destructive: isDestructivePreview(preview.value),
+      changesServers: changedServers(preview.value).length > 0,
     });
     return ok(toPreviewResult(preview.value, token));
   }
@@ -238,10 +245,17 @@ export class InfrastructureService {
         ),
       );
     }
+    if (approved.changesServers && options.onlyNewServers === true) {
+      return err(
+        new ValidationError(
+          'This preview changes a server that already exists. Keep trying only creates new servers: review the preview and use Apply.',
+        ),
+      );
+    }
     if (approved.destructive && options.acceptDestructiveChanges !== true) {
       return err(
         new ValidationError(
-          'This preview deletes or replaces resources. Review it, then confirm the destructive changes to apply it.',
+          'This preview can lose data: it deletes or replaces resources, or replaces a server’s disk. Review it, then confirm the destructive changes to apply it.',
         ),
       );
     }

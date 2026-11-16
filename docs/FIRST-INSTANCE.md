@@ -86,7 +86,8 @@ It stops when:
 - Oracle answers with an error that waiting cannot fix, such as a rejected key. The
   error is shown, and you also get a notification.
 
-It never runs a preview that deletes or replaces resources. To start again, click
+It never runs a preview that can lose data, or one that changes a server that already
+exists: Keep trying only creates new servers. To start again, click
 **Preview**, then **Keep trying**. A run does not resume by itself when CloudForge
 reopens, because it creates real resources and should only start when you ask.
 
@@ -128,6 +129,33 @@ Connect from PowerShell:
 ```powershell
 ssh -i "$HOME\.ssh\cloudforge_hanoutplus_rsa" opc@51.170.132.115
 ```
+
+## Protect servers that already run sites
+
+Once a server hosts sites, an Apply or a Destroy in the wrong project can take them
+down. CloudForge guards against that in four ways:
+
+- **A server keeps its image.** A plan names its image, such as Ubuntu 24.04, and
+  Oracle keeps publishing newer builds of it. Oracle applies a new build to a running
+  server by replacing its boot disk, which erases everything on it. So a server keeps
+  the build it was created with, and changing the image name in the plan no longer
+  changes an existing server. To move to a newer system, create a new server and move
+  your sites to it. An image given as an exact id (`ocid1.image…` or `ami-…`) is
+  still applied as written, and Preview warns you about it.
+- **Preview says when a server's disk would be replaced.** Pulumi calls that change an
+  update, so Preview used to call it safe. It now marks it **Destructive changes**,
+  with a warning under the server, and Apply needs it confirmed.
+- **Apply and Destroy show what runs on the server first.** When Apply would change a
+  server that already exists, or when you click **Destroy** or **Destroy stack**,
+  CloudForge lists what runs there: containers and Nginx sites read from the server,
+  and the Docker stacks, WordPress sites and Jenkins pipelines it deployed. A check
+  that fails, for example because the server does not answer, is shown too. Then you
+  type the project's name (the stack's name for **Destroy stack**) to continue.
+- **Keep trying only creates servers.** It refuses a preview that changes a server
+  that already exists, both in the window and in the main process.
+
+The list comes from the saved VPS targets of the project: those CloudForge linked to
+the stack, and those you added by hand with the same address.
 
 ## Delete resources safely
 

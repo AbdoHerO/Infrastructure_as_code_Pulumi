@@ -394,6 +394,26 @@ function outputOpts(
   };
 }
 
+const OCI_INSTANCE = 'oci:Core/instance:Instance';
+const AWS_INSTANCE = 'aws:ec2/instance:Instance';
+
+/**
+ * Whether an in-place update of an Oracle instance swaps its boot disk.
+ *
+ * Oracle applies a new image (or source type) to a running instance by replacing
+ * its boot volume, so Pulumi calls it an update while everything on the disk is
+ * lost. Growing the boot volume is the one source change that keeps the data.
+ * Without per-field detail, a change to the source is treated as the dangerous kind.
+ */
+export function replacesBootDisk(changed: readonly string[], detailed: readonly string[]): boolean {
+  const source = (path: string): boolean =>
+    path === 'sourceDetails' || path.startsWith('sourceDetails.');
+  const detailedSource = detailed.filter(source);
+  if (detailedSource.length > 0)
+    return detailedSource.some((path) => path !== 'sourceDetails.bootVolumeSizeInGbs');
+  return changed.some(source);
+}
+
 /** Capture the real Pulumi planned operations without leaking provider types. */
 export function capturePreviewChange(
   event: PulumiEngineEvent,
@@ -417,11 +437,29 @@ export function capturePreviewChange(
   ];
   const existing = changes.get(metadata.urn);
   const strongest = strongerOperation(existing?.operation, operation);
+  const isServer = metadata.type === OCI_INSTANCE || metadata.type === AWS_INSTANCE;
+  const losesBootDisk =
+    metadata.type === OCI_INSTANCE &&
+    strongest === 'update' &&
+    replacesBootDisk(changedProperties, Object.keys(detailed));
+  const warning =
+    (isServer && strongest === 'replace'
+      ? 'Replaces the server: everything stored on it is lost, and its address may change.'
+      : isServer && strongest === 'delete'
+        ? 'Deletes the server and its boot disk: everything stored on it is lost.'
+        : losesBootDisk
+          ? 'Changes the server’s system image: Oracle replaces its boot disk and everything stored on it is lost.'
+          : undefined) ?? existing?.warning;
   changes.set(metadata.urn, {
     urn: metadata.urn,
     ...resource,
     operation: strongest,
-    destructive: strongest === 'replace' || strongest === 'delete',
+    destructive:
+      strongest === 'replace' ||
+      strongest === 'delete' ||
+      losesBootDisk ||
+      existing?.destructive === true,
+    ...(warning ? { warning } : {}),
     changedProperties: [...new Set([...(existing?.changedProperties ?? []), ...changedProperties])],
     replacementProperties: [
       ...new Set([...(existing?.replacementProperties ?? []), ...replacementProperties]),

@@ -132,8 +132,8 @@ describe('keep trying in the app', () => {
     expect(services.apply).toHaveBeenCalledTimes(3);
     for (const call of services.apply.mock.calls) {
       expect(call.slice(0, 3)).toEqual([ref, PROJECT, 'token']);
-      // Never the option that would accept deleting or replacing resources.
-      expect(call[4]).toBeUndefined();
+      // Never the option that would accept destructive changes, and only new servers.
+      expect(call[4]).toEqual({ onlyNewServers: true });
     }
     expect(isKeepTrying(PROJECT)).toBe(false);
   });

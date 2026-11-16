@@ -104,8 +104,9 @@ The [MCP server](MCP.md) lets an AI client use CloudForge. It is off by default.
   own requests nor widen its own permissions.
 - **The same guards as the window.** Tools call the same IPC handlers through one
   `dispatch`. Checks a client could otherwise skip were moved out of the renderer into
-  the main process: plan validation, accepting destructive changes, the instance name
-  on termination, and the backup passphrase rule.
+  the main process: plan validation, accepting destructive changes (a server whose boot
+  disk would be replaced counts as one), Keep trying only creating new servers, the
+  instance name on termination, and the backup passphrase rule.
 - **Pinned host keys.** Tools take a saved target's id, and the host, credential and
   fingerprint are loaded in the main process. A fingerprint can only be saved if this
   connection has just read it from that host.

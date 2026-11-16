@@ -32,19 +32,24 @@ import {
 import {
   type InfrastructurePlan,
   type ManagedStackSummary,
+  type PreviewResourceChange,
   type PreviewResult,
   type ProjectDto,
   type ResourceKind,
   type ResourceSpec,
   type SshKeySummary,
   ADDABLE_KINDS,
+  changedServers,
   classifyApplyFailure,
   createResource,
+  describeServerUsage,
   type extractSshConnectionHints,
   formatSshCommand,
+  isDestructivePreview,
   isKeepTryingActive,
   isProvisioningProviderKind,
   matchSshConnections,
+  type ServerSelection,
   uniqueName,
   validatePlan,
 } from '@cloudforge/core';
@@ -57,6 +62,7 @@ import { useSshKeys } from '../ssh-keys/useSshKeys.js';
 import { KeepTryingPanel, NoCapacityNotice } from './KeepTryingPanel.js';
 import { ResourceEditor, type EditorContext } from './ResourceEditor.js';
 import { SaveTemplateDialog } from './SaveTemplateDialog.js';
+import { inspectServerUsage } from './serverUsage.js';
 import {
   useApply,
   useAvailabilityDomains,
@@ -154,7 +160,13 @@ export function InfrastructurePage(): JSX.Element {
   const [stoppingRun, setStoppingRun] = useState<string | null>(null);
   const [dismissedRun, setDismissedRun] = useState<string | null>(null);
   const [noCapacity, setNoCapacity] = useState(false);
+  const [checkingServers, setCheckingServers] = useState(false);
+  const serverAddresses = useMemo(
+    () => Object.fromEntries(sshConnections.map((c) => [c.resourceName, c.host])),
+    [sshConnections],
+  );
   const busy =
+    checkingServers ||
     preview.isPending ||
     apply.isPending ||
     destroy.isPending ||
@@ -163,13 +175,16 @@ export function InfrastructurePage(): JSX.Element {
     savePlan.isPending ||
     startKeepTrying.isPending ||
     trying;
-  // Retrying never accepts deleting or replacing resources on its own.
+  // Retrying runs unattended, so it only creates: it never accepts a change that
+  // can lose data, and never touches a server that already exists.
+  const touchesExistingServers =
+    currentPreview !== null && changedServers(currentPreview).length > 0;
   const canKeepTrying =
     !busy &&
     issues.length === 0 &&
     currentPreview !== null &&
-    !currentPreview.hasReplacements &&
-    !currentPreview.hasDeletes;
+    !isDestructivePreview(currentPreview) &&
+    !touchesExistingServers;
 
   // The approval is used up once the server exists.
   useEffect(() => {
@@ -190,13 +205,64 @@ export function InfrastructurePage(): JSX.Element {
     );
   };
 
+  /**
+   * Ask before a change reaches servers that already exist: list what runs on
+   * them, and make the person type a name, so a click in the wrong project
+   * cannot wipe live sites.
+   */
+  const confirmServerChange = async (options: {
+    readonly selection: ServerSelection;
+    readonly title: string;
+    readonly intro: string;
+    readonly consequence: string;
+    readonly confirmLabel: string;
+    readonly typeToConfirm: string;
+  }): Promise<boolean> => {
+    setCheckingServers(true);
+    let usage: string;
+    try {
+      usage = describeServerUsage(await inspectServerUsage(options.selection));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      usage = `CloudForge could not check what runs on them: ${reason}`;
+    } finally {
+      setCheckingServers(false);
+    }
+    return confirm({
+      title: options.title,
+      description: `${options.intro}\n\nWhat runs there now:\n\n${usage}\n\n${options.consequence}`,
+      confirmLabel: options.confirmLabel,
+      typeToConfirm: options.typeToConfirm,
+    });
+  };
+
   const destroyStack = async (stack: ManagedStackSummary): Promise<void> => {
     const names = stack.resources.map((resource) => resource.name).join(', ');
-    const confirmed = await confirm({
-      title: 'Destroy managed cloud stack?',
-      description: `Destroy ${stack.ref.project}/${stack.ref.stack} and all ${stack.resources.length} tracked resources?\n\nResources: ${names || 'none'}\n\nThis permanently deletes remote cloud infrastructure and cannot be undone.`,
-      confirmLabel: 'Destroy stack',
-    });
+    const current =
+      stack.ref.project === currentRef?.project && stack.ref.stack === currentRef.stack;
+    const hasServers = stack.resources.some((resource) => resource.type === 'Instance');
+    const description = `Destroy ${stack.ref.project}/${stack.ref.stack} and all ${stack.resources.length} tracked resources?\n\nResources: ${names || 'none'}`;
+    const consequence =
+      'This permanently deletes remote cloud infrastructure, including the servers and their disks, and cannot be undone.';
+    const confirmed = hasServers
+      ? await confirmServerChange({
+          selection: {
+            // A stack's name ends with the first 8 characters of its project's id.
+            project: current ? projectId : (id) => stack.ref.project.endsWith(`-${id.slice(0, 8)}`),
+            servers: 'all',
+            addresses: current ? serverAddresses : {},
+          },
+          title: 'Destroy managed cloud stack?',
+          intro: description,
+          consequence,
+          confirmLabel: 'Destroy stack',
+          typeToConfirm: stack.ref.project,
+        })
+      : await confirm({
+          title: 'Destroy managed cloud stack?',
+          description: `${description}\n\n${consequence}`,
+          confirmLabel: 'Destroy stack',
+        });
     if (!confirmed) return;
     clear();
     destroyManagedStack.mutate(
@@ -254,11 +320,14 @@ export function InfrastructurePage(): JSX.Element {
   ): Promise<void> => {
     if (!projectId) return;
     if (operation === 'destroy') {
-      const confirmed = await confirm({
+      const confirmed = await confirmServerChange({
+        selection: { project: projectId, servers: 'all', addresses: serverAddresses },
         title: 'Destroy project infrastructure?',
-        description:
-          'Destroy every remote cloud resource in this project stack and permanently remove its saved infrastructure plan? Public IPs, instances, volumes, and data may be lost. This cannot be undone.',
+        intro: `Destroy every remote cloud resource of ${currentProject.name} and permanently remove its saved infrastructure plan?`,
+        consequence:
+          'Every server of this project is deleted with its disk: the sites, databases and files on it are lost. Public IPs are released. This cannot be undone.',
         confirmLabel: 'Destroy infrastructure',
+        typeToConfirm: currentProject.name,
       });
       if (!confirmed) return;
     }
@@ -286,13 +355,35 @@ export function InfrastructurePage(): JSX.Element {
         toast.error('Run Preview for the current plan before Apply.');
         return;
       }
-      const destructiveChanges = currentPreview.hasReplacements || currentPreview.hasDeletes;
-      if (destructiveChanges) {
+      const destructiveChanges = isDestructivePreview(currentPreview);
+      const servers = changedServers(currentPreview);
+      const describeChange = (resource: PreviewResourceChange): string =>
+        `${resource.operation.toUpperCase()}: ${resource.type} ${resource.name}${resource.warning ? `\n  ${resource.warning}` : ''}`;
+      if (servers.length > 0) {
+        const others = currentPreview.resources
+          .filter((resource) => resource.destructive && !servers.includes(resource))
+          .map(describeChange);
+        const confirmed = await confirmServerChange({
+          selection: {
+            project: projectId,
+            servers: servers.map((server) => server.name),
+            addresses: serverAddresses,
+          },
+          title: destructiveChanges
+            ? 'Apply changes that can wipe a running server?'
+            : 'Apply changes to a running server?',
+          intro: `This preview changes servers of ${currentProject.name} that already exist:\n\n${servers.map(describeChange).join('\n')}${others.length > 0 ? `\n\nIt also changes:\n\n${others.join('\n')}` : ''}`,
+          consequence: destructiveChanges
+            ? 'Everything stored on a replaced or deleted server, or on a replaced disk, is lost, and its public IP may change.'
+            : 'Changing a running server can restart it, and its sites are down while it does.',
+          confirmLabel: destructiveChanges ? 'Apply destructive changes' : 'Apply',
+          typeToConfirm: currentProject.name,
+        });
+        if (!confirmed) return;
+      } else if (destructiveChanges) {
         const destructive = currentPreview.resources
           .filter((resource) => resource.destructive)
-          .map(
-            (resource) => `${resource.operation.toUpperCase()}: ${resource.type} ${resource.name}`,
-          )
+          .map(describeChange)
           .join('\n');
         const confirmed = await confirm({
           title: 'Apply destructive infrastructure changes?',
@@ -406,7 +497,11 @@ export function InfrastructurePage(): JSX.Element {
         <Button
           variant="outline"
           disabled={!canKeepTrying}
-          title="Apply again every few minutes until the cloud provider has room for this server. Run Preview first."
+          title={
+            touchesExistingServers
+              ? 'Keep trying only creates new servers. This preview changes a server that already exists: review it and use Apply.'
+              : 'Apply again every few minutes until the cloud provider has room for this server. Run Preview first.'
+          }
           onClick={() => void keepTrying()}
         >
           <Repeat className="size-4" /> Keep trying
@@ -670,7 +765,8 @@ function SshConnectionPanel({
 
 function PreviewPanel({ preview }: { preview: PreviewResult | null }): JSX.Element | null {
   if (!preview) return null;
-  const destructive = preview.hasReplacements || preview.hasDeletes;
+  const destructive = isDestructivePreview(preview);
+  const servers = changedServers(preview);
   return (
     <Card className={destructive ? 'border-destructive/50' : 'border-success/40'}>
       <CardContent className="space-y-3 py-4">
@@ -688,7 +784,14 @@ function PreviewPanel({ preview }: { preview: PreviewResult | null }): JSX.Eleme
         {destructive ? (
           <div className="bg-destructive/10 text-destructive flex gap-2 rounded-md p-3 text-xs">
             <AlertTriangle className="size-4 shrink-0" />
-            Replaced or deleted resources may lose data and public IP addresses.
+            This preview can lose data: replaced or deleted resources, and a server whose disk is
+            replaced, lose what they store, and public IP addresses may change.
+          </div>
+        ) : servers.length > 0 ? (
+          <div className="flex gap-2 rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="size-4 shrink-0" />
+            This preview changes a server that already exists. Apply will show what runs on it and
+            ask you to confirm.
           </div>
         ) : null}
         <div className="space-y-1.5">
@@ -710,6 +813,9 @@ function PreviewPanel({ preview }: { preview: PreviewResult | null }): JSX.Eleme
                       : change.changedProperties
                     ).join(', ') || 'resource lifecycle'}
                   </p>
+                  {change.warning ? (
+                    <p className="text-destructive mt-1 text-xs">{change.warning}</p>
+                  ) : null}
                 </div>
                 <Badge variant={change.destructive ? 'destructive' : 'secondary'}>
                   {change.operation}

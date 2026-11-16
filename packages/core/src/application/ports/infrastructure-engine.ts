@@ -39,6 +39,8 @@ export interface PreviewResourceChange {
   readonly type: string;
   readonly operation: PreviewOperation;
   readonly destructive: boolean;
+  /** Why the change loses data, in plain words, when the operation name alone does not say it. */
+  readonly warning?: string;
   readonly changedProperties: readonly string[];
   readonly replacementProperties: readonly string[];
 }

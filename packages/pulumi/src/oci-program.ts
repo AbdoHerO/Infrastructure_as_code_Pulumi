@@ -2,6 +2,7 @@ import type * as pulumi from '@pulumi/pulumi';
 import * as oci from '@pulumi/oci';
 import type { PulumiFn } from '@pulumi/pulumi/automation';
 import type { FirewallRule, InfrastructurePlan } from '@cloudforge/core';
+import { imageChangeOptions } from './image-policy.js';
 
 /**
  * The decrypted Oracle Cloud credentials the program needs to configure an
@@ -231,7 +232,12 @@ export function buildOracleProgram(plan: InfrastructurePlan, creds: OciCredentia
         // allow that metadata key to be changed later. Force an explicit
         // replacement so Preview warns about the destructive operation rather
         // than leaving the user with an instance that still trusts the old key.
-        { ...opts, replaceOnChanges: ['metadata'] },
+        // A newer image must never replace the boot disk of an existing server.
+        {
+          ...opts,
+          replaceOnChanges: ['metadata'],
+          ...imageChangeOptions(spec.image, 'ocid1.image', 'sourceDetails.sourceId'),
+        },
       );
       instances.set(spec.name, instance);
       outputs[`${spec.name}PublicIp`] = instance.publicIp;

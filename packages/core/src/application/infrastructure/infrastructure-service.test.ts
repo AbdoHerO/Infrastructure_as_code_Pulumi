@@ -170,6 +170,118 @@ describe('InfrastructureService safe apply', () => {
     expect(subject.apply.mock.calls).toHaveLength(1);
   });
 
+  it('treats an update that replaces a server disk as destructive', async () => {
+    // What happened in production: Pulumi called it an "update", nothing was
+    // replaced or deleted, and the boot disk of a running server was swapped.
+    const subject = fixture();
+    subject.preview.mockResolvedValueOnce(
+      ok({
+        changes: { update: 1 },
+        resources: [
+          {
+            urn: 'urn::server',
+            name: 'always-free-arm',
+            type: 'Instance',
+            operation: 'update',
+            destructive: true,
+            warning: 'replaces its boot disk',
+            changedProperties: ['sourceDetails', 'sourceDetails.sourceId'],
+            replacementProperties: [],
+          },
+        ],
+        hasReplacements: false,
+        hasDeletes: false,
+      }),
+    );
+    const preview = await subject.service.preview(ref, 'project-id');
+    if (!preview.ok) throw preview.error;
+
+    const refused = await subject.service.apply(ref, 'project-id', preview.value.previewToken);
+
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error.message).toContain('destructive');
+    expect(subject.apply.mock.calls).toHaveLength(0);
+  });
+
+  it('never lets unattended retries change a server that already exists', async () => {
+    const subject = fixture();
+    subject.preview.mockResolvedValueOnce(
+      ok({
+        changes: { update: 1 },
+        resources: [
+          {
+            urn: 'urn::server',
+            name: 'always-free-arm',
+            type: 'Instance',
+            operation: 'update',
+            destructive: false,
+            changedProperties: ['shapeConfig'],
+            replacementProperties: [],
+          },
+        ],
+        hasReplacements: false,
+        hasDeletes: false,
+      }),
+    );
+    const preview = await subject.service.preview(ref, 'project-id');
+    if (!preview.ok) throw preview.error;
+
+    const refused = await subject.service.apply(
+      ref,
+      'project-id',
+      preview.value.previewToken,
+      undefined,
+      {
+        onlyNewServers: true,
+        acceptDestructiveChanges: true,
+      },
+    );
+
+    expect(refused.ok).toBe(false);
+    if (!refused.ok)
+      expect(refused.error.message).toContain('Keep trying only creates new servers');
+    expect(subject.apply.mock.calls).toHaveLength(0);
+    // A person applying the same preview is not blocked by that rule.
+    const accepted = await subject.service.apply(ref, 'project-id', preview.value.previewToken);
+    expect(accepted.ok).toBe(true);
+  });
+
+  it('lets unattended retries create a new server', async () => {
+    const subject = fixture();
+    subject.preview.mockResolvedValueOnce(
+      ok({
+        changes: { create: 1 },
+        resources: [
+          {
+            urn: 'urn::server',
+            name: 'always-free-arm',
+            type: 'Instance',
+            operation: 'create',
+            destructive: false,
+            changedProperties: [],
+            replacementProperties: [],
+          },
+        ],
+        hasReplacements: false,
+        hasDeletes: false,
+      }),
+    );
+    const preview = await subject.service.preview(ref, 'project-id');
+    if (!preview.ok) throw preview.error;
+
+    const result = await subject.service.apply(
+      ref,
+      'project-id',
+      preview.value.previewToken,
+      undefined,
+      {
+        onlyNewServers: true,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
   it('rejects a plan whose provider does not match the linked credential', async () => {
     const subject = fixture();
     subject.setPlan({ ...initialPlan, providerKind: 'aws' });

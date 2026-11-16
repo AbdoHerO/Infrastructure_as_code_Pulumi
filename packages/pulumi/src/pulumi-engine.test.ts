@@ -7,6 +7,7 @@ import {
   capturePreviewChange,
   PulumiEngine,
   removeTemporaryWorkspace,
+  replacesBootDisk,
   toProgressEvent,
 } from './pulumi-engine.js';
 import type { PreviewResourceChange } from '@cloudforge/core';
@@ -122,6 +123,101 @@ describe('PulumiEngine structured progress', () => {
       destructive: true,
       replacementProperties: ['availabilityDomain'],
     });
+    expect(changes.get(metadata.urn)?.warning).toContain('Replaces the server');
+  });
+
+  it('flags a new image on a running Oracle server as destructive, though Pulumi calls it an update', () => {
+    // The event Pulumi sent when a newer Ubuntu image was published: an update,
+    // no replacement keys, and Oracle swaps the boot disk to perform it.
+    const changes = new Map<string, PreviewResourceChange>();
+    capturePreviewChange(
+      {
+        sequence: 6,
+        timestamp: 6,
+        resourcePreEvent: {
+          planning: true,
+          metadata: {
+            ...metadata,
+            op: 'update',
+            diffs: ['sourceDetails'],
+            detailedDiff: {
+              'sourceDetails.sourceId': { diffKind: DiffKind.update, inputDiff: true },
+            },
+          },
+        },
+      },
+      changes,
+    );
+
+    const change = changes.get(metadata.urn);
+    expect(change).toMatchObject({
+      operation: 'update',
+      destructive: true,
+      replacementProperties: [],
+    });
+    expect(change?.warning).toContain('replaces its boot disk');
+  });
+
+  it('keeps growing the boot disk a safe update', () => {
+    const changes = new Map<string, PreviewResourceChange>();
+    capturePreviewChange(
+      {
+        sequence: 7,
+        timestamp: 7,
+        resourcePreEvent: {
+          planning: true,
+          metadata: {
+            ...metadata,
+            op: 'update',
+            diffs: ['sourceDetails'],
+            detailedDiff: {
+              'sourceDetails.bootVolumeSizeInGbs': { diffKind: DiffKind.update, inputDiff: true },
+            },
+          },
+        },
+      },
+      changes,
+    );
+
+    expect(changes.get(metadata.urn)).toMatchObject({ operation: 'update', destructive: false });
+    expect(changes.get(metadata.urn)?.warning).toBeUndefined();
+  });
+
+  it('warns before a server is deleted', () => {
+    const changes = new Map<string, PreviewResourceChange>();
+    capturePreviewChange(
+      {
+        sequence: 8,
+        timestamp: 8,
+        resourcePreEvent: { planning: true, metadata: { ...metadata, op: 'delete' } },
+      },
+      changes,
+    );
+
+    expect(changes.get(metadata.urn)).toMatchObject({ operation: 'delete', destructive: true });
+    expect(changes.get(metadata.urn)?.warning).toContain('Deletes the server');
+  });
+});
+
+describe('replacesBootDisk', () => {
+  it('reads the per-field detail when Pulumi gives it', () => {
+    expect(replacesBootDisk(['sourceDetails'], ['sourceDetails.sourceId'])).toBe(true);
+    expect(replacesBootDisk(['sourceDetails'], ['sourceDetails.sourceType'])).toBe(true);
+    expect(replacesBootDisk(['sourceDetails'], ['sourceDetails.bootVolumeSizeInGbs'])).toBe(false);
+    expect(
+      replacesBootDisk(
+        ['sourceDetails'],
+        ['sourceDetails.bootVolumeSizeInGbs', 'sourceDetails.sourceId'],
+      ),
+    ).toBe(true);
+  });
+
+  it('assumes the worst when only the top-level property is known', () => {
+    expect(replacesBootDisk(['sourceDetails'], [])).toBe(true);
+  });
+
+  it('ignores changes that do not touch the boot source', () => {
+    expect(replacesBootDisk(['shapeConfig', 'displayName'], ['shapeConfig.ocpus'])).toBe(false);
   });
 });
 

@@ -143,7 +143,8 @@ async function supervise(
 
 /**
  * One Apply, through the same service as the button, so the same checks run every
- * time: a changed plan or a preview that deletes or replaces resources is refused.
+ * time: a changed plan, a preview that can lose data, or one that touches a server
+ * that already exists is refused.
  *
  * A failed attempt's output stays out of the log: hundreds of copies of the same
  * failure a day would bury everything else in it.
@@ -160,6 +161,9 @@ async function attempt(request: KeepTryingRequest): Promise<Result<ApplyResult, 
       (event) => {
         output.push(event);
       },
+      // Never the option that accepts destructive changes, and never a change to a
+      // server that already exists: retries run unattended, so they only create.
+      { onlyNewServers: true },
     );
     if (result.ok || classifyApplyFailure(failureText(result.error)) === 'fatal') {
       for (const event of output) emitEvent('engine:log', { streamId, event });

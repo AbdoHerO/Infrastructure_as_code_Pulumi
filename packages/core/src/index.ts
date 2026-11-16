@@ -76,6 +76,8 @@ export * from './application/infrastructure/capacity-retry.js';
 export * from './application/infrastructure/infrastructure-plan.js';
 export * from './application/infrastructure/infrastructure-service.js';
 export * from './application/infrastructure/infrastructure-template.js';
+export * from './application/infrastructure/preview-safety.js';
+export * from './application/infrastructure/server-usage.js';
 export * from './application/infrastructure/ssh-connection.js';
 export * from './application/infrastructure/resource-presets.js';
 export * from './application/deployment/deployment-template.js';

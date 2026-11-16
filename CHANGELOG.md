@@ -46,6 +46,18 @@ All notable changes to CloudForge are documented here. The format follows
 
 ### Fixed
 
+- **Apply could erase a running Oracle server.** A plan names its image, such as
+  Ubuntu 24.04, and CloudForge picked the newest build of it on every run. When
+  Oracle published a newer build, Apply changed the server's image, and Oracle did
+  that by replacing its boot disk: the sites, databases and files on it were lost.
+  Preview called the change an update and showed it as safe. Now a server keeps the
+  image it was created with (on AWS too), and Preview marks any change that replaces
+  a server's disk as destructive, with a warning, so Apply needs it confirmed.
+- Before Apply changes a server that already exists, and before **Destroy** or
+  **Destroy stack**, CloudForge now lists what runs on it (containers, Nginx sites,
+  Docker stacks, WordPress sites and Jenkins pipelines) and asks you to type the
+  project's name. **Keep trying** now only creates new servers: it refuses a preview
+  that changes one that exists. See `docs/FIRST-INSTANCE.md`.
 - Issuing a certificate no longer breaks the WebSocket routes of a site, such as
   Laravel Reverb's `/app`. CloudForge forgot their WebSocket setting when it read
   the site back from the server, so it rewrote them without the Upgrade headers and

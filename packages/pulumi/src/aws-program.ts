@@ -2,6 +2,7 @@ import type * as pulumi from '@pulumi/pulumi';
 import * as aws from '@pulumi/aws';
 import type { PulumiFn } from '@pulumi/pulumi/automation';
 import type { FirewallRule, InfrastructurePlan } from '@cloudforge/core';
+import { imageChangeOptions } from './image-policy.js';
 
 /** Decrypted AWS fields captured only by the inline Pulumi program. */
 export interface AwsCredentials {
@@ -156,7 +157,8 @@ export function buildAwsProgram(plan: InfrastructurePlan, creds: AwsCredentials)
             : {}),
           tags: tags(resource.name),
         },
-        opts,
+        // A newer AMI would replace the whole instance: keep an existing one on its image.
+        { ...opts, ...imageChangeOptions(resource.image, 'ami-', 'ami') },
       );
       instances.set(resource.name, instance);
       outputs[`${resource.name}PublicIp`] = instance.publicIp;
